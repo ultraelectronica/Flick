@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flick_player/src/rust/frb_generated.dart';
 import 'package:flick_player/app/app.dart';
 
@@ -8,5 +9,19 @@ Future<void> main() async {
   // Initialize Rust library
   await RustLib.init();
 
+  // Set high refresh rate mode for smoother animations
+  await _setOptimalDisplayMode();
+
   runApp(const FlickPlayerApp());
+}
+
+/// Sets the highest available refresh rate mode on Android devices.
+/// This significantly improves animation smoothness on 90Hz/120Hz displays.
+Future<void> _setOptimalDisplayMode() async {
+  try {
+    await FlutterDisplayMode.setHighRefreshRate();
+  } catch (e) {
+    // Silently ignore on unsupported platforms (iOS, Web, etc.)
+    debugPrint('Display mode not supported: $e');
+  }
 }

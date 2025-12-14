@@ -31,15 +31,13 @@ class AppConstants {
   static const double glassBlurSigmaStrong = 20.0;
 
   // Orbit scroll settings
-  static const double orbitRadiusRatio =
-      0.65; // Ratio of screen width for orbit radius
-  static const double orbitCenterOffsetRatio =
-      -0.3; // How far off-screen the orbit center is
-  static const int orbitVisibleItems = 7; // Number of visible items in orbit
-  static const double orbitItemSpacing = 0.18; // Radians between items
-  static const double orbitSelectedScale = 1.0; // Scale of selected item
-  static const double orbitAdjacentScale = 0.85; // Scale of adjacent items
-  static const double orbitDistantScale = 0.65; // Scale of distant items
+  static const double orbitRadiusRatio = 1.0; // Large radius for gentle arc
+  static const double orbitCenterOffsetRatio = -0.5; // Center off-screen left
+  static const int orbitVisibleItems = 9; // More items visible
+  static const double orbitItemSpacing = 0.25; // Closer spacing for large arc
+  static const double orbitSelectedScale = 1.1;
+  static const double orbitAdjacentScale = 0.85;
+  static const double orbitDistantScale = 0.6;
 
   // Navigation bar
   static const double navBarHeight = 80.0;

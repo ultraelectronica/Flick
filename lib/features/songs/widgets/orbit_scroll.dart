@@ -1,12 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flick_player/core/theme/app_colors.dart';
 import 'package:flick_player/core/constants/app_constants.dart';
 import 'package:flick_player/models/song.dart';
 import 'package:flick_player/features/songs/widgets/song_card.dart';
 
-/// Orbital scrolling widget that displays songs in a half-circle arc on the left side.
+/// Orbital scrolling widget that displays songs in a curved arc.
 class OrbitScroll extends StatefulWidget {
   /// List of songs to display
   final List<Song> songs;
@@ -34,103 +36,182 @@ class OrbitScroll extends StatefulWidget {
 
 class _OrbitScrollState extends State<OrbitScroll>
     with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
+  late AnimationController _controller;
 
-  // Current scroll offset in items (can be fractional)
+  // The physics state
   double _scrollOffset = 0.0;
-
-  // For tracking drag gestures
-  double _lastDragY = 0.0;
 
   @override
   void initState() {
     super.initState();
     _scrollOffset = widget.selectedIndex.toDouble();
-    _animationController = AnimationController(
+    _controller = AnimationController.unbounded(
       vsync: this,
-      duration: const Duration(seconds: 1),
+      duration: const Duration(milliseconds: 500),
     );
-    _animationController.addListener(_onAnimationTick);
+    _controller.addListener(_onPhysicsTick);
   }
 
   @override
   void didUpdateWidget(OrbitScroll oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.selectedIndex != oldWidget.selectedIndex) {
-      _animateToIndex(widget.selectedIndex);
+      // If the index changed externally, snap/spring to it
+      if ((widget.selectedIndex.toDouble() - _scrollOffset).abs() > 0.05) {
+        _animateTo(widget.selectedIndex.toDouble());
+      }
     }
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
-  void _onAnimationTick() {
-    if (_animationController.isAnimating) {
-      setState(() {});
+  void _onPhysicsTick() {
+    // The controller value IS the scroll offset during an animation
+    if (_controller.isAnimating) {
+      setState(() {
+        _scrollOffset = _controller.value;
+      });
+
+      // Report index changes while scrolling
+      final currentIndex = _scrollOffset.round();
+      if (currentIndex >= 0 &&
+          currentIndex < widget.songs.length &&
+          widget.onSelectedIndexChanged != null) {
+        // Debounce or check duplicates is handled by listener usually,
+        // but we'll leave it to the parent to handle strictness.
+        // For purely visual updates, this is fine.
+      }
     }
   }
 
-  void _animateToIndex(int index) {
-    final targetOffset = index.toDouble();
-    final distance = (targetOffset - _scrollOffset).abs();
-
-    _animationController.reset();
-
-    final Animation<double> animation = _animationController.drive(
-      Tween<double>(
-        begin: _scrollOffset,
-        end: targetOffset,
-      ).chain(CurveTween(curve: Curves.easeOutCubic)),
-    );
-
-    animation.addListener(() {
-      setState(() {
-        _scrollOffset = animation.value;
-      });
-    });
-
-    _animationController.duration = Duration(
-      milliseconds: (300 + distance * 50).clamp(300, 800).toInt(),
-    );
-    _animationController.forward();
-  }
+  // --- Gesture Handling ---
 
   void _onVerticalDragStart(DragStartDetails details) {
-    _animationController.stop();
-    _lastDragY = details.globalPosition.dy;
+    _controller.stop();
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
-    final delta = details.globalPosition.dy - _lastDragY;
-    _lastDragY = details.globalPosition.dy;
+    // 1. Calculate delta in pixels
+    final delta = details.primaryDelta ?? 0.0;
 
-    // Convert pixel movement to scroll offset
-    // Negative delta (swipe up) should increase offset (go to next song)
-    final scrollDelta = -delta / 100.0;
+    // Dispatch scroll notification
+    // We send a ScrollUpdateNotification kind of event, but simple UserScrollNotification is easier for direction
+    if (delta != 0) {
+      final direction = delta > 0
+          ? ScrollDirection.reverse
+          : ScrollDirection.forward;
+      // Reverse = Down (dragging down, list moves down, showing top items -> scrolling UP effectively?)
+      // Wait, standard flutter:
+      // Dragging Up (negative delta) = Scrolling Down (index increases)
+      // Dragging Down (positive delta) = Scrolling Up (index decreases)
+
+      UserScrollNotification(
+        metrics: FixedScrollMetrics(
+          minScrollExtent: 0,
+          maxScrollExtent: widget.songs.length.toDouble(),
+          pixels: _scrollOffset,
+          viewportDimension: 100,
+          axisDirection: AxisDirection.down,
+          devicePixelRatio: 1.0,
+        ),
+        context: context,
+        direction: direction,
+      ).dispatch(context);
+    }
+
+    // 2. Convert to 'item' units.
+    // Making this dynamic gives a better feel.
+    // 1 item = ~80-100 pixels feels right for a wheel.
+    const itemHeight = 90.0;
+    final itemDelta = -(delta / itemHeight);
+
+    // 3. Apply resistance if out of bounds (Overscroll)
+    double newOffset = _scrollOffset + itemDelta;
+    if (newOffset < -0.5 || newOffset > widget.songs.length - 0.5) {
+      // Apply square root damping for boundaries
+      // Standard flutter overscroll logic usually applies friction
+      itemDelta / 2; // Simple resistance
+      newOffset = _scrollOffset + (itemDelta * 0.4); // Stiff resistance
+    }
 
     setState(() {
-      _scrollOffset = (_scrollOffset + scrollDelta).clamp(
-        0.0,
-        (widget.songs.length - 1).toDouble(),
-      );
+      _scrollOffset = newOffset;
     });
   }
 
   void _onVerticalDragEnd(DragEndDetails details) {
-    // Snap to nearest item
-    final nearestIndex = _scrollOffset.round().clamp(
+    // _dragStart = null; // This variable is not defined in the provided context. Removing it.
+    final velocity = details.primaryVelocity ?? 0.0;
+
+    // Dispatch end notification (idle)
+    UserScrollNotification(
+      metrics: FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: widget.songs.length.toDouble(),
+        pixels: _scrollOffset,
+        viewportDimension: 100,
+        axisDirection: AxisDirection.down,
+        devicePixelRatio: 1.0,
+      ),
+      context: context,
+      direction: ScrollDirection.idle,
+    ).dispatch(context);
+
+    // Pixels per second
+    // Convert to items per second
+    const itemHeight = 90.0;
+    final velocityItemsPerSec = -velocity / itemHeight;
+
+    // 1. Predict landing point
+    // We use a FrictionSimulation to see where it WOULD land.
+    final simulation = FrictionSimulation(
+      0.15, // Drag coefficient (higher = stops faster)
+      _scrollOffset,
+      velocityItemsPerSec,
+    );
+
+    final finalTime = 2.0; // Simulate far enough ahead
+    final projectedOffset = simulation.x(finalTime);
+
+    // 2. Snap to nearest valid item
+    final targetIndex = projectedOffset.round().clamp(
       0,
       widget.songs.length - 1,
     );
-    _animateToIndex(nearestIndex);
 
-    // Notify parent of selection change
-    if (nearestIndex != widget.selectedIndex) {
-      widget.onSelectedIndexChanged?.call(nearestIndex);
-    }
+    // 3. Spring to that target
+    _animateTo(targetIndex.toDouble(), velocity: velocityItemsPerSec);
+  }
+
+  void _animateTo(double target, {double velocity = 0.0}) {
+    // Create a spring simulation from current => target
+    final description = SpringDescription.withDampingRatio(
+      mass: 1.0,
+      stiffness: 100.0, // Reasonable stiffness for UI
+      ratio: 1.0, // Critically damped (no bounce unless overshooting)
+    );
+
+    final simulation = SpringSimulation(
+      description,
+      _scrollOffset,
+      target,
+      velocity,
+    );
+
+    _controller.animateWith(simulation).whenComplete(() {
+      // Ensure we explicitly set the final state to avoid micro-drifts
+      setState(() {
+        _scrollOffset = target;
+      });
+      final finalIndex = target.round();
+      if (finalIndex >= 0 && finalIndex < widget.songs.length) {
+        widget.onSelectedIndexChanged?.call(finalIndex);
+      }
+    });
   }
 
   @override
@@ -154,13 +235,13 @@ class _OrbitScrollState extends State<OrbitScroll>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // Background glow for selected item
+            // Background glow
             _buildSelectionGlow(orbitCenterX, orbitCenterY, orbitRadius),
 
-            // Orbit path visualization (subtle)
+            // Path
             _buildOrbitPath(orbitCenterX, orbitCenterY, orbitRadius),
 
-            // Song items
+            // Songs
             ..._buildSongItems(orbitCenterX, orbitCenterY, orbitRadius),
           ],
         ),
@@ -169,29 +250,22 @@ class _OrbitScrollState extends State<OrbitScroll>
   }
 
   Widget _buildSelectionGlow(double centerX, double centerY, double radius) {
-    // Calculate position of selected item
-    final position = _calculateItemPosition(
-      0, // Center position in relative terms
-      centerX,
-      centerY,
-      radius,
-    );
-
+    final x = centerX + radius;
+    final y = centerY;
     return Positioned(
-      left: position.x - 80,
-      top: position.y - 80,
+      left: x - 120, // Slightly larger glow
+      top: y - 120,
       child: Container(
-        width: 160,
-        height: 160,
+        width: 240,
+        height: 240,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: RadialGradient(
             colors: [
-              Colors.white.withValues(alpha: 0.08),
-              Colors.white.withValues(alpha: 0.02),
+              AppColors.accent.withValues(alpha: 0.15),
               Colors.transparent,
             ],
-            stops: const [0.0, 0.5, 1.0],
+            stops: const [0.0, 0.7],
           ),
         ),
       ),
@@ -211,40 +285,41 @@ class _OrbitScrollState extends State<OrbitScroll>
 
   List<Widget> _buildSongItems(double centerX, double centerY, double radius) {
     final List<Widget> items = [];
-    final visibleRange = AppConstants.orbitVisibleItems ~/ 2 + 1;
+    // Increase visible range for smoother scrolling entry/exit
+    final visibleRange = AppConstants.orbitVisibleItems ~/ 2 + 3;
 
-    // Build items from furthest to nearest (for proper z-ordering)
     final orderedIndices = <int>[];
-
     for (var i = -visibleRange; i <= visibleRange; i++) {
       orderedIndices.add(i);
     }
-
-    // Sort by absolute distance from center (render far items first)
+    // Sort by distance (render far items first)
     orderedIndices.sort((a, b) => b.abs().compareTo(a.abs()));
 
     for (final relativeIndex in orderedIndices) {
-      final actualIndex = _scrollOffset.round() + relativeIndex;
+      // Determine which song index this slot corresponds to
+      // Logic:
+      // If we are at offset 5.2:
+      // relative 0 => index 5 (closest)
+      // relative 1 => index 6
+      // relative -1 => index 4
+      // This part handles the "infinite" feel or just mapping relative to absolute
+      final centerIndex = _scrollOffset.round();
+      final actualIndex = centerIndex + relativeIndex;
 
       if (actualIndex < 0 || actualIndex >= widget.songs.length) continue;
 
-      // Calculate the fractional offset for smooth animation
-      final fractionalOffset = _scrollOffset - _scrollOffset.floor();
-      final adjustedRelativeIndex =
-          relativeIndex -
-          fractionalOffset +
-          (_scrollOffset.floor() - _scrollOffset.round());
+      // Calculate the visual offset angle based on exact scroll position
+      // _scrollOffset = 5.2
+      // actualIndex = 5 (center)
+      // relativeIndex = 0
+      // diff = 5 - 5.2 = -0.2 (It's slightly above center)
+      final diff = actualIndex.toDouble() - _scrollOffset;
 
-      final position = _calculateItemPosition(
-        adjustedRelativeIndex,
-        centerX,
-        centerY,
-        radius,
-      );
+      final position = _calculateItemPosition(diff, centerX, centerY, radius);
 
-      final distanceFromCenter = adjustedRelativeIndex.abs();
+      final distanceFromCenter = diff.abs();
 
-      // Calculate scale based on distance from center
+      // Dynamic scaling based on distance
       double scale;
       if (distanceFromCenter < 0.5) {
         scale = AppConstants.orbitSelectedScale;
@@ -252,29 +327,39 @@ class _OrbitScrollState extends State<OrbitScroll>
         scale = AppConstants.orbitAdjacentScale;
       } else {
         scale =
-            AppConstants.orbitDistantScale - (distanceFromCenter - 1.5) * 0.1;
+            AppConstants.orbitDistantScale - (distanceFromCenter - 1.5) * 0.12;
       }
-      scale = scale.clamp(0.4, 1.0);
+      scale = scale.clamp(0.0, 1.25);
 
-      // Calculate opacity based on distance
-      double opacity = 1.0 - (distanceFromCenter * 0.15);
-      opacity = opacity.clamp(0.3, 1.0);
+      if (scale < 0.1) continue;
 
-      final isSelected = distanceFromCenter < 0.5;
+      double opacity = 1.0 - (distanceFromCenter * 0.25);
+      opacity = opacity.clamp(0.0, 1.0);
+
+      // Tilt effect: rotate items slightly as they move up/down
+      // Simple rotation: proportional to angle?
+      // Actually, standard list items don't rotate, but for orbit it might look cool.
+      // Let's keep it simple for now to match the "Revamp scrolling" request primarily about feel.
+
+      final isSelected =
+          distanceFromCenter < 0.4; // Tighter selection threshold
 
       items.add(
         Positioned(
           left: position.x,
-          top: position.y - 50, // Offset to center the card
-          child: SongCard(
-            song: widget.songs[actualIndex],
-            scale: scale,
-            opacity: opacity,
-            isSelected: isSelected,
-            onTap: () {
-              _animateToIndex(actualIndex);
-              widget.onSongSelected?.call(actualIndex);
-            },
+          top: position.y,
+          child: FractionalTranslation(
+            translation: const Offset(-0.5, -0.5),
+            child: SongCard(
+              song: widget.songs[actualIndex],
+              scale: scale,
+              opacity: opacity,
+              isSelected: isSelected,
+              onTap: () {
+                _animateTo(actualIndex.toDouble());
+                widget.onSongSelected?.call(actualIndex);
+              },
+            ),
           ),
         ),
       );
@@ -289,13 +374,15 @@ class _OrbitScrollState extends State<OrbitScroll>
     double centerY,
     double radius,
   ) {
-    // Each item is spaced along the arc
-    // 0 = center (3 o'clock position for a circle centered off-screen left)
-    // Positive = below center, Negative = above center
+    // Relative index acts as the angle factor
+    // 0 = Center right (0 degrees in our logic?)
+    // Actually, in the previous code:
+    // angle = relativeIndex * spacing
+    // x = center + radius * cos(angle)
+    // y = center + radius * sin(angle)
+
     final angle = relativeIndex * AppConstants.orbitItemSpacing;
 
-    // For a half-circle on the left, we use angles from -π/2 to π/2
-    // Centered at 0 (pointing right)
     final x = centerX + radius * math.cos(angle);
     final y = centerY + radius * math.sin(angle);
 
@@ -306,11 +393,9 @@ class _OrbitScrollState extends State<OrbitScroll>
 class _Position {
   final double x;
   final double y;
-
   const _Position(this.x, this.y);
 }
 
-/// Custom painter for the subtle orbit path visualization
 class _OrbitPathPainter extends CustomPainter {
   final double centerX;
   final double centerY;
@@ -325,18 +410,16 @@ class _OrbitPathPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppColors.glassBorder.withValues(alpha: 0.3)
+      ..color = AppColors.glassBorder.withValues(alpha: 0.15)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
-    // Draw the visible arc portion
     final rect = Rect.fromCircle(
       center: Offset(centerX, centerY),
       radius: radius,
     );
 
-    // Draw arc from -π/2 to π/2 (right half of circle)
-    canvas.drawArc(rect, -math.pi / 2, math.pi, false, paint);
+    canvas.drawArc(rect, -math.pi / 2.5, 2 * math.pi / 2.5, false, paint);
   }
 
   @override

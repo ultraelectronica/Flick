@@ -1,62 +1,73 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
-/// App theme configuration with Proxima Nova-like font (Montserrat) and dark theme.
+/// App theme configuration with Product Sans font and dark theme.
 class AppTheme {
   AppTheme._();
 
-  /// Primary text theme using Montserrat (closest Google Font to Proxima Nova)
+  /// Product Sans font family name
+  static const String _fontFamily = 'ProductSans';
+
+  /// Primary text theme using Product Sans
   static TextTheme get _textTheme {
-    return TextTheme(
+    return const TextTheme(
       // Display styles
-      displayLarge: GoogleFonts.montserrat(
+      displayLarge: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 57,
         fontWeight: FontWeight.w300,
         letterSpacing: -0.25,
         color: AppColors.textPrimary,
       ),
-      displayMedium: GoogleFonts.montserrat(
+      displayMedium: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 45,
         fontWeight: FontWeight.w300,
         color: AppColors.textPrimary,
       ),
-      displaySmall: GoogleFonts.montserrat(
+      displaySmall: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 36,
         fontWeight: FontWeight.w400,
         color: AppColors.textPrimary,
       ),
 
       // Headline styles
-      headlineLarge: GoogleFonts.montserrat(
+      headlineLarge: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 32,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
         color: AppColors.textPrimary,
       ),
-      headlineMedium: GoogleFonts.montserrat(
+      headlineMedium: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 28,
         fontWeight: FontWeight.w500,
         color: AppColors.textPrimary,
       ),
-      headlineSmall: GoogleFonts.montserrat(
+      headlineSmall: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 24,
         fontWeight: FontWeight.w500,
         color: AppColors.textPrimary,
       ),
 
       // Title styles
-      titleLarge: GoogleFonts.montserrat(
+      titleLarge: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 22,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
         color: AppColors.textPrimary,
       ),
-      titleMedium: GoogleFonts.montserrat(
+      titleMedium: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 16,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w500,
         letterSpacing: 0.15,
         color: AppColors.textPrimary,
       ),
-      titleSmall: GoogleFonts.montserrat(
+      titleSmall: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 14,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.1,
@@ -64,19 +75,22 @@ class AppTheme {
       ),
 
       // Body styles
-      bodyLarge: GoogleFonts.montserrat(
+      bodyLarge: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 16,
         fontWeight: FontWeight.w400,
         letterSpacing: 0.5,
         color: AppColors.textPrimary,
       ),
-      bodyMedium: GoogleFonts.montserrat(
+      bodyMedium: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 14,
         fontWeight: FontWeight.w400,
         letterSpacing: 0.25,
         color: AppColors.textSecondary,
       ),
-      bodySmall: GoogleFonts.montserrat(
+      bodySmall: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 12,
         fontWeight: FontWeight.w400,
         letterSpacing: 0.4,
@@ -84,19 +98,22 @@ class AppTheme {
       ),
 
       // Label styles
-      labelLarge: GoogleFonts.montserrat(
+      labelLarge: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 14,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.1,
         color: AppColors.textPrimary,
       ),
-      labelMedium: GoogleFonts.montserrat(
+      labelMedium: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 12,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.5,
         color: AppColors.textSecondary,
       ),
-      labelSmall: GoogleFonts.montserrat(
+      labelSmall: TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 11,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.5,
