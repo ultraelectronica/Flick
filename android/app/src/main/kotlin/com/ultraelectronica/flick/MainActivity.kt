@@ -2,7 +2,7 @@ package com.ultraelectronica.flick
 
 import android.content.Intent
 import android.net.Uri
-import androidx.documentfile.DocumentFile
+import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel

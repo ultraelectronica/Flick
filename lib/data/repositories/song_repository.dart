@@ -1,4 +1,4 @@
-import 'package:isar/isar.dart';
+import 'package:isar_community/isar.dart';
 
 import '../database.dart';
 import '../../models/song.dart';
@@ -48,10 +48,10 @@ class SongRepository {
   /// Add or update a song.
   Future<void> upsertSong(SongEntity entity) async {
     await _isar.writeTxn(() async {
-      // Check if song with same URI exists
+      // Check if song with same file path exists
       final existing = await _isar.songEntitys
           .filter()
-          .uriEqualTo(entity.uri)
+          .filePathEqualTo(entity.filePath)
           .findFirst();
 
       if (existing != null) {
@@ -68,7 +68,7 @@ class SongRepository {
       for (final entity in entities) {
         final existing = await _isar.songEntitys
             .filter()
-            .uriEqualTo(entity.uri)
+            .filePathEqualTo(entity.filePath)
             .findFirst();
 
         if (existing != null) {
@@ -111,12 +111,27 @@ class SongRepository {
       id: entity.id.toString(),
       title: entity.title,
       artist: entity.artist,
-      albumArt: entity.albumArtUri,
-      duration: Duration(milliseconds: entity.durationMs),
-      fileType: entity.fileType,
-      resolution: entity.resolution,
+      albumArt: entity.albumArtPath,
+      duration: Duration(milliseconds: entity.durationMs ?? 0),
+      fileType: entity.fileType ?? 'unknown',
+      resolution: _buildResolutionString(entity),
       album: entity.album,
-      filePath: entity.uri,
+      filePath: entity.filePath,
     );
+  }
+
+  /// Build a resolution string from entity properties.
+  String _buildResolutionString(SongEntity entity) {
+    final parts = <String>[];
+    if (entity.bitrate != null) {
+      parts.add('${entity.bitrate}kbps');
+    }
+    if (entity.sampleRate != null) {
+      parts.add('${entity.sampleRate}Hz');
+    }
+    if (entity.bitDepth != null) {
+      parts.add('${entity.bitDepth}bit');
+    }
+    return parts.isEmpty ? 'Unknown' : parts.join(' / ');
   }
 }

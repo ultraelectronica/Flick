@@ -1,4 +1,4 @@
-import 'package:isar/isar.dart';
+import 'package:isar_community/isar.dart';
 
 part 'song_entity.g.dart';
 
@@ -7,33 +7,46 @@ part 'song_entity.g.dart';
 class SongEntity {
   Id id = Isar.autoIncrement;
 
-  /// Content URI for the audio file
-  @Index()
-  late String uri;
+  /// File path or content URI for the song
+  @Index(unique: true)
+  late String filePath;
 
-  /// Song title (from metadata or filename)
-  @Index(type: IndexType.value, caseSensitive: false)
+  /// Title of the song
+  @Index()
   late String title;
 
   /// Artist name
-  @Index(type: IndexType.value, caseSensitive: false)
+  @Index()
   late String artist;
 
   /// Album name
-  @Index(type: IndexType.value, caseSensitive: false)
+  @Index()
   String? album;
 
-  /// Path to album art (could be extracted embedded art or separate file)
-  String? albumArtUri;
+  /// Album artist
+  String? albumArtist;
 
   /// Duration in milliseconds
-  late int durationMs;
+  int? durationMs;
 
-  /// File type/codec (e.g., "FLAC", "MP3", "WAV")
-  late String fileType;
+  /// Track number
+  int? trackNumber;
 
-  /// Audio resolution (e.g., "24-bit/96kHz", "16-bit/44.1kHz")
-  String? resolution;
+  /// Disc number
+  int? discNumber;
+
+  /// Year of release
+  int? year;
+
+  /// Genre
+  @Index()
+  String? genre;
+
+  /// File size in bytes
+  int? fileSize;
+
+  /// File type (e.g., mp3, flac, wav)
+  String? fileType;
 
   /// Bitrate in kbps
   int? bitrate;
@@ -41,28 +54,21 @@ class SongEntity {
   /// Sample rate in Hz
   int? sampleRate;
 
-  /// Bit depth (e.g., 16, 24, 32)
+  /// Number of audio channels
+  int? channels;
+
+  /// Bit depth
   int? bitDepth;
 
-  /// File size in bytes
-  late int fileSize;
+  /// Path to album art (if extracted)
+  String? albumArtPath;
 
-  /// Date the file was added to the library
-  late DateTime dateAdded;
-
-  /// Last modification time of the file
-  DateTime? lastModified;
-
-  /// Parent folder URI
-  @Index()
+  /// URI of the folder containing this song
   String? folderUri;
 
-  /// Track number in album
-  int? trackNumber;
+  /// Date the song was added to the library
+  late DateTime dateAdded;
 
-  /// Year/date of release
-  int? year;
-
-  /// Genre
-  String? genre;
+  /// Last time metadata was updated
+  DateTime? lastModified;
 }

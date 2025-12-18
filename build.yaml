@@ -1,7 +1,7 @@
 targets:
   $default:
     builders:
-      isar_generator:
+      isar_community_generator:
         generate_for:
           include:
             - lib/data/**

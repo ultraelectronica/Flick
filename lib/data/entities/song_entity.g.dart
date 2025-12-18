@@ -17,114 +17,89 @@ const SongEntitySchema = CollectionSchema(
   name: r'SongEntity',
   id: -4322515446108572550,
   properties: {
-    r'album': PropertySchema(
-      id: 0,
-      name: r'album',
-      type: IsarType.string,
-    ),
-    r'albumArtUri': PropertySchema(
+    r'album': PropertySchema(id: 0, name: r'album', type: IsarType.string),
+    r'albumArtPath': PropertySchema(
       id: 1,
-      name: r'albumArtUri',
+      name: r'albumArtPath',
       type: IsarType.string,
     ),
-    r'artist': PropertySchema(
+    r'albumArtist': PropertySchema(
       id: 2,
-      name: r'artist',
+      name: r'albumArtist',
       type: IsarType.string,
     ),
-    r'bitDepth': PropertySchema(
-      id: 3,
-      name: r'bitDepth',
-      type: IsarType.long,
-    ),
-    r'bitrate': PropertySchema(
-      id: 4,
-      name: r'bitrate',
-      type: IsarType.long,
-    ),
+    r'artist': PropertySchema(id: 3, name: r'artist', type: IsarType.string),
+    r'bitDepth': PropertySchema(id: 4, name: r'bitDepth', type: IsarType.long),
+    r'bitrate': PropertySchema(id: 5, name: r'bitrate', type: IsarType.long),
+    r'channels': PropertySchema(id: 6, name: r'channels', type: IsarType.long),
     r'dateAdded': PropertySchema(
-      id: 5,
+      id: 7,
       name: r'dateAdded',
       type: IsarType.dateTime,
     ),
+    r'discNumber': PropertySchema(
+      id: 8,
+      name: r'discNumber',
+      type: IsarType.long,
+    ),
     r'durationMs': PropertySchema(
-      id: 6,
+      id: 9,
       name: r'durationMs',
       type: IsarType.long,
     ),
-    r'fileSize': PropertySchema(
-      id: 7,
-      name: r'fileSize',
-      type: IsarType.long,
+    r'filePath': PropertySchema(
+      id: 10,
+      name: r'filePath',
+      type: IsarType.string,
     ),
+    r'fileSize': PropertySchema(id: 11, name: r'fileSize', type: IsarType.long),
     r'fileType': PropertySchema(
-      id: 8,
+      id: 12,
       name: r'fileType',
       type: IsarType.string,
     ),
     r'folderUri': PropertySchema(
-      id: 9,
+      id: 13,
       name: r'folderUri',
       type: IsarType.string,
     ),
-    r'genre': PropertySchema(
-      id: 10,
-      name: r'genre',
-      type: IsarType.string,
-    ),
+    r'genre': PropertySchema(id: 14, name: r'genre', type: IsarType.string),
     r'lastModified': PropertySchema(
-      id: 11,
+      id: 15,
       name: r'lastModified',
       type: IsarType.dateTime,
     ),
-    r'resolution': PropertySchema(
-      id: 12,
-      name: r'resolution',
-      type: IsarType.string,
-    ),
     r'sampleRate': PropertySchema(
-      id: 13,
+      id: 16,
       name: r'sampleRate',
       type: IsarType.long,
     ),
-    r'title': PropertySchema(
-      id: 14,
-      name: r'title',
-      type: IsarType.string,
-    ),
+    r'title': PropertySchema(id: 17, name: r'title', type: IsarType.string),
     r'trackNumber': PropertySchema(
-      id: 15,
+      id: 18,
       name: r'trackNumber',
       type: IsarType.long,
     ),
-    r'uri': PropertySchema(
-      id: 16,
-      name: r'uri',
-      type: IsarType.string,
-    ),
-    r'year': PropertySchema(
-      id: 17,
-      name: r'year',
-      type: IsarType.long,
-    )
+    r'year': PropertySchema(id: 19, name: r'year', type: IsarType.long),
   },
+
   estimateSize: _songEntityEstimateSize,
   serialize: _songEntitySerialize,
   deserialize: _songEntityDeserialize,
   deserializeProp: _songEntityDeserializeProp,
   idName: r'id',
   indexes: {
-    r'uri': IndexSchema(
-      id: 8568316795971944889,
-      name: r'uri',
-      unique: false,
+    r'filePath': IndexSchema(
+      id: 2918041768256347220,
+      name: r'filePath',
+      unique: true,
       replace: false,
       properties: [
         IndexPropertySchema(
-          name: r'uri',
+          name: r'filePath',
           type: IndexType.hash,
           caseSensitive: true,
-        )
+        ),
       ],
     ),
     r'title': IndexSchema(
@@ -135,9 +110,9 @@ const SongEntitySchema = CollectionSchema(
       properties: [
         IndexPropertySchema(
           name: r'title',
-          type: IndexType.value,
-          caseSensitive: false,
-        )
+          type: IndexType.hash,
+          caseSensitive: true,
+        ),
       ],
     ),
     r'artist': IndexSchema(
@@ -148,9 +123,9 @@ const SongEntitySchema = CollectionSchema(
       properties: [
         IndexPropertySchema(
           name: r'artist',
-          type: IndexType.value,
-          caseSensitive: false,
-        )
+          type: IndexType.hash,
+          caseSensitive: true,
+        ),
       ],
     ),
     r'album': IndexSchema(
@@ -161,31 +136,32 @@ const SongEntitySchema = CollectionSchema(
       properties: [
         IndexPropertySchema(
           name: r'album',
-          type: IndexType.value,
-          caseSensitive: false,
-        )
+          type: IndexType.hash,
+          caseSensitive: true,
+        ),
       ],
     ),
-    r'folderUri': IndexSchema(
-      id: -6159925735266607609,
-      name: r'folderUri',
+    r'genre': IndexSchema(
+      id: 7810252941268804523,
+      name: r'genre',
       unique: false,
       replace: false,
       properties: [
         IndexPropertySchema(
-          name: r'folderUri',
+          name: r'genre',
           type: IndexType.hash,
           caseSensitive: true,
-        )
+        ),
       ],
-    )
+    ),
   },
   links: {},
   embeddedSchemas: {},
+
   getId: _songEntityGetId,
   getLinks: _songEntityGetLinks,
   attach: _songEntityAttach,
-  version: '3.1.0+1',
+  version: '3.3.0',
 );
 
 int _songEntityEstimateSize(
@@ -201,13 +177,25 @@ int _songEntityEstimateSize(
     }
   }
   {
-    final value = object.albumArtUri;
+    final value = object.albumArtPath;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.albumArtist;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
     }
   }
   bytesCount += 3 + object.artist.length * 3;
-  bytesCount += 3 + object.fileType.length * 3;
+  bytesCount += 3 + object.filePath.length * 3;
+  {
+    final value = object.fileType;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   {
     final value = object.folderUri;
     if (value != null) {
@@ -220,14 +208,7 @@ int _songEntityEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
-  {
-    final value = object.resolution;
-    if (value != null) {
-      bytesCount += 3 + value.length * 3;
-    }
-  }
   bytesCount += 3 + object.title.length * 3;
-  bytesCount += 3 + object.uri.length * 3;
   return bytesCount;
 }
 
@@ -238,23 +219,25 @@ void _songEntitySerialize(
   Map<Type, List<int>> allOffsets,
 ) {
   writer.writeString(offsets[0], object.album);
-  writer.writeString(offsets[1], object.albumArtUri);
-  writer.writeString(offsets[2], object.artist);
-  writer.writeLong(offsets[3], object.bitDepth);
-  writer.writeLong(offsets[4], object.bitrate);
-  writer.writeDateTime(offsets[5], object.dateAdded);
-  writer.writeLong(offsets[6], object.durationMs);
-  writer.writeLong(offsets[7], object.fileSize);
-  writer.writeString(offsets[8], object.fileType);
-  writer.writeString(offsets[9], object.folderUri);
-  writer.writeString(offsets[10], object.genre);
-  writer.writeDateTime(offsets[11], object.lastModified);
-  writer.writeString(offsets[12], object.resolution);
-  writer.writeLong(offsets[13], object.sampleRate);
-  writer.writeString(offsets[14], object.title);
-  writer.writeLong(offsets[15], object.trackNumber);
-  writer.writeString(offsets[16], object.uri);
-  writer.writeLong(offsets[17], object.year);
+  writer.writeString(offsets[1], object.albumArtPath);
+  writer.writeString(offsets[2], object.albumArtist);
+  writer.writeString(offsets[3], object.artist);
+  writer.writeLong(offsets[4], object.bitDepth);
+  writer.writeLong(offsets[5], object.bitrate);
+  writer.writeLong(offsets[6], object.channels);
+  writer.writeDateTime(offsets[7], object.dateAdded);
+  writer.writeLong(offsets[8], object.discNumber);
+  writer.writeLong(offsets[9], object.durationMs);
+  writer.writeString(offsets[10], object.filePath);
+  writer.writeLong(offsets[11], object.fileSize);
+  writer.writeString(offsets[12], object.fileType);
+  writer.writeString(offsets[13], object.folderUri);
+  writer.writeString(offsets[14], object.genre);
+  writer.writeDateTime(offsets[15], object.lastModified);
+  writer.writeLong(offsets[16], object.sampleRate);
+  writer.writeString(offsets[17], object.title);
+  writer.writeLong(offsets[18], object.trackNumber);
+  writer.writeLong(offsets[19], object.year);
 }
 
 SongEntity _songEntityDeserialize(
@@ -265,24 +248,26 @@ SongEntity _songEntityDeserialize(
 ) {
   final object = SongEntity();
   object.album = reader.readStringOrNull(offsets[0]);
-  object.albumArtUri = reader.readStringOrNull(offsets[1]);
-  object.artist = reader.readString(offsets[2]);
-  object.bitDepth = reader.readLongOrNull(offsets[3]);
-  object.bitrate = reader.readLongOrNull(offsets[4]);
-  object.dateAdded = reader.readDateTime(offsets[5]);
-  object.durationMs = reader.readLong(offsets[6]);
-  object.fileSize = reader.readLong(offsets[7]);
-  object.fileType = reader.readString(offsets[8]);
-  object.folderUri = reader.readStringOrNull(offsets[9]);
-  object.genre = reader.readStringOrNull(offsets[10]);
+  object.albumArtPath = reader.readStringOrNull(offsets[1]);
+  object.albumArtist = reader.readStringOrNull(offsets[2]);
+  object.artist = reader.readString(offsets[3]);
+  object.bitDepth = reader.readLongOrNull(offsets[4]);
+  object.bitrate = reader.readLongOrNull(offsets[5]);
+  object.channels = reader.readLongOrNull(offsets[6]);
+  object.dateAdded = reader.readDateTime(offsets[7]);
+  object.discNumber = reader.readLongOrNull(offsets[8]);
+  object.durationMs = reader.readLongOrNull(offsets[9]);
+  object.filePath = reader.readString(offsets[10]);
+  object.fileSize = reader.readLongOrNull(offsets[11]);
+  object.fileType = reader.readStringOrNull(offsets[12]);
+  object.folderUri = reader.readStringOrNull(offsets[13]);
+  object.genre = reader.readStringOrNull(offsets[14]);
   object.id = id;
-  object.lastModified = reader.readDateTimeOrNull(offsets[11]);
-  object.resolution = reader.readStringOrNull(offsets[12]);
-  object.sampleRate = reader.readLongOrNull(offsets[13]);
-  object.title = reader.readString(offsets[14]);
-  object.trackNumber = reader.readLongOrNull(offsets[15]);
-  object.uri = reader.readString(offsets[16]);
-  object.year = reader.readLongOrNull(offsets[17]);
+  object.lastModified = reader.readDateTimeOrNull(offsets[15]);
+  object.sampleRate = reader.readLongOrNull(offsets[16]);
+  object.title = reader.readString(offsets[17]);
+  object.trackNumber = reader.readLongOrNull(offsets[18]);
+  object.year = reader.readLongOrNull(offsets[19]);
   return object;
 }
 
@@ -298,36 +283,40 @@ P _songEntityDeserializeProp<P>(
     case 1:
       return (reader.readStringOrNull(offset)) as P;
     case 2:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 3:
-      return (reader.readLongOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 4:
       return (reader.readLongOrNull(offset)) as P;
     case 5:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 6:
-      return (reader.readLong(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 7:
-      return (reader.readLong(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 8:
-      return (reader.readString(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 9:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 10:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 11:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 12:
       return (reader.readStringOrNull(offset)) as P;
     case 13:
-      return (reader.readLongOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 14:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 15:
-      return (reader.readLongOrNull(offset)) as P;
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 16:
-      return (reader.readString(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 17:
+      return (reader.readString(offset)) as P;
+    case 18:
+      return (reader.readLongOrNull(offset)) as P;
+    case 19:
       return (reader.readLongOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -346,35 +335,68 @@ void _songEntityAttach(IsarCollection<dynamic> col, Id id, SongEntity object) {
   object.id = id;
 }
 
+extension SongEntityByIndex on IsarCollection<SongEntity> {
+  Future<SongEntity?> getByFilePath(String filePath) {
+    return getByIndex(r'filePath', [filePath]);
+  }
+
+  SongEntity? getByFilePathSync(String filePath) {
+    return getByIndexSync(r'filePath', [filePath]);
+  }
+
+  Future<bool> deleteByFilePath(String filePath) {
+    return deleteByIndex(r'filePath', [filePath]);
+  }
+
+  bool deleteByFilePathSync(String filePath) {
+    return deleteByIndexSync(r'filePath', [filePath]);
+  }
+
+  Future<List<SongEntity?>> getAllByFilePath(List<String> filePathValues) {
+    final values = filePathValues.map((e) => [e]).toList();
+    return getAllByIndex(r'filePath', values);
+  }
+
+  List<SongEntity?> getAllByFilePathSync(List<String> filePathValues) {
+    final values = filePathValues.map((e) => [e]).toList();
+    return getAllByIndexSync(r'filePath', values);
+  }
+
+  Future<int> deleteAllByFilePath(List<String> filePathValues) {
+    final values = filePathValues.map((e) => [e]).toList();
+    return deleteAllByIndex(r'filePath', values);
+  }
+
+  int deleteAllByFilePathSync(List<String> filePathValues) {
+    final values = filePathValues.map((e) => [e]).toList();
+    return deleteAllByIndexSync(r'filePath', values);
+  }
+
+  Future<Id> putByFilePath(SongEntity object) {
+    return putByIndex(r'filePath', object);
+  }
+
+  Id putByFilePathSync(SongEntity object, {bool saveLinks = true}) {
+    return putByIndexSync(r'filePath', object, saveLinks: saveLinks);
+  }
+
+  Future<List<Id>> putAllByFilePath(List<SongEntity> objects) {
+    return putAllByIndex(r'filePath', objects);
+  }
+
+  List<Id> putAllByFilePathSync(
+    List<SongEntity> objects, {
+    bool saveLinks = true,
+  }) {
+    return putAllByIndexSync(r'filePath', objects, saveLinks: saveLinks);
+  }
+}
+
 extension SongEntityQueryWhereSort
     on QueryBuilder<SongEntity, SongEntity, QWhere> {
   QueryBuilder<SongEntity, SongEntity, QAfterWhere> anyId() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(const IdWhereClause.any());
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhere> anyTitle() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(
-        const IndexWhereClause.any(indexName: r'title'),
-      );
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhere> anyArtist() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(
-        const IndexWhereClause.any(indexName: r'artist'),
-      );
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhere> anyAlbum() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(
-        const IndexWhereClause.any(indexName: r'album'),
-      );
     });
   }
 }
@@ -383,10 +405,7 @@ extension SongEntityQueryWhere
     on QueryBuilder<SongEntity, SongEntity, QWhereClause> {
   QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> idEqualTo(Id id) {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IdWhereClause.between(
-        lower: id,
-        upper: id,
-      ));
+      return query.addWhereClause(IdWhereClause.between(lower: id, upper: id));
     });
   }
 
@@ -412,8 +431,10 @@ extension SongEntityQueryWhere
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> idGreaterThan(Id id,
-      {bool include = false}) {
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> idGreaterThan(
+    Id id, {
+    bool include = false,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
         IdWhereClause.greaterThan(lower: id, includeLower: include),
@@ -421,8 +442,10 @@ extension SongEntityQueryWhere
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> idLessThan(Id id,
-      {bool include = false}) {
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> idLessThan(
+    Id id, {
+    bool include = false,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
         IdWhereClause.lessThan(upper: id, includeUpper: include),
@@ -437,549 +460,325 @@ extension SongEntityQueryWhere
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IdWhereClause.between(
-        lower: lowerId,
-        includeLower: includeLower,
-        upper: upperId,
-        includeUpper: includeUpper,
-      ));
+      return query.addWhereClause(
+        IdWhereClause.between(
+          lower: lowerId,
+          includeLower: includeLower,
+          upper: upperId,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> uriEqualTo(
-      String uri) {
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> filePathEqualTo(
+    String filePath,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'uri',
-        value: [uri],
-      ));
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'filePath', value: [filePath]),
+      );
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> uriNotEqualTo(
-      String uri) {
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> filePathNotEqualTo(
+    String filePath,
+  ) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'uri',
-              lower: [],
-              upper: [uri],
-              includeUpper: false,
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'uri',
-              lower: [uri],
-              includeLower: false,
-              upper: [],
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'filePath',
+                lower: [],
+                upper: [filePath],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'filePath',
+                lower: [filePath],
+                includeLower: false,
+                upper: [],
+              ),
+            );
       } else {
         return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'uri',
-              lower: [uri],
-              includeLower: false,
-              upper: [],
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'uri',
-              lower: [],
-              upper: [uri],
-              includeUpper: false,
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'filePath',
+                lower: [filePath],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'filePath',
+                lower: [],
+                upper: [filePath],
+                includeUpper: false,
+              ),
+            );
       }
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> titleEqualTo(
-      String title) {
+    String title,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'title',
-        value: [title],
-      ));
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'title', value: [title]),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> titleNotEqualTo(
-      String title) {
+    String title,
+  ) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'title',
-              lower: [],
-              upper: [title],
-              includeUpper: false,
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'title',
-              lower: [title],
-              includeLower: false,
-              upper: [],
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'title',
+                lower: [],
+                upper: [title],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'title',
+                lower: [title],
+                includeLower: false,
+                upper: [],
+              ),
+            );
       } else {
         return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'title',
-              lower: [title],
-              includeLower: false,
-              upper: [],
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'title',
-              lower: [],
-              upper: [title],
-              includeUpper: false,
-            ));
-      }
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> titleGreaterThan(
-    String title, {
-    bool include = false,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'title',
-        lower: [title],
-        includeLower: include,
-        upper: [],
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> titleLessThan(
-    String title, {
-    bool include = false,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'title',
-        lower: [],
-        upper: [title],
-        includeUpper: include,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> titleBetween(
-    String lowerTitle,
-    String upperTitle, {
-    bool includeLower = true,
-    bool includeUpper = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'title',
-        lower: [lowerTitle],
-        includeLower: includeLower,
-        upper: [upperTitle],
-        includeUpper: includeUpper,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> titleStartsWith(
-      String TitlePrefix) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'title',
-        lower: [TitlePrefix],
-        upper: ['$TitlePrefix\u{FFFFF}'],
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> titleIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'title',
-        value: [''],
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> titleIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      if (query.whereSort == Sort.asc) {
-        return query
-            .addWhereClause(IndexWhereClause.lessThan(
-              indexName: r'title',
-              upper: [''],
-            ))
-            .addWhereClause(IndexWhereClause.greaterThan(
-              indexName: r'title',
-              lower: [''],
-            ));
-      } else {
-        return query
-            .addWhereClause(IndexWhereClause.greaterThan(
-              indexName: r'title',
-              lower: [''],
-            ))
-            .addWhereClause(IndexWhereClause.lessThan(
-              indexName: r'title',
-              upper: [''],
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'title',
+                lower: [title],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'title',
+                lower: [],
+                upper: [title],
+                includeUpper: false,
+              ),
+            );
       }
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> artistEqualTo(
-      String artist) {
+    String artist,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'artist',
-        value: [artist],
-      ));
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'artist', value: [artist]),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> artistNotEqualTo(
-      String artist) {
+    String artist,
+  ) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'artist',
-              lower: [],
-              upper: [artist],
-              includeUpper: false,
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'artist',
-              lower: [artist],
-              includeLower: false,
-              upper: [],
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'artist',
+                lower: [],
+                upper: [artist],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'artist',
+                lower: [artist],
+                includeLower: false,
+                upper: [],
+              ),
+            );
       } else {
         return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'artist',
-              lower: [artist],
-              includeLower: false,
-              upper: [],
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'artist',
-              lower: [],
-              upper: [artist],
-              includeUpper: false,
-            ));
-      }
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> artistGreaterThan(
-    String artist, {
-    bool include = false,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'artist',
-        lower: [artist],
-        includeLower: include,
-        upper: [],
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> artistLessThan(
-    String artist, {
-    bool include = false,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'artist',
-        lower: [],
-        upper: [artist],
-        includeUpper: include,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> artistBetween(
-    String lowerArtist,
-    String upperArtist, {
-    bool includeLower = true,
-    bool includeUpper = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'artist',
-        lower: [lowerArtist],
-        includeLower: includeLower,
-        upper: [upperArtist],
-        includeUpper: includeUpper,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> artistStartsWith(
-      String ArtistPrefix) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'artist',
-        lower: [ArtistPrefix],
-        upper: ['$ArtistPrefix\u{FFFFF}'],
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> artistIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'artist',
-        value: [''],
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> artistIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      if (query.whereSort == Sort.asc) {
-        return query
-            .addWhereClause(IndexWhereClause.lessThan(
-              indexName: r'artist',
-              upper: [''],
-            ))
-            .addWhereClause(IndexWhereClause.greaterThan(
-              indexName: r'artist',
-              lower: [''],
-            ));
-      } else {
-        return query
-            .addWhereClause(IndexWhereClause.greaterThan(
-              indexName: r'artist',
-              lower: [''],
-            ))
-            .addWhereClause(IndexWhereClause.lessThan(
-              indexName: r'artist',
-              upper: [''],
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'artist',
+                lower: [artist],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'artist',
+                lower: [],
+                upper: [artist],
+                includeUpper: false,
+              ),
+            );
       }
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'album',
-        value: [null],
-      ));
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'album', value: [null]),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'album',
-        lower: [null],
-        includeLower: false,
-        upper: [],
-      ));
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'album',
+          lower: [null],
+          includeLower: false,
+          upper: [],
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumEqualTo(
-      String? album) {
+    String? album,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'album',
-        value: [album],
-      ));
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'album', value: [album]),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumNotEqualTo(
-      String? album) {
+    String? album,
+  ) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'album',
-              lower: [],
-              upper: [album],
-              includeUpper: false,
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'album',
-              lower: [album],
-              includeLower: false,
-              upper: [],
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'album',
+                lower: [],
+                upper: [album],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'album',
+                lower: [album],
+                includeLower: false,
+                upper: [],
+              ),
+            );
       } else {
         return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'album',
-              lower: [album],
-              includeLower: false,
-              upper: [],
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'album',
-              lower: [],
-              upper: [album],
-              includeUpper: false,
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'album',
+                lower: [album],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'album',
+                lower: [],
+                upper: [album],
+                includeUpper: false,
+              ),
+            );
       }
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumGreaterThan(
-    String? album, {
-    bool include = false,
-  }) {
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> genreIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'album',
-        lower: [album],
-        includeLower: include,
-        upper: [],
-      ));
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'genre', value: [null]),
+      );
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumLessThan(
-    String? album, {
-    bool include = false,
-  }) {
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> genreIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'album',
-        lower: [],
-        upper: [album],
-        includeUpper: include,
-      ));
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'genre',
+          lower: [null],
+          includeLower: false,
+          upper: [],
+        ),
+      );
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumBetween(
-    String? lowerAlbum,
-    String? upperAlbum, {
-    bool includeLower = true,
-    bool includeUpper = true,
-  }) {
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> genreEqualTo(
+    String? genre,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'album',
-        lower: [lowerAlbum],
-        includeLower: includeLower,
-        upper: [upperAlbum],
-        includeUpper: includeUpper,
-      ));
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'genre', value: [genre]),
+      );
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumStartsWith(
-      String AlbumPrefix) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'album',
-        lower: [AlbumPrefix],
-        upper: ['$AlbumPrefix\u{FFFFF}'],
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'album',
-        value: [''],
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumIsNotEmpty() {
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> genreNotEqualTo(
+    String? genre,
+  ) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
-            .addWhereClause(IndexWhereClause.lessThan(
-              indexName: r'album',
-              upper: [''],
-            ))
-            .addWhereClause(IndexWhereClause.greaterThan(
-              indexName: r'album',
-              lower: [''],
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'genre',
+                lower: [],
+                upper: [genre],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'genre',
+                lower: [genre],
+                includeLower: false,
+                upper: [],
+              ),
+            );
       } else {
         return query
-            .addWhereClause(IndexWhereClause.greaterThan(
-              indexName: r'album',
-              lower: [''],
-            ))
-            .addWhereClause(IndexWhereClause.lessThan(
-              indexName: r'album',
-              upper: [''],
-            ));
-      }
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> folderUriIsNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'folderUri',
-        value: [null],
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> folderUriIsNotNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'folderUri',
-        lower: [null],
-        includeLower: false,
-        upper: [],
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> folderUriEqualTo(
-      String? folderUri) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'folderUri',
-        value: [folderUri],
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> folderUriNotEqualTo(
-      String? folderUri) {
-    return QueryBuilder.apply(this, (query) {
-      if (query.whereSort == Sort.asc) {
-        return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'folderUri',
-              lower: [],
-              upper: [folderUri],
-              includeUpper: false,
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'folderUri',
-              lower: [folderUri],
-              includeLower: false,
-              upper: [],
-            ));
-      } else {
-        return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'folderUri',
-              lower: [folderUri],
-              includeLower: false,
-              upper: [],
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'folderUri',
-              lower: [],
-              upper: [folderUri],
-              includeUpper: false,
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'genre',
+                lower: [genre],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'genre',
+                lower: [],
+                upper: [genre],
+                includeUpper: false,
+              ),
+            );
       }
     });
   }
@@ -989,17 +788,17 @@ extension SongEntityQueryFilter
     on QueryBuilder<SongEntity, SongEntity, QFilterCondition> {
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> albumIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'album',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'album'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> albumIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'album',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'album'),
+      );
     });
   }
 
@@ -1008,11 +807,13 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'album',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'album',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1022,12 +823,14 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'album',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'album',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1037,12 +840,14 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'album',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'album',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1054,14 +859,16 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'album',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'album',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1070,11 +877,13 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'album',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'album',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1083,123 +892,132 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'album',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'album',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> albumContains(
-      String value,
-      {bool caseSensitive = true}) {
+    String value, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'album',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'album',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> albumMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'album',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'album',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> albumIsEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'album',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'album', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumIsNotEmpty() {
+  albumIsNotEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'album',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'album', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriIsNull() {
+  albumArtPathIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'albumArtUri',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'albumArtPath'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriIsNotNull() {
+  albumArtPathIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'albumArtUri',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'albumArtPath'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriEqualTo(
-    String? value, {
-    bool caseSensitive = true,
-  }) {
+  albumArtPathEqualTo(String? value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'albumArtUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'albumArtPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriGreaterThan(
+  albumArtPathGreaterThan(
     String? value, {
     bool include = false,
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'albumArtUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'albumArtPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriLessThan(
+  albumArtPathLessThan(
     String? value, {
     bool include = false,
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'albumArtUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'albumArtPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriBetween(
+  albumArtPathBetween(
     String? lower,
     String? upper, {
     bool includeLower = true,
@@ -1207,84 +1025,245 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'albumArtUri',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'albumArtPath',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriStartsWith(
-    String value, {
+  albumArtPathStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'albumArtPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtPathEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'albumArtPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtPathContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'albumArtPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtPathMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'albumArtPath',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtPathIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'albumArtPath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtPathIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'albumArtPath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtistIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'albumArtist'),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtistIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'albumArtist'),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtistEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'albumArtist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtistGreaterThan(
+    String? value, {
+    bool include = false,
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'albumArtUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'albumArtist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriEndsWith(
-    String value, {
+  albumArtistLessThan(
+    String? value, {
+    bool include = false,
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'albumArtUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'albumArtist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriContains(String value, {bool caseSensitive = true}) {
+  albumArtistBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'albumArtUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'albumArtist',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriMatches(String pattern, {bool caseSensitive = true}) {
+  albumArtistStartsWith(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'albumArtUri',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'albumArtist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriIsEmpty() {
+  albumArtistEndsWith(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'albumArtUri',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'albumArtist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      albumArtUriIsNotEmpty() {
+  albumArtistContains(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'albumArtUri',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'albumArtist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtistMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'albumArtist',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtistIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'albumArtist', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  albumArtistIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'albumArtist', value: ''),
+      );
     });
   }
 
@@ -1293,11 +1272,13 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'artist',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'artist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1307,12 +1288,14 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'artist',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'artist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1322,12 +1305,14 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'artist',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'artist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1339,14 +1324,16 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'artist',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'artist',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1355,11 +1342,13 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'artist',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'artist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1368,95 +1357,100 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'artist',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'artist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> artistContains(
-      String value,
-      {bool caseSensitive = true}) {
+    String value, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'artist',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'artist',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> artistMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'artist',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'artist',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> artistIsEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'artist',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'artist', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      artistIsNotEmpty() {
+  artistIsNotEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'artist',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'artist', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> bitDepthIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'bitDepth',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'bitDepth'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      bitDepthIsNotNull() {
+  bitDepthIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'bitDepth',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'bitDepth'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> bitDepthEqualTo(
-      int? value) {
+    int? value,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'bitDepth',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'bitDepth', value: value),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      bitDepthGreaterThan(
-    int? value, {
-    bool include = false,
-  }) {
+  bitDepthGreaterThan(int? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'bitDepth',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'bitDepth',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -1465,11 +1459,13 @@ extension SongEntityQueryFilter
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'bitDepth',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'bitDepth',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -1480,54 +1476,55 @@ extension SongEntityQueryFilter
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'bitDepth',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'bitDepth',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> bitrateIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'bitrate',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'bitrate'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      bitrateIsNotNull() {
+  bitrateIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'bitrate',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'bitrate'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> bitrateEqualTo(
-      int? value) {
+    int? value,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'bitrate',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'bitrate', value: value),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      bitrateGreaterThan(
-    int? value, {
-    bool include = false,
-  }) {
+  bitrateGreaterThan(int? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'bitrate',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'bitrate',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -1536,11 +1533,13 @@ extension SongEntityQueryFilter
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'bitrate',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'bitrate',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -1551,37 +1550,112 @@ extension SongEntityQueryFilter
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'bitrate',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'bitrate',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> dateAddedEqualTo(
-      DateTime value) {
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> channelsIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'dateAdded',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'channels'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      dateAddedGreaterThan(
-    DateTime value, {
+  channelsIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'channels'),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> channelsEqualTo(
+    int? value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'channels', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  channelsGreaterThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'channels',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> channelsLessThan(
+    int? value, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'dateAdded',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'channels',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> channelsBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'channels',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> dateAddedEqualTo(
+    DateTime value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'dateAdded', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  dateAddedGreaterThan(DateTime value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'dateAdded',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -1590,11 +1664,13 @@ extension SongEntityQueryFilter
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'dateAdded',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'dateAdded',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -1605,170 +1681,215 @@ extension SongEntityQueryFilter
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'dateAdded',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'dateAdded',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  discNumberIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'discNumber'),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  discNumberIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'discNumber'),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> discNumberEqualTo(
+    int? value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'discNumber', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  discNumberGreaterThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'discNumber',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  discNumberLessThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'discNumber',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> discNumberBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'discNumber',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  durationMsIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'durationMs'),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  durationMsIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'durationMs'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> durationMsEqualTo(
-      int value) {
+    int? value,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'durationMs',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'durationMs', value: value),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      durationMsGreaterThan(
-    int value, {
-    bool include = false,
-  }) {
+  durationMsGreaterThan(int? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'durationMs',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'durationMs',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      durationMsLessThan(
-    int value, {
-    bool include = false,
-  }) {
+  durationMsLessThan(int? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'durationMs',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'durationMs',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> durationMsBetween(
-    int lower,
-    int upper, {
+    int? lower,
+    int? upper, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'durationMs',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'durationMs',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileSizeEqualTo(
-      int value) {
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> filePathEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'fileSize',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'filePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      fileSizeGreaterThan(
-    int value, {
-    bool include = false,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'fileSize',
-        value: value,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileSizeLessThan(
-    int value, {
-    bool include = false,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'fileSize',
-        value: value,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileSizeBetween(
-    int lower,
-    int upper, {
-    bool includeLower = true,
-    bool includeUpper = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'fileSize',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileTypeEqualTo(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'fileType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      fileTypeGreaterThan(
+  filePathGreaterThan(
     String value, {
     bool include = false,
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'fileType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'filePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileTypeLessThan(
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> filePathLessThan(
     String value, {
     bool include = false,
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'fileType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'filePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileTypeBetween(
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> filePathBetween(
     String lower,
     String upper, {
     bool includeLower = true,
@@ -1776,28 +1897,267 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'fileType',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'filePath',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      fileTypeStartsWith(
+  filePathStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'filePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> filePathEndsWith(
     String value, {
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'fileType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'filePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> filePathContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'filePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> filePathMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'filePath',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  filePathIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'filePath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  filePathIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'filePath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileSizeIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'fileSize'),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  fileSizeIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'fileSize'),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileSizeEqualTo(
+    int? value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'fileSize', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  fileSizeGreaterThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'fileSize',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileSizeLessThan(
+    int? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'fileSize',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileSizeBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'fileSize',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileTypeIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'fileType'),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  fileTypeIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'fileType'),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileTypeEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'fileType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  fileTypeGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'fileType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileTypeLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'fileType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileTypeBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'fileType',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
+  fileTypeStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'fileType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1806,73 +2166,79 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'fileType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'fileType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileTypeContains(
-      String value,
-      {bool caseSensitive = true}) {
+    String value, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'fileType',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'fileType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> fileTypeMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'fileType',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'fileType',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      fileTypeIsEmpty() {
+  fileTypeIsEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'fileType',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'fileType', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      fileTypeIsNotEmpty() {
+  fileTypeIsNotEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'fileType',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'fileType', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      folderUriIsNull() {
+  folderUriIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'folderUri',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'folderUri'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      folderUriIsNotNull() {
+  folderUriIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'folderUri',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'folderUri'),
+      );
     });
   }
 
@@ -1881,27 +2247,31 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'folderUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'folderUri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      folderUriGreaterThan(
+  folderUriGreaterThan(
     String? value, {
     bool include = false,
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'folderUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'folderUri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1911,12 +2281,14 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'folderUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'folderUri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1928,28 +2300,29 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'folderUri',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'folderUri',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      folderUriStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
+  folderUriStartsWith(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'folderUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'folderUri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -1958,71 +2331,77 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'folderUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'folderUri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> folderUriContains(
-      String value,
-      {bool caseSensitive = true}) {
+    String value, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'folderUri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'folderUri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> folderUriMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'folderUri',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'folderUri',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      folderUriIsEmpty() {
+  folderUriIsEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'folderUri',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'folderUri', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      folderUriIsNotEmpty() {
+  folderUriIsNotEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'folderUri',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'folderUri', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> genreIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'genre',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'genre'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> genreIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'genre',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'genre'),
+      );
     });
   }
 
@@ -2031,11 +2410,13 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'genre',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'genre',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -2045,12 +2426,14 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'genre',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'genre',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -2060,12 +2443,14 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'genre',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'genre',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -2077,14 +2462,16 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'genre',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'genre',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -2093,11 +2480,13 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'genre',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'genre',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -2106,64 +2495,70 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'genre',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'genre',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> genreContains(
-      String value,
-      {bool caseSensitive = true}) {
+    String value, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'genre',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'genre',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> genreMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'genre',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'genre',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> genreIsEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'genre',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'genre', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      genreIsNotEmpty() {
+  genreIsNotEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'genre',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'genre', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> idEqualTo(
-      Id value) {
+    Id value,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'id',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'id', value: value),
+      );
     });
   }
 
@@ -2172,11 +2567,13 @@ extension SongEntityQueryFilter
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'id',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'id',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -2185,11 +2582,13 @@ extension SongEntityQueryFilter
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'id',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'id',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -2200,296 +2599,142 @@ extension SongEntityQueryFilter
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'id',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'id',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      lastModifiedIsNull() {
+  lastModifiedIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'lastModified',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'lastModified'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      lastModifiedIsNotNull() {
+  lastModifiedIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'lastModified',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'lastModified'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      lastModifiedEqualTo(DateTime? value) {
+  lastModifiedEqualTo(DateTime? value) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'lastModified',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'lastModified', value: value),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      lastModifiedGreaterThan(
-    DateTime? value, {
-    bool include = false,
-  }) {
+  lastModifiedGreaterThan(DateTime? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'lastModified',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'lastModified',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      lastModifiedLessThan(
-    DateTime? value, {
-    bool include = false,
-  }) {
+  lastModifiedLessThan(DateTime? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'lastModified',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'lastModified',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      lastModifiedBetween(
+  lastModifiedBetween(
     DateTime? lower,
     DateTime? upper, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'lastModified',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'lastModified',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      resolutionIsNull() {
+  sampleRateIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'resolution',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'sampleRate'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      resolutionIsNotNull() {
+  sampleRateIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'resolution',
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> resolutionEqualTo(
-    String? value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'resolution',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      resolutionGreaterThan(
-    String? value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'resolution',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      resolutionLessThan(
-    String? value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'resolution',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> resolutionBetween(
-    String? lower,
-    String? upper, {
-    bool includeLower = true,
-    bool includeUpper = true,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'resolution',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      resolutionStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'resolution',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      resolutionEndsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'resolution',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      resolutionContains(String value, {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'resolution',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> resolutionMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'resolution',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      resolutionIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'resolution',
-        value: '',
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      resolutionIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'resolution',
-        value: '',
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      sampleRateIsNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'sampleRate',
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      sampleRateIsNotNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'sampleRate',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'sampleRate'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> sampleRateEqualTo(
-      int? value) {
+    int? value,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'sampleRate',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'sampleRate', value: value),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      sampleRateGreaterThan(
-    int? value, {
-    bool include = false,
-  }) {
+  sampleRateGreaterThan(int? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'sampleRate',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'sampleRate',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      sampleRateLessThan(
-    int? value, {
-    bool include = false,
-  }) {
+  sampleRateLessThan(int? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'sampleRate',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'sampleRate',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -2500,13 +2745,15 @@ extension SongEntityQueryFilter
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'sampleRate',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'sampleRate',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
@@ -2515,11 +2762,13 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'title',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'title',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -2529,12 +2778,14 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'title',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'title',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -2544,12 +2795,14 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'title',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'title',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -2561,14 +2814,16 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'title',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'title',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -2577,11 +2832,13 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'title',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'title',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -2590,284 +2847,159 @@ extension SongEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'title',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'title',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> titleContains(
-      String value,
-      {bool caseSensitive = true}) {
+    String value, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'title',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'title',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> titleMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'title',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'title',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> titleIsEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'title',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'title', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      titleIsNotEmpty() {
+  titleIsNotEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'title',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'title', value: ''),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      trackNumberIsNull() {
+  trackNumberIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'trackNumber',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'trackNumber'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      trackNumberIsNotNull() {
+  trackNumberIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'trackNumber',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'trackNumber'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      trackNumberEqualTo(int? value) {
+  trackNumberEqualTo(int? value) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'trackNumber',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'trackNumber', value: value),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      trackNumberGreaterThan(
-    int? value, {
-    bool include = false,
-  }) {
+  trackNumberGreaterThan(int? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'trackNumber',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'trackNumber',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      trackNumberLessThan(
-    int? value, {
-    bool include = false,
-  }) {
+  trackNumberLessThan(int? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'trackNumber',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'trackNumber',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition>
-      trackNumberBetween(
+  trackNumberBetween(
     int? lower,
     int? upper, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'trackNumber',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> uriEqualTo(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> uriGreaterThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> uriLessThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> uriBetween(
-    String lower,
-    String upper, {
-    bool includeLower = true,
-    bool includeUpper = true,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'uri',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> uriStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> uriEndsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> uriContains(
-      String value,
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> uriMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'uri',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> uriIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'uri',
-        value: '',
-      ));
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> uriIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'uri',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'trackNumber',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> yearIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'year',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'year'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> yearIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'year',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'year'),
+      );
     });
   }
 
   QueryBuilder<SongEntity, SongEntity, QAfterFilterCondition> yearEqualTo(
-      int? value) {
+    int? value,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'year',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'year', value: value),
+      );
     });
   }
 
@@ -2876,11 +3008,13 @@ extension SongEntityQueryFilter
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'year',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'year',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -2889,11 +3023,13 @@ extension SongEntityQueryFilter
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'year',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'year',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -2904,13 +3040,15 @@ extension SongEntityQueryFilter
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'year',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'year',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 }
@@ -2935,15 +3073,27 @@ extension SongEntityQuerySortBy
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByAlbumArtUri() {
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByAlbumArtPath() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'albumArtUri', Sort.asc);
+      return query.addSortBy(r'albumArtPath', Sort.asc);
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByAlbumArtUriDesc() {
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByAlbumArtPathDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'albumArtUri', Sort.desc);
+      return query.addSortBy(r'albumArtPath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByAlbumArtist() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'albumArtist', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByAlbumArtistDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'albumArtist', Sort.desc);
     });
   }
 
@@ -2983,6 +3133,18 @@ extension SongEntityQuerySortBy
     });
   }
 
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByChannels() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'channels', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByChannelsDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'channels', Sort.desc);
+    });
+  }
+
   QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByDateAdded() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'dateAdded', Sort.asc);
@@ -2995,6 +3157,18 @@ extension SongEntityQuerySortBy
     });
   }
 
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByDiscNumber() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'discNumber', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByDiscNumberDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'discNumber', Sort.desc);
+    });
+  }
+
   QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByDurationMs() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'durationMs', Sort.asc);
@@ -3004,6 +3178,18 @@ extension SongEntityQuerySortBy
   QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByDurationMsDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'durationMs', Sort.desc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByFilePath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'filePath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByFilePathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'filePath', Sort.desc);
     });
   }
 
@@ -3067,18 +3253,6 @@ extension SongEntityQuerySortBy
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByResolution() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'resolution', Sort.asc);
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByResolutionDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'resolution', Sort.desc);
-    });
-  }
-
   QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortBySampleRate() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'sampleRate', Sort.asc);
@@ -3115,18 +3289,6 @@ extension SongEntityQuerySortBy
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByUri() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'uri', Sort.asc);
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByUriDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'uri', Sort.desc);
-    });
-  }
-
   QueryBuilder<SongEntity, SongEntity, QAfterSortBy> sortByYear() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'year', Sort.asc);
@@ -3154,15 +3316,27 @@ extension SongEntityQuerySortThenBy
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByAlbumArtUri() {
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByAlbumArtPath() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'albumArtUri', Sort.asc);
+      return query.addSortBy(r'albumArtPath', Sort.asc);
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByAlbumArtUriDesc() {
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByAlbumArtPathDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'albumArtUri', Sort.desc);
+      return query.addSortBy(r'albumArtPath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByAlbumArtist() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'albumArtist', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByAlbumArtistDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'albumArtist', Sort.desc);
     });
   }
 
@@ -3202,6 +3376,18 @@ extension SongEntityQuerySortThenBy
     });
   }
 
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByChannels() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'channels', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByChannelsDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'channels', Sort.desc);
+    });
+  }
+
   QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByDateAdded() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'dateAdded', Sort.asc);
@@ -3214,6 +3400,18 @@ extension SongEntityQuerySortThenBy
     });
   }
 
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByDiscNumber() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'discNumber', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByDiscNumberDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'discNumber', Sort.desc);
+    });
+  }
+
   QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByDurationMs() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'durationMs', Sort.asc);
@@ -3223,6 +3421,18 @@ extension SongEntityQuerySortThenBy
   QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByDurationMsDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'durationMs', Sort.desc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByFilePath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'filePath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByFilePathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'filePath', Sort.desc);
     });
   }
 
@@ -3298,18 +3508,6 @@ extension SongEntityQuerySortThenBy
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByResolution() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'resolution', Sort.asc);
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByResolutionDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'resolution', Sort.desc);
-    });
-  }
-
   QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenBySampleRate() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'sampleRate', Sort.asc);
@@ -3346,18 +3544,6 @@ extension SongEntityQuerySortThenBy
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByUri() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'uri', Sort.asc);
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByUriDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'uri', Sort.desc);
-    });
-  }
-
   QueryBuilder<SongEntity, SongEntity, QAfterSortBy> thenByYear() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'year', Sort.asc);
@@ -3373,22 +3559,33 @@ extension SongEntityQuerySortThenBy
 
 extension SongEntityQueryWhereDistinct
     on QueryBuilder<SongEntity, SongEntity, QDistinct> {
-  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByAlbum(
-      {bool caseSensitive = true}) {
+  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByAlbum({
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'album', caseSensitive: caseSensitive);
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByAlbumArtUri(
-      {bool caseSensitive = true}) {
+  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByAlbumArtPath({
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'albumArtUri', caseSensitive: caseSensitive);
+      return query.addDistinctBy(r'albumArtPath', caseSensitive: caseSensitive);
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByArtist(
-      {bool caseSensitive = true}) {
+  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByAlbumArtist({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'albumArtist', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByArtist({
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'artist', caseSensitive: caseSensitive);
     });
@@ -3406,9 +3603,21 @@ extension SongEntityQueryWhereDistinct
     });
   }
 
+  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByChannels() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'channels');
+    });
+  }
+
   QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByDateAdded() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'dateAdded');
+    });
+  }
+
+  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByDiscNumber() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'discNumber');
     });
   }
 
@@ -3418,28 +3627,39 @@ extension SongEntityQueryWhereDistinct
     });
   }
 
+  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByFilePath({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'filePath', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByFileSize() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'fileSize');
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByFileType(
-      {bool caseSensitive = true}) {
+  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByFileType({
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'fileType', caseSensitive: caseSensitive);
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByFolderUri(
-      {bool caseSensitive = true}) {
+  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByFolderUri({
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'folderUri', caseSensitive: caseSensitive);
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByGenre(
-      {bool caseSensitive = true}) {
+  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByGenre({
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'genre', caseSensitive: caseSensitive);
     });
@@ -3451,21 +3671,15 @@ extension SongEntityQueryWhereDistinct
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByResolution(
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'resolution', caseSensitive: caseSensitive);
-    });
-  }
-
   QueryBuilder<SongEntity, SongEntity, QDistinct> distinctBySampleRate() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'sampleRate');
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByTitle(
-      {bool caseSensitive = true}) {
+  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByTitle({
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'title', caseSensitive: caseSensitive);
     });
@@ -3474,13 +3688,6 @@ extension SongEntityQueryWhereDistinct
   QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByTrackNumber() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'trackNumber');
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QDistinct> distinctByUri(
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'uri', caseSensitive: caseSensitive);
     });
   }
 
@@ -3505,9 +3712,15 @@ extension SongEntityQueryProperty
     });
   }
 
-  QueryBuilder<SongEntity, String?, QQueryOperations> albumArtUriProperty() {
+  QueryBuilder<SongEntity, String?, QQueryOperations> albumArtPathProperty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'albumArtUri');
+      return query.addPropertyName(r'albumArtPath');
+    });
+  }
+
+  QueryBuilder<SongEntity, String?, QQueryOperations> albumArtistProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'albumArtist');
     });
   }
 
@@ -3529,25 +3742,43 @@ extension SongEntityQueryProperty
     });
   }
 
+  QueryBuilder<SongEntity, int?, QQueryOperations> channelsProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'channels');
+    });
+  }
+
   QueryBuilder<SongEntity, DateTime, QQueryOperations> dateAddedProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'dateAdded');
     });
   }
 
-  QueryBuilder<SongEntity, int, QQueryOperations> durationMsProperty() {
+  QueryBuilder<SongEntity, int?, QQueryOperations> discNumberProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'discNumber');
+    });
+  }
+
+  QueryBuilder<SongEntity, int?, QQueryOperations> durationMsProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'durationMs');
     });
   }
 
-  QueryBuilder<SongEntity, int, QQueryOperations> fileSizeProperty() {
+  QueryBuilder<SongEntity, String, QQueryOperations> filePathProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'filePath');
+    });
+  }
+
+  QueryBuilder<SongEntity, int?, QQueryOperations> fileSizeProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'fileSize');
     });
   }
 
-  QueryBuilder<SongEntity, String, QQueryOperations> fileTypeProperty() {
+  QueryBuilder<SongEntity, String?, QQueryOperations> fileTypeProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'fileType');
     });
@@ -3571,12 +3802,6 @@ extension SongEntityQueryProperty
     });
   }
 
-  QueryBuilder<SongEntity, String?, QQueryOperations> resolutionProperty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'resolution');
-    });
-  }
-
   QueryBuilder<SongEntity, int?, QQueryOperations> sampleRateProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'sampleRate');
@@ -3592,12 +3817,6 @@ extension SongEntityQueryProperty
   QueryBuilder<SongEntity, int?, QQueryOperations> trackNumberProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'trackNumber');
-    });
-  }
-
-  QueryBuilder<SongEntity, String, QQueryOperations> uriProperty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'uri');
     });
   }
 

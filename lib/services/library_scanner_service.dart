@@ -141,7 +141,7 @@ class LibraryScannerService {
   /// Full metadata extraction via Rust will be added in a later phase.
   SongEntity _createSongEntity(AudioFileInfo file, String folderUri) {
     final entity = SongEntity()
-      ..uri = file.uri
+      ..filePath = file.uri
       ..title = _extractTitleFromFilename(file.name)
       ..artist = 'Unknown Artist'
       ..durationMs =

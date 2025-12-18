@@ -37,12 +37,9 @@ const FolderEntitySchema = CollectionSchema(
       name: r'songCount',
       type: IsarType.long,
     ),
-    r'uri': PropertySchema(
-      id: 4,
-      name: r'uri',
-      type: IsarType.string,
-    )
+    r'uri': PropertySchema(id: 4, name: r'uri', type: IsarType.string),
   },
+
   estimateSize: _folderEntityEstimateSize,
   serialize: _folderEntitySerialize,
   deserialize: _folderEntityDeserialize,
@@ -59,16 +56,17 @@ const FolderEntitySchema = CollectionSchema(
           name: r'uri',
           type: IndexType.hash,
           caseSensitive: true,
-        )
+        ),
       ],
-    )
+    ),
   },
   links: {},
   embeddedSchemas: {},
+
   getId: _folderEntityGetId,
   getLinks: _folderEntityGetLinks,
   attach: _folderEntityAttach,
-  version: '3.1.0+1',
+  version: '3.3.0',
 );
 
 int _folderEntityEstimateSize(
@@ -142,7 +140,10 @@ List<IsarLinkBase<dynamic>> _folderEntityGetLinks(FolderEntity object) {
 }
 
 void _folderEntityAttach(
-    IsarCollection<dynamic> col, Id id, FolderEntity object) {
+  IsarCollection<dynamic> col,
+  Id id,
+  FolderEntity object,
+) {
   object.id = id;
 }
 
@@ -195,8 +196,10 @@ extension FolderEntityByIndex on IsarCollection<FolderEntity> {
     return putAllByIndex(r'uri', objects);
   }
 
-  List<Id> putAllByUriSync(List<FolderEntity> objects,
-      {bool saveLinks = true}) {
+  List<Id> putAllByUriSync(
+    List<FolderEntity> objects, {
+    bool saveLinks = true,
+  }) {
     return putAllByIndexSync(r'uri', objects, saveLinks: saveLinks);
   }
 }
@@ -214,15 +217,13 @@ extension FolderEntityQueryWhere
     on QueryBuilder<FolderEntity, FolderEntity, QWhereClause> {
   QueryBuilder<FolderEntity, FolderEntity, QAfterWhereClause> idEqualTo(Id id) {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IdWhereClause.between(
-        lower: id,
-        upper: id,
-      ));
+      return query.addWhereClause(IdWhereClause.between(lower: id, upper: id));
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterWhereClause> idNotEqualTo(
-      Id id) {
+    Id id,
+  ) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
@@ -245,8 +246,9 @@ extension FolderEntityQueryWhere
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterWhereClause> idGreaterThan(
-      Id id,
-      {bool include = false}) {
+    Id id, {
+    bool include = false,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
         IdWhereClause.greaterThan(lower: id, includeLower: include),
@@ -254,8 +256,10 @@ extension FolderEntityQueryWhere
     });
   }
 
-  QueryBuilder<FolderEntity, FolderEntity, QAfterWhereClause> idLessThan(Id id,
-      {bool include = false}) {
+  QueryBuilder<FolderEntity, FolderEntity, QAfterWhereClause> idLessThan(
+    Id id, {
+    bool include = false,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
         IdWhereClause.lessThan(upper: id, includeUpper: include),
@@ -270,56 +274,67 @@ extension FolderEntityQueryWhere
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IdWhereClause.between(
-        lower: lowerId,
-        includeLower: includeLower,
-        upper: upperId,
-        includeUpper: includeUpper,
-      ));
+      return query.addWhereClause(
+        IdWhereClause.between(
+          lower: lowerId,
+          includeLower: includeLower,
+          upper: upperId,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterWhereClause> uriEqualTo(
-      String uri) {
+    String uri,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'uri',
-        value: [uri],
-      ));
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'uri', value: [uri]),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterWhereClause> uriNotEqualTo(
-      String uri) {
+    String uri,
+  ) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'uri',
-              lower: [],
-              upper: [uri],
-              includeUpper: false,
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'uri',
-              lower: [uri],
-              includeLower: false,
-              upper: [],
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'uri',
+                lower: [],
+                upper: [uri],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'uri',
+                lower: [uri],
+                includeLower: false,
+                upper: [],
+              ),
+            );
       } else {
         return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'uri',
-              lower: [uri],
-              includeLower: false,
-              upper: [],
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'uri',
-              lower: [],
-              upper: [uri],
-              includeUpper: false,
-            ));
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'uri',
+                lower: [uri],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'uri',
+                lower: [],
+                upper: [uri],
+                includeUpper: false,
+              ),
+            );
       }
     });
   }
@@ -328,109 +343,111 @@ extension FolderEntityQueryWhere
 extension FolderEntityQueryFilter
     on QueryBuilder<FolderEntity, FolderEntity, QFilterCondition> {
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      dateAddedEqualTo(DateTime value) {
+  dateAddedEqualTo(DateTime value) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'dateAdded',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'dateAdded', value: value),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      dateAddedGreaterThan(
-    DateTime value, {
-    bool include = false,
-  }) {
+  dateAddedGreaterThan(DateTime value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'dateAdded',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'dateAdded',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      dateAddedLessThan(
-    DateTime value, {
-    bool include = false,
-  }) {
+  dateAddedLessThan(DateTime value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'dateAdded',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'dateAdded',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      dateAddedBetween(
+  dateAddedBetween(
     DateTime lower,
     DateTime upper, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'dateAdded',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'dateAdded',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      displayNameEqualTo(
-    String value, {
-    bool caseSensitive = true,
-  }) {
+  displayNameEqualTo(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'displayName',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'displayName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      displayNameGreaterThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'displayName',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      displayNameLessThan(
+  displayNameGreaterThan(
     String value, {
     bool include = false,
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'displayName',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'displayName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      displayNameBetween(
+  displayNameLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'displayName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
+  displayNameBetween(
     String lower,
     String upper, {
     bool includeLower = true,
@@ -438,94 +455,96 @@ extension FolderEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'displayName',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'displayName',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      displayNameStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
+  displayNameStartsWith(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'displayName',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'displayName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      displayNameEndsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
+  displayNameEndsWith(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'displayName',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'displayName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      displayNameContains(String value, {bool caseSensitive = true}) {
+  displayNameContains(String value, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'displayName',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'displayName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      displayNameMatches(String pattern, {bool caseSensitive = true}) {
+  displayNameMatches(String pattern, {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'displayName',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'displayName',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      displayNameIsEmpty() {
+  displayNameIsEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'displayName',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'displayName', value: ''),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      displayNameIsNotEmpty() {
+  displayNameIsNotEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'displayName',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'displayName', value: ''),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition> idEqualTo(
-      Id value) {
+    Id value,
+  ) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'id',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'id', value: value),
+      );
     });
   }
 
@@ -534,11 +553,13 @@ extension FolderEntityQueryFilter
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'id',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'id',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -547,11 +568,13 @@ extension FolderEntityQueryFilter
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'id',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'id',
+          value: value,
+        ),
+      );
     });
   }
 
@@ -562,143 +585,143 @@ extension FolderEntityQueryFilter
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'id',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'id',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      lastScannedIsNull() {
+  lastScannedIsNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'lastScanned',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'lastScanned'),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      lastScannedIsNotNull() {
+  lastScannedIsNotNull() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'lastScanned',
-      ));
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'lastScanned'),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      lastScannedEqualTo(DateTime? value) {
+  lastScannedEqualTo(DateTime? value) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'lastScanned',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'lastScanned', value: value),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      lastScannedGreaterThan(
-    DateTime? value, {
-    bool include = false,
-  }) {
+  lastScannedGreaterThan(DateTime? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'lastScanned',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'lastScanned',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      lastScannedLessThan(
-    DateTime? value, {
-    bool include = false,
-  }) {
+  lastScannedLessThan(DateTime? value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'lastScanned',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'lastScanned',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      lastScannedBetween(
+  lastScannedBetween(
     DateTime? lower,
     DateTime? upper, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'lastScanned',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'lastScanned',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      songCountEqualTo(int value) {
+  songCountEqualTo(int value) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'songCount',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'songCount', value: value),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      songCountGreaterThan(
-    int value, {
-    bool include = false,
-  }) {
+  songCountGreaterThan(int value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'songCount',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'songCount',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      songCountLessThan(
-    int value, {
-    bool include = false,
-  }) {
+  songCountLessThan(int value, {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'songCount',
-        value: value,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'songCount',
+          value: value,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      songCountBetween(
+  songCountBetween(
     int lower,
     int upper, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'songCount',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'songCount',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
     });
   }
 
@@ -707,27 +730,31 @@ extension FolderEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'uri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      uriGreaterThan(
+  uriGreaterThan(
     String value, {
     bool include = false,
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'uri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -737,12 +764,14 @@ extension FolderEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'uri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -754,14 +783,16 @@ extension FolderEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'uri',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'uri',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -770,11 +801,13 @@ extension FolderEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'uri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
@@ -783,54 +816,60 @@ extension FolderEntityQueryFilter
     bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'uri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition> uriContains(
-      String value,
-      {bool caseSensitive = true}) {
+    String value, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'uri',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'uri',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition> uriMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'uri',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'uri',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition> uriIsEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'uri',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'uri', value: ''),
+      );
     });
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterFilterCondition>
-      uriIsNotEmpty() {
+  uriIsNotEmpty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'uri',
-        value: '',
-      ));
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'uri', value: ''),
+      );
     });
   }
 }
@@ -862,7 +901,7 @@ extension FolderEntityQuerySortBy
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterSortBy>
-      sortByDisplayNameDesc() {
+  sortByDisplayNameDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'displayName', Sort.desc);
     });
@@ -875,7 +914,7 @@ extension FolderEntityQuerySortBy
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterSortBy>
-      sortByLastScannedDesc() {
+  sortByLastScannedDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lastScanned', Sort.desc);
     });
@@ -927,7 +966,7 @@ extension FolderEntityQuerySortThenBy
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterSortBy>
-      thenByDisplayNameDesc() {
+  thenByDisplayNameDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'displayName', Sort.desc);
     });
@@ -952,7 +991,7 @@ extension FolderEntityQuerySortThenBy
   }
 
   QueryBuilder<FolderEntity, FolderEntity, QAfterSortBy>
-      thenByLastScannedDesc() {
+  thenByLastScannedDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lastScanned', Sort.desc);
     });
@@ -991,8 +1030,9 @@ extension FolderEntityQueryWhereDistinct
     });
   }
 
-  QueryBuilder<FolderEntity, FolderEntity, QDistinct> distinctByDisplayName(
-      {bool caseSensitive = true}) {
+  QueryBuilder<FolderEntity, FolderEntity, QDistinct> distinctByDisplayName({
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'displayName', caseSensitive: caseSensitive);
     });
@@ -1010,8 +1050,9 @@ extension FolderEntityQueryWhereDistinct
     });
   }
 
-  QueryBuilder<FolderEntity, FolderEntity, QDistinct> distinctByUri(
-      {bool caseSensitive = true}) {
+  QueryBuilder<FolderEntity, FolderEntity, QDistinct> distinctByUri({
+    bool caseSensitive = true,
+  }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'uri', caseSensitive: caseSensitive);
     });
@@ -1039,7 +1080,7 @@ extension FolderEntityQueryProperty
   }
 
   QueryBuilder<FolderEntity, DateTime?, QQueryOperations>
-      lastScannedProperty() {
+  lastScannedProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'lastScanned');
     });
