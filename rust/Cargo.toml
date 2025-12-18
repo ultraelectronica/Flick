@@ -6,8 +6,12 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "staticlib"]
 
+
+
 [dependencies]
 flutter_rust_bridge = "=2.11.1"
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+lofty = "0.21.1"
+walkdir = "2"
+rayon = "1.8"
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] } # Often useful particularly with bridge

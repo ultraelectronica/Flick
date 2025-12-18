@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flick_player/core/theme/app_colors.dart';
-import 'package:flick_player/core/constants/app_constants.dart';
-import 'package:flick_player/models/song.dart';
-import 'package:flick_player/features/songs/widgets/orbit_scroll.dart';
+import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/constants/app_constants.dart';
+import 'package:flick/models/song.dart';
+import 'package:flick/features/songs/widgets/orbit_scroll.dart';
+import 'package:flick/data/repositories/song_repository.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Main songs screen with orbital scrolling.
 class SongsScreen extends StatefulWidget {
@@ -14,7 +16,43 @@ class SongsScreen extends StatefulWidget {
 
 class _SongsScreenState extends State<SongsScreen> {
   int _selectedIndex = 0;
-  final List<Song> _songs = Song.sampleSongs;
+  List<Song> _songs = [];
+  bool _isLoading = true;
+  final SongRepository _songRepository = SongRepository();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSongs();
+    // Listen for changes in the songs collection
+    _songRepository.watchSongs().listen((_) {
+      _loadSongs();
+    });
+  }
+
+  Future<void> _loadSongs() async {
+    try {
+      final songs = await _songRepository.getAllSongs();
+      if (mounted) {
+        setState(() {
+          _songs = songs;
+          _isLoading = false;
+          // Reset selected index if out of bounds
+          if (_selectedIndex >= songs.length && songs.isNotEmpty) {
+            _selectedIndex = 0;
+          }
+        });
+      }
+    } catch (e) {
+      // If database not ready, use sample songs for now
+      if (mounted) {
+        setState(() {
+          _songs = Song.sampleSongs;
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,29 +71,68 @@ class _SongsScreenState extends State<SongsScreen> {
                 // Header
                 _buildHeader(),
 
-                // Orbit scroll area
+                // Content based on state
                 Expanded(
-                  child: OrbitScroll(
-                    songs: _songs,
-                    selectedIndex: _selectedIndex,
-                    onSelectedIndexChanged: (index) {
-                      setState(() {
-                        _selectedIndex = index;
-                      });
-                    },
-                    onSongSelected: (index) {
-                      // Handle song tap - could play or show details
-                      setState(() {
-                        _selectedIndex = index;
-                      });
-                    },
-                  ),
+                  child: _isLoading
+                      ? _buildLoadingState()
+                      : _songs.isEmpty
+                      ? _buildEmptyState()
+                      : OrbitScroll(
+                          songs: _songs,
+                          selectedIndex: _selectedIndex,
+                          onSelectedIndexChanged: (index) {
+                            setState(() {
+                              _selectedIndex = index;
+                            });
+                          },
+                          onSongSelected: (index) {
+                            setState(() {
+                              _selectedIndex = index;
+                            });
+                          },
+                        ),
                 ),
 
                 // Space for nav bar
                 const SizedBox(height: AppConstants.navBarHeight + 40),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return const Center(
+      child: CircularProgressIndicator(color: AppColors.textSecondary),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            LucideIcons.music4,
+            size: 64,
+            color: AppColors.textTertiary.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: AppConstants.spacingLg),
+          Text(
+            'No Music Yet',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppConstants.spacingSm),
+          Text(
+            'Add a music folder in Settings',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppColors.textTertiary),
           ),
         ],
       ),

@@ -2,9 +2,9 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flick_player/core/theme/app_colors.dart';
-import 'package:flick_player/core/constants/app_constants.dart';
-import 'package:flick_player/widgets/navigation/nav_button.dart';
+import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/constants/app_constants.dart';
+import 'package:flick/widgets/navigation/nav_button.dart';
 
 /// Navigation destination enum for type-safe navigation.
 enum NavDestination { menu, songs, settings }

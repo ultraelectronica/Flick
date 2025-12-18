@@ -1,5 +1,5 @@
-name: flick_player
-description: "A new Flutter project."
+name: flick
+description: "A music player with custom built UAC 2.0"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
@@ -29,21 +29,29 @@ environment:
 # versions available, run `flutter pub outdated`.
 dependencies:
   cupertino_icons: ^1.0.8
-  curved_navigation_bar: ^1.0.6
   flutter:
     sdk: flutter
   flutter_displaymode: ^0.7.0
   flutter_rust_bridge: 2.11.1
+  isar_community: ^3.3.0
+  isar_community_flutter_libs: ^3.3.0
   lucide_icons_flutter: ^3.1.8
+  path_provider: ^2.1.1
+  permission_handler: ^12.0.1
   rust_lib_flick_player:
     path: rust_builder
+  salomon_bottom_bar: ^3.3.2
+  shared_preferences: ^2.2.2
+  skeletonizer: ^2.1.2
 
 dev_dependencies:
+  build_runner: ^2.4.13
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
   integration_test:
     sdk: flutter
+  isar_community_generator: ^3.3.0
 
 flutter:
   uses-material-design: true

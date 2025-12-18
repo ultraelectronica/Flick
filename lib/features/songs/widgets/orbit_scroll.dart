@@ -3,10 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flick_player/core/theme/app_colors.dart';
-import 'package:flick_player/core/constants/app_constants.dart';
-import 'package:flick_player/models/song.dart';
-import 'package:flick_player/features/songs/widgets/song_card.dart';
+import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/constants/app_constants.dart';
+import 'package:flick/models/song.dart';
+import 'package:flick/features/songs/widgets/song_card.dart';
 
 /// Orbital scrolling widget that displays songs in a curved arc.
 class OrbitScroll extends StatefulWidget {

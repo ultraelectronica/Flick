@@ -11,16 +11,11 @@ buildscript {
 
     dependencies {
         // The Android Gradle Plugin knows how to build native code with the NDK.
-        classpath 'com.android.tools.build:gradle:7.3.0'
+        classpath 'com.android.tools.build:gradle:8.11.1'
     }
 }
 
-rootProject.allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+// repositories are handled by the root project in Flutter projects.
 
 apply plugin: 'com.android.library'
 

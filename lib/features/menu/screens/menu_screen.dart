@@ -2,8 +2,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flick_player/core/theme/app_colors.dart';
-import 'package:flick_player/core/constants/app_constants.dart';
+import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/constants/app_constants.dart';
 
 /// Menu screen with navigation options matching the design language.
 class MenuScreen extends StatelessWidget {

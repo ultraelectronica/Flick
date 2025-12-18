@@ -2,8 +2,12 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flick_player/core/theme/app_colors.dart';
-import 'package:flick_player/core/constants/app_constants.dart';
+import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/constants/app_constants.dart';
+import 'package:flick/services/music_folder_service.dart';
+import 'package:flick/services/library_scanner_service.dart';
+import 'package:flick/data/repositories/song_repository.dart';
+import 'package:flick/widgets/common/glass_dialog.dart';
 
 /// Settings screen matching the design language.
 class SettingsScreen extends StatefulWidget {
@@ -19,6 +23,104 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _crossfade = false;
   bool _showAlbumArt = true;
   double _crossfadeDuration = 5.0;
+
+  // Library state
+  final MusicFolderService _folderService = MusicFolderService();
+  final LibraryScannerService _scannerService = LibraryScannerService();
+  final SongRepository _songRepository = SongRepository();
+  List<MusicFolder> _folders = [];
+  int _songCount = 0;
+  bool _isScanning = false;
+  ScanProgress? _scanProgress;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLibraryData();
+  }
+
+  Future<void> _loadLibraryData() async {
+    final folders = await _folderService.getSavedFolders();
+    final count = await _songRepository.getSongCount();
+    if (mounted) {
+      setState(() {
+        _folders = folders;
+        _songCount = count;
+      });
+    }
+  }
+
+  Future<void> _addFolder() async {
+    try {
+      final folder = await _folderService.addFolder();
+      if (folder != null) {
+        await _loadLibraryData();
+        // Start scanning the new folder
+        await _scanFolder(folder.uri, folder.displayName);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to add folder: $e')));
+      }
+    }
+  }
+
+  Future<void> _removeFolder(MusicFolder folder) async {
+    try {
+      await _folderService.removeFolder(folder.uri);
+      await _loadLibraryData();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to remove folder: $e')));
+      }
+    }
+  }
+
+  Future<void> _scanFolder(String uri, String displayName) async {
+    setState(() {
+      _isScanning = true;
+      _scanProgress = null;
+    });
+
+    await for (final progress in _scannerService.scanFolder(uri, displayName)) {
+      if (mounted) {
+        setState(() => _scanProgress = progress);
+      }
+    }
+
+    await _loadLibraryData();
+    if (mounted) {
+      setState(() {
+        _isScanning = false;
+        _scanProgress = null;
+      });
+    }
+  }
+
+  Future<void> _rescanAllFolders() async {
+    setState(() {
+      _isScanning = true;
+      _scanProgress = null;
+    });
+
+    await for (final progress in _scannerService.scanAllFolders()) {
+      if (mounted) {
+        setState(() => _scanProgress = progress);
+      }
+    }
+
+    await _loadLibraryData();
+    if (mounted) {
+      setState(() {
+        _isScanning = false;
+        _scanProgress = null;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +145,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Library section
+                    _buildSectionHeader(context, 'Library'),
+                    _buildLibraryCard(context),
+
+                    const SizedBox(height: AppConstants.spacingLg),
+
                     // Playback section
                     _buildSectionHeader(context, 'Playback'),
                     _buildSettingsCard(
@@ -212,6 +320,278 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: AppColors.textTertiary,
           letterSpacing: 1.2,
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLibraryCard(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: AppConstants.glassBlurSigmaLight,
+          sigmaY: AppConstants.glassBlurSigmaLight,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.glassBackground,
+            borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+            border: Border.all(color: AppColors.glassBorder, width: 1),
+          ),
+          child: Column(
+            children: [
+              // Song count info
+              _buildLibraryInfo(context),
+              _buildDivider(),
+
+              // Scanning progress (if scanning)
+              if (_isScanning && _scanProgress != null) ...[
+                _buildScanProgress(context),
+                _buildDivider(),
+              ],
+
+              // Music folders list
+              ..._folders.map(
+                (folder) => Column(
+                  children: [
+                    _buildFolderItem(context, folder),
+                    if (_folders.last != folder) _buildDivider(),
+                  ],
+                ),
+              ),
+
+              if (_folders.isNotEmpty) _buildDivider(),
+
+              // Add folder button
+              _buildActionButton(
+                context,
+                icon: LucideIcons.folderPlus,
+                title: 'Add Music Folder',
+                subtitle: 'Select a folder to scan',
+                onTap: _isScanning ? null : _addFolder,
+              ),
+
+              if (_folders.isNotEmpty) ...[
+                _buildDivider(),
+                _buildActionButton(
+                  context,
+                  icon: LucideIcons.refreshCw,
+                  title: 'Rescan Library',
+                  subtitle: 'Re-index all folders',
+                  onTap: _isScanning ? null : _rescanAllFolders,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLibraryInfo(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(AppConstants.spacingMd),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.glassBackgroundStrong,
+              borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+            ),
+            child: const Icon(
+              LucideIcons.music,
+              color: AppColors.textSecondary,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: AppConstants.spacingMd),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Library', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 2),
+                Text(
+                  '$_songCount songs in ${_folders.length} ${_folders.length == 1 ? 'folder' : 'folders'}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScanProgress(BuildContext context) {
+    final progress = _scanProgress!;
+    return Padding(
+      padding: const EdgeInsets.all(AppConstants.spacingMd),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: AppConstants.spacingSm),
+              Expanded(
+                child: Text(
+                  progress.currentFolder ?? 'Scanning...',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppConstants.spacingXs),
+          Text(
+            'Found ${progress.songsFound} songs',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.textTertiary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFolderItem(BuildContext context, MusicFolder folder) {
+    return Material(
+      color: Colors.transparent,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppConstants.spacingMd,
+          vertical: AppConstants.spacingSm,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.glassBackgroundStrong,
+                borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+              ),
+              child: const Icon(
+                LucideIcons.folder,
+                color: AppColors.textSecondary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: AppConstants.spacingMd),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    folder.displayName,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(
+                LucideIcons.trash2,
+                color: AppColors.textTertiary,
+                size: 18,
+              ),
+              onPressed: () => _confirmRemoveFolder(folder),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmRemoveFolder(MusicFolder folder) {
+    showDialog(
+      context: context,
+      builder: (context) => GlassDialog(
+        title: 'Remove Folder?',
+        content: Text('Remove "${folder.displayName}" from your library?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _removeFolder(folder);
+            },
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.spacingMd),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.glassBackgroundStrong,
+                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                ),
+                child: Icon(
+                  icon,
+                  color: onTap != null
+                      ? AppColors.textSecondary
+                      : AppColors.textTertiary,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: AppConstants.spacingMd),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: onTap != null ? null : AppColors.textTertiary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

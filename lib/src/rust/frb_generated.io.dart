@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/scanner.dart';
 import 'api/simple.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -19,10 +20,46 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   });
 
   @protected
+  Map<String, PlatformInt64> dco_decode_Map_String_i_64_None(dynamic raw);
+
+  @protected
   String dco_decode_String(dynamic raw);
 
   @protected
+  AudioFileMetadata dco_decode_audio_file_metadata(dynamic raw);
+
+  @protected
+  BigInt dco_decode_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
+  List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<AudioFileMetadata> dco_decode_list_audio_file_metadata(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<(String, PlatformInt64)> dco_decode_list_record_string_i_64(dynamic raw);
+
+  @protected
+  String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  (String, PlatformInt64) dco_decode_record_string_i_64(dynamic raw);
+
+  @protected
+  ScanResult dco_decode_scan_result(dynamic raw);
+
+  @protected
+  BigInt dco_decode_u_64(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -31,10 +68,56 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void dco_decode_unit(dynamic raw);
 
   @protected
+  Map<String, PlatformInt64> sse_decode_Map_String_i_64_None(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  AudioFileMetadata sse_decode_audio_file_metadata(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<AudioFileMetadata> sse_decode_list_audio_file_metadata(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<(String, PlatformInt64)> sse_decode_list_record_string_i_64(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  (String, PlatformInt64) sse_decode_record_string_i_64(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ScanResult sse_decode_scan_result(SseDeserializer deserializer);
+
+  @protected
+  BigInt sse_decode_u_64(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -49,13 +132,64 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  void sse_encode_Map_String_i_64_None(
+    Map<String, PlatformInt64> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_String(String self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_audio_file_metadata(
+    AudioFileMetadata self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_audio_file_metadata(
+    List<AudioFileMetadata> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_record_string_i_64(
+    List<(String, PlatformInt64)> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_record_string_i_64(
+    (String, PlatformInt64) self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_scan_result(ScanResult self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_64(BigInt self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);
