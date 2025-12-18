@@ -93,6 +93,33 @@ class SongRepository {
     });
   }
 
+  /// Get all song entities (internal use)
+  Future<List<SongEntity>> getAllSongEntities() async {
+    return await _isar.songEntitys.where().findAll();
+  }
+
+  /// Delete songs by their file paths.
+  Future<void> deleteSongsByPath(List<String> paths) async {
+    await _isar.writeTxn(() async {
+      // Isar doesn't support 'in' clause for string indexes easily in one go without query loop or huge generic 'or'
+      // Optimally, we delete by ID, but we have paths.
+      // Let's find IDs first.
+      // For large lists, chunking might be needed, but Isar is fast.
+      // Alternative: logical OR.
+
+      // If list is small, loop delete is fine. If large, batch.
+      // Let's do a simple loop for now as deletions are usually rare/few.
+      for (final path in paths) {
+        await _isar.songEntitys.filter().filePathEqualTo(path).deleteAll();
+      }
+    });
+  }
+
+  /// Count songs in a folder.
+  Future<int> countSongsInFolder(String folderUri) async {
+    return await _isar.songEntitys.filter().folderUriEqualTo(folderUri).count();
+  }
+
   /// Delete all songs.
   Future<void> deleteAllSongs() async {
     await _isar.writeTxn(() async {

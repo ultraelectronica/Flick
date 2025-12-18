@@ -214,6 +214,7 @@ class _MainShellState extends State<MainShell>
                 title: const Text(
                   'Menu',
                   style: TextStyle(
+                    fontFamily: 'ProductSans',
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.3,
                   ),
@@ -226,6 +227,7 @@ class _MainShellState extends State<MainShell>
                 title: const Text(
                   'Songs',
                   style: TextStyle(
+                    fontFamily: 'ProductSans',
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.3,
                   ),
@@ -238,6 +240,7 @@ class _MainShellState extends State<MainShell>
                 title: const Text(
                   'Settings',
                   style: TextStyle(
+                    fontFamily: 'ProductSans',
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.3,
                   ),

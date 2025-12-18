@@ -1,9 +1,10 @@
 import 'dart:async';
 
 import '../data/database.dart';
+import '../data/entities/song_entity.dart';
 import '../data/repositories/song_repository.dart';
 import '../data/repositories/folder_repository.dart';
-import 'music_folder_service.dart';
+import '../src/rust/api/scanner.dart'; // Rust bridge
 
 /// Progress update during library scanning.
 class ScanProgress {
@@ -24,31 +25,24 @@ class ScanProgress {
 
 /// Service for scanning music folders and indexing songs in the database.
 class LibraryScannerService {
-  final MusicFolderService _folderService;
   final SongRepository _songRepository;
   final FolderRepository _folderRepository;
 
   bool _isCancelled = false;
 
   LibraryScannerService({
-    MusicFolderService? folderService,
     SongRepository? songRepository,
     FolderRepository? folderRepository,
-  }) : _folderService = folderService ?? MusicFolderService(),
-       _songRepository = songRepository ?? SongRepository(),
+  }) : _songRepository = songRepository ?? SongRepository(),
        _folderRepository = folderRepository ?? FolderRepository();
 
-  /// Cancel the current scan.
   void cancelScan() {
     _isCancelled = true;
   }
 
-  /// Scan a single folder and add songs to the database.
-  /// Returns a stream of progress updates.
+  /// Scan a single folder using Rust scanner.
   Stream<ScanProgress> scanFolder(String folderUri, String displayName) async* {
     _isCancelled = false;
-    int songsFound = 0;
-    int totalFiles = 0;
 
     yield ScanProgress(
       songsFound: 0,
@@ -57,120 +51,108 @@ class LibraryScannerService {
       isComplete: false,
     );
 
-    // Get audio files from folder
-    final audioFiles = await _folderService.scanFolder(folderUri);
-    totalFiles = audioFiles.length;
+    // 1. Fetch existing file state from DB for this folder (or all folders if easier,
+    // but per-folder is safer if URIs are reliable).
+    // For now, let's fetch ALL songs to build the known map to avoid duplicates across moved files.
+    // Optimization: In a real incremental scan of just one folder, we might only want that folder's files,
+    // but to detect moves/duplicates, global knowledge is better.
+    // Let's implement global fetch for now as it's safer against duplicates.
+    final existingSongs = await _songRepository.getAllSongEntities();
+    final knownFiles = <String, int>{};
+    for (var song in existingSongs) {
+      if (song.lastModified != null) {
+        knownFiles[song.filePath] =
+            song.lastModified!.millisecondsSinceEpoch ~/ 1000;
+      }
+    }
 
-    yield ScanProgress(
-      songsFound: 0,
-      totalFiles: totalFiles,
-      currentFolder: displayName,
-      isComplete: false,
-    );
+    // 2. Call Rust Scanner
+    final result = scanRootDir(rootPath: folderUri, knownFiles: knownFiles);
 
-    // Process files in batches
+    // 3. Process Deletions
+    if (result.deletedPaths.isNotEmpty) {
+      await _songRepository.deleteSongsByPath(result.deletedPaths);
+    }
+
+    // 4. Process New/Modified
+    int processed = 0;
+    int total = result.newOrModified.length;
+
+    // Batch insert
     final batch = <SongEntity>[];
-    const batchSize = 50;
+    const batchSize = 100;
 
-    for (final file in audioFiles) {
+    for (final metadata in result.newOrModified) {
       if (_isCancelled) break;
 
-      // Create song entity with basic info
-      // Metadata extraction will be done via Rust in a future phase
-      final entity = _createSongEntity(file, folderUri);
-      batch.add(entity);
-      songsFound++;
+      final song = SongEntity()
+        ..filePath = metadata.path
+        ..title =
+            metadata.title ??
+            _extractTitleFromFilename(metadata.path.split('/').last)
+        ..artist = metadata.artist ?? 'Unknown Artist'
+        ..album = metadata.album
+        ..durationMs = metadata.durationSecs != null
+            ? (metadata.durationSecs! * BigInt.from(1000)).toInt()
+            : 0
+        ..fileType = metadata.format.toUpperCase()
+        ..dateAdded = DateTime.now()
+        ..lastModified = DateTime.fromMillisecondsSinceEpoch(
+          metadata.lastModified * 1000,
+        )
+        ..folderUri = folderUri;
 
-      // Batch insert
+      batch.add(song);
+      processed++;
+
       if (batch.length >= batchSize) {
         await _songRepository.upsertSongs(batch);
         batch.clear();
-      }
 
-      yield ScanProgress(
-        songsFound: songsFound,
-        totalFiles: totalFiles,
-        currentFile: file.name,
-        currentFolder: displayName,
-        isComplete: false,
-      );
+        yield ScanProgress(
+          songsFound: processed,
+          totalFiles: total,
+          currentFile: song.title,
+          currentFolder: displayName,
+          isComplete: false,
+        );
+      }
     }
 
-    // Insert remaining songs
     if (batch.isNotEmpty) {
       await _songRepository.upsertSongs(batch);
     }
 
-    // Update folder scan info
-    await _folderRepository.updateFolderScanInfo(folderUri, songsFound);
+    // Update folder stats
+    final finalCount = await _songRepository.countSongsInFolder(folderUri);
+    await _folderRepository.updateFolderScanInfo(folderUri, finalCount);
 
     yield ScanProgress(
-      songsFound: songsFound,
-      totalFiles: totalFiles,
+      songsFound: processed,
+      totalFiles: total,
       currentFolder: displayName,
       isComplete: true,
     );
   }
 
-  /// Scan all saved folders and update the library.
   Stream<ScanProgress> scanAllFolders() async* {
     _isCancelled = false;
-    final folders = await _folderService.getSavedFolders();
-
-    int totalSongsFound = 0;
-    int totalFiles = 0;
+    final folders = await _folderRepository
+        .getAllFolders(); // Assuming repository has this
 
     for (final folder in folders) {
       if (_isCancelled) break;
-
       await for (final progress in scanFolder(folder.uri, folder.displayName)) {
-        totalSongsFound = progress.songsFound;
-        totalFiles = progress.totalFiles;
         yield progress;
       }
     }
-
-    yield ScanProgress(
-      songsFound: totalSongsFound,
-      totalFiles: totalFiles,
-      isComplete: true,
-    );
   }
 
-  /// Create a SongEntity from AudioFileInfo with basic metadata.
-  /// Full metadata extraction via Rust will be added in a later phase.
-  SongEntity _createSongEntity(AudioFileInfo file, String folderUri) {
-    final entity = SongEntity()
-      ..filePath = file.uri
-      ..title = _extractTitleFromFilename(file.name)
-      ..artist = 'Unknown Artist'
-      ..durationMs =
-          0 // Will be populated by Rust metadata extraction
-      ..fileType = file.extension.toUpperCase()
-      ..fileSize = file.size
-      ..dateAdded = DateTime.now()
-      ..lastModified = DateTime.fromMillisecondsSinceEpoch(file.lastModified)
-      ..folderUri = folderUri;
-
-    return entity;
-  }
-
-  /// Extract a clean title from the filename.
   String _extractTitleFromFilename(String filename) {
-    // Remove extension
     final dotIndex = filename.lastIndexOf('.');
     String name = dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
-
-    // Remove common track number patterns at the start
-    // e.g., "01 - Song Name", "01. Song Name", "01_Song Name"
     name = name.replaceFirst(RegExp(r'^\d{1,3}[\s._-]+'), '');
-
-    // Replace underscores with spaces
     name = name.replaceAll('_', ' ');
-
-    // Trim and collapse multiple spaces
-    name = name.trim().replaceAll(RegExp(r'\s+'), ' ');
-
-    return name.isEmpty ? filename : name;
+    return name.trim().replaceAll(RegExp(r'\s+'), ' ');
   }
 }

@@ -1,0 +1,129 @@
+use flutter_rust_bridge::frb;
+use lofty::prelude::*;
+use lofty::probe::Probe;
+use rayon::prelude::*;
+use std::collections::{HashMap, HashSet};
+use walkdir::WalkDir;
+
+#[derive(Debug, Clone)]
+pub struct AudioFileMetadata {
+    pub path: String,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub duration_secs: Option<u64>,
+    pub format: String,
+    pub last_modified: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScanResult {
+    pub new_or_modified: Vec<AudioFileMetadata>,
+    pub deleted_paths: Vec<String>,
+}
+
+#[frb(sync)]
+pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> ScanResult {
+    // 1. Walk the directory and collect all file entries efficiently
+    let files_on_disk: Vec<walkdir::DirEntry> = WalkDir::new(&root_path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .collect();
+
+    // 2. Parallel processing to identify files to process and collect paths found
+    // We use a Mutex or concurrent collection if we want to build the found set in parallel,
+    // or just collect results.
+
+    // Let's filter first to find what we actually need to process
+    let (to_process_entries, found_paths): (Vec<Option<walkdir::DirEntry>>, HashSet<String>) =
+        files_on_disk
+            .par_iter()
+            .map(|entry| {
+                let path_str = entry.path().to_string_lossy().to_string();
+                let metadata = entry.metadata().ok();
+                let modified = metadata
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+
+                let needs_processing = match known_files.get(&path_str) {
+                    Some(&known_timestamp) => modified > known_timestamp, // Case A: Modified
+                    None => true,                                         // Case C: New
+                };
+
+                (
+                    if needs_processing {
+                        Some(entry.clone())
+                    } else {
+                        None
+                    },
+                    path_str,
+                )
+            })
+            .unzip();
+
+    // Filter out None values from to_process
+    let to_process: Vec<walkdir::DirEntry> = to_process_entries.into_iter().flatten().collect();
+
+    // 3. Process metadata in parallel
+    let new_or_modified: Vec<AudioFileMetadata> = to_process
+        .par_iter()
+        .filter_map(|entry: &walkdir::DirEntry| {
+            let path = entry.path();
+            let path_str = path.to_string_lossy().to_string();
+
+            // Check extension
+            let ext = path
+                .extension()
+                .and_then(|s: &std::ffi::OsStr| s.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if !["mp3", "flac", "ogg", "m4a", "wav"].contains(&ext.as_str()) {
+                return None;
+            }
+
+            let tagged_file = Probe::open(path).ok()?.read().ok()?;
+            let tag = tagged_file.primary_tag();
+            let properties = tagged_file.properties();
+
+            let title = tag.and_then(|t: &lofty::tag::Tag| t.title().map(|s| s.to_string()));
+            let artist = tag.and_then(|t: &lofty::tag::Tag| t.artist().map(|s| s.to_string()));
+            let album = tag.and_then(|t: &lofty::tag::Tag| t.album().map(|s| s.to_string()));
+            let duration_secs = Some(properties.duration().as_secs());
+
+            let modified = entry
+                .metadata()
+                .ok()
+                .and_then(|m: std::fs::Metadata| m.modified().ok())
+                .and_then(|t: std::time::SystemTime| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d: std::time::Duration| d.as_secs() as i64)
+                .unwrap_or(0);
+
+            Some(AudioFileMetadata {
+                path: path_str,
+                title,
+                artist,
+                album,
+                duration_secs,
+                format: ext,
+                last_modified: modified,
+            })
+        })
+        .collect();
+
+    // 4. Identify deleted files (Ghost Busting)
+    // Any file in known_files that is NOT in found_paths (files_on_disk)
+    let found_paths_set: HashSet<String> = found_paths.into_iter().collect();
+    let deleted_paths: Vec<String> = known_files
+        .keys()
+        .filter(|k| !found_paths_set.contains(*k))
+        .cloned()
+        .collect();
+
+    ScanResult {
+        new_or_modified,
+        deleted_paths,
+    }
+}
