@@ -24,18 +24,12 @@ pub struct ScanResult {
 
 #[frb(sync)]
 pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> ScanResult {
-    // 1. Walk the directory and collect all file entries efficiently
     let files_on_disk: Vec<walkdir::DirEntry> = WalkDir::new(&root_path)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
         .collect();
 
-    // 2. Parallel processing to identify files to process and collect paths found
-    // We use a Mutex or concurrent collection if we want to build the found set in parallel,
-    // or just collect results.
-
-    // 2. Parallel processing to identify files to process and collect paths found
     let (to_process, found_paths_vec): (Vec<walkdir::DirEntry>, Vec<String>) = files_on_disk
         .into_par_iter()
         .fold(
@@ -70,7 +64,6 @@ pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> Sc
             },
         );
 
-    // 3. Process metadata in parallel
     let new_or_modified: Vec<AudioFileMetadata> = to_process
         .par_iter()
         .filter_map(|entry: &walkdir::DirEntry| {
@@ -116,8 +109,6 @@ pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> Sc
         })
         .collect();
 
-    // 4. Identify deleted files (Ghost Busting)
-    // Any file in known_files that is NOT in found_paths (files_on_disk)
     let found_paths_set: HashSet<String> = found_paths_vec.into_iter().collect();
     let deleted_paths: Vec<String> = known_files
         .keys()
