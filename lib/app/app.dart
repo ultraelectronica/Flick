@@ -151,52 +151,102 @@ class _MainShellState extends State<MainShell>
 
   Widget _buildNavigationBar() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      margin: const EdgeInsets.fromLTRB(24, 0, 24, 24),
       decoration: BoxDecoration(
-        color: AppColors.surfaceLight.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(28),
+        // Outer glow effect for premium feel
         boxShadow: [
+          // Primary shadow
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 16,
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 20,
+            spreadRadius: 2,
+            offset: const Offset(0, 8),
+          ),
+          // Subtle ambient glow
+          BoxShadow(
+            color: AppColors.accent.withValues(alpha: 0.05),
+            blurRadius: 32,
+            spreadRadius: -4,
             offset: const Offset(0, 4),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: SalomonBottomBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            if (_currentIndex != index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            }
-          },
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          itemPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          selectedItemColor: AppColors.accent,
-          unselectedItemColor: AppColors.textSecondary,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
-          items: [
-            SalomonBottomBarItem(
-              icon: const Icon(LucideIcons.menu, size: 22),
-              title: const Text('Menu'),
-              selectedColor: AppColors.accent,
+        borderRadius: BorderRadius.circular(28),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, -40, 16, 16),
+          decoration: BoxDecoration(
+            // Glassmorphism background
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.surfaceLight.withValues(alpha: 0.85),
+                AppColors.surface.withValues(alpha: 0.92),
+              ],
             ),
-            SalomonBottomBarItem(
-              icon: const Icon(LucideIcons.music, size: 22),
-              title: const Text('Songs'),
-              selectedColor: AppColors.accent,
+            borderRadius: BorderRadius.circular(28),
+            // Subtle border for depth
+            border: Border.all(color: AppColors.glassBorder, width: 1),
+          ),
+          child: SalomonBottomBar(
+            currentIndex: _currentIndex,
+            onTap: (index) {
+              if (_currentIndex != index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+              }
+            },
+            margin: EdgeInsets.zero,
+            itemPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 10,
             ),
-            SalomonBottomBarItem(
-              icon: const Icon(LucideIcons.settings, size: 22),
-              title: const Text('Settings'),
-              selectedColor: AppColors.accent,
-            ),
-          ],
+            selectedItemColor: AppColors.textPrimary,
+            unselectedItemColor: AppColors.textTertiary,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutQuart,
+            items: [
+              SalomonBottomBarItem(
+                icon: const Icon(LucideIcons.layoutGrid, size: 20),
+                title: const Text(
+                  'Menu',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                selectedColor: AppColors.accentLight,
+                unselectedColor: AppColors.textTertiary,
+              ),
+              SalomonBottomBarItem(
+                icon: const Icon(LucideIcons.disc3, size: 20),
+                title: const Text(
+                  'Songs',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                selectedColor: AppColors.accentLight,
+                unselectedColor: AppColors.textTertiary,
+              ),
+              SalomonBottomBarItem(
+                icon: const Icon(LucideIcons.settings2, size: 20),
+                title: const Text(
+                  'Settings',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                selectedColor: AppColors.accentLight,
+                unselectedColor: AppColors.textTertiary,
+              ),
+            ],
+          ),
         ),
       ),
     );
