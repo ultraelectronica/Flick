@@ -35,11 +35,12 @@ pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> Sc
     // We use a Mutex or concurrent collection if we want to build the found set in parallel,
     // or just collect results.
 
-    // Let's filter first to find what we actually need to process
-    let (to_process_entries, found_paths): (Vec<Option<walkdir::DirEntry>>, HashSet<String>) =
-        files_on_disk
-            .par_iter()
-            .map(|entry| {
+    // 2. Parallel processing to identify files to process and collect paths found
+    let (to_process, found_paths_vec): (Vec<walkdir::DirEntry>, Vec<String>) = files_on_disk
+        .into_par_iter()
+        .fold(
+            || (Vec::new(), Vec::new()),
+            |(mut to_process, mut found_paths), entry| {
                 let path_str = entry.path().to_string_lossy().to_string();
                 let metadata = entry.metadata().ok();
                 let modified = metadata
@@ -53,19 +54,21 @@ pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> Sc
                     None => true,                                         // Case C: New
                 };
 
-                (
-                    if needs_processing {
-                        Some(entry.clone())
-                    } else {
-                        None
-                    },
-                    path_str,
-                )
-            })
-            .unzip();
-
-    // Filter out None values from to_process
-    let to_process: Vec<walkdir::DirEntry> = to_process_entries.into_iter().flatten().collect();
+                if needs_processing {
+                    to_process.push(entry);
+                }
+                found_paths.push(path_str);
+                (to_process, found_paths)
+            },
+        )
+        .reduce(
+            || (Vec::new(), Vec::new()),
+            |(mut a_proc, mut a_paths), (b_proc, b_paths)| {
+                a_proc.extend(b_proc);
+                a_paths.extend(b_paths);
+                (a_proc, a_paths)
+            },
+        );
 
     // 3. Process metadata in parallel
     let new_or_modified: Vec<AudioFileMetadata> = to_process
@@ -115,7 +118,7 @@ pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> Sc
 
     // 4. Identify deleted files (Ghost Busting)
     // Any file in known_files that is NOT in found_paths (files_on_disk)
-    let found_paths_set: HashSet<String> = found_paths.into_iter().collect();
+    let found_paths_set: HashSet<String> = found_paths_vec.into_iter().collect();
     let deleted_paths: Vec<String> = known_files
         .keys()
         .filter(|k| !found_paths_set.contains(*k))
