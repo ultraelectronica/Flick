@@ -44,8 +44,8 @@ pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> Sc
                     .unwrap_or(0);
 
                 let needs_processing = match known_files.get(&path_str) {
-                    Some(&known_timestamp) => modified > known_timestamp, // Case A: Modified
-                    None => true,                                         // Case C: New
+                    Some(&known_timestamp) => modified > known_timestamp,
+                    None => true,
                 };
 
                 if needs_processing {
@@ -70,7 +70,6 @@ pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> Sc
             let path = entry.path();
             let path_str = path.to_string_lossy().to_string();
 
-            // Check extension
             let ext = path
                 .extension()
                 .and_then(|s: &std::ffi::OsStr| s.to_str())

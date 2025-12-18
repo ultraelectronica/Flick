@@ -7,6 +7,7 @@ import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/services/music_folder_service.dart';
 import 'package:flick/services/library_scanner_service.dart';
 import 'package:flick/data/repositories/song_repository.dart';
+import 'package:flick/widgets/common/glass_dialog.dart';
 
 /// Settings screen matching the design language.
 class SettingsScreen extends StatefulWidget {
@@ -518,16 +519,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _confirmRemoveFolder(MusicFolder folder) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('Remove Folder?'),
+      builder: (context) => GlassDialog(
+        title: 'Remove Folder?',
         content: Text('Remove "${folder.displayName}" from your library?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
               _removeFolder(folder);
