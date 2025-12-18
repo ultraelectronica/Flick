@@ -6,7 +6,7 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "staticlib"]
 
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+
 
 [dependencies]
 flutter_rust_bridge = "=2.11.1"
