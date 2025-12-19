@@ -1,4 +1,4 @@
-use flutter_rust_bridge::frb;
+
 use lofty::prelude::*;
 use lofty::probe::Probe;
 use rayon::prelude::*;
@@ -22,7 +22,6 @@ pub struct ScanResult {
     pub deleted_paths: Vec<String>,
 }
 
-#[frb(sync)]
 pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> ScanResult {
     let files_on_disk: Vec<walkdir::DirEntry> = WalkDir::new(&root_path)
         .into_iter()

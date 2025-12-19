@@ -82,7 +82,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiSimpleInitApp();
 
-  ScanResult crateApiScannerScanRootDir({
+  Future<ScanResult> crateApiScannerScanRootDir({
     required String rootPath,
     required Map<String, PlatformInt64> knownFiles,
   });
@@ -147,17 +147,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "init_app", argNames: []);
 
   @override
-  ScanResult crateApiScannerScanRootDir({
+  Future<ScanResult> crateApiScannerScanRootDir({
     required String rootPath,
     required Map<String, PlatformInt64> knownFiles,
   }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootPath, serializer);
           sse_encode_Map_String_i_64_None(knownFiles, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 3,
+            port: port_,
+          );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_scan_result,

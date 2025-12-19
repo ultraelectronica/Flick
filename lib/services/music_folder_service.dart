@@ -10,6 +10,12 @@ class AudioFileInfo {
   final int lastModified;
   final String? mimeType;
   final String extension;
+  final String? title;
+  final String? artist;
+  final String? album;
+  final int? duration;
+  final String? albumArtPath;
+  final String? bitrate;
 
   AudioFileInfo({
     required this.uri,
@@ -18,16 +24,32 @@ class AudioFileInfo {
     required this.lastModified,
     this.mimeType,
     required this.extension,
+    this.title,
+    this.artist,
+    this.album,
+    this.duration,
+    this.albumArtPath,
+    this.bitrate,
   });
 
   factory AudioFileInfo.fromMap(Map<String, dynamic> map) {
     return AudioFileInfo(
       uri: map['uri'] as String,
-      name: map['name'] as String,
-      size: (map['size'] as num).toInt(),
-      lastModified: (map['lastModified'] as num).toInt(),
+      name:
+          map['name'] as String? ??
+          '', // Name might be null in metadata-only response
+      size: (map['size'] as num?)?.toInt() ?? 0,
+      lastModified: (map['lastModified'] as num?)?.toInt() ?? 0,
       mimeType: map['mimeType'] as String?,
-      extension: map['extension'] as String,
+      extension: map['extension'] as String? ?? '',
+      title: map['title'] as String?,
+      artist: map['artist'] as String?,
+      album: map['album'] as String?,
+      duration: map['duration'] != null
+          ? (map['duration'] as num).toInt()
+          : null,
+      albumArtPath: map['albumArtPath'] as String?,
+      bitrate: map['bitrate'] as String?,
     );
   }
 }
@@ -124,8 +146,8 @@ class MusicFolderService {
     return folders;
   }
 
-  /// Scan a folder for audio files recursively.
-  /// Returns a list of discovered audio files.
+  /// Scan a folder for audio files (Fast Scan - no metadata).
+  /// Returns a list of discovered audio files with basic info.
   Future<List<AudioFileInfo>> scanFolder(String folderUri) async {
     try {
       final result = await _channel.invokeMethod<List<dynamic>>(
@@ -141,6 +163,25 @@ class MusicFolderService {
           .toList();
     } on PlatformException catch (e) {
       throw StorageException('Failed to scan folder: ${e.message}');
+    }
+  }
+
+  /// Fetch rich metadata for a list of audio file URIs.
+  Future<List<AudioFileInfo>> fetchMetadata(List<String> uris) async {
+    try {
+      final result = await _channel.invokeMethod<List<dynamic>>(
+        'fetchAudioMetadata',
+        {'uris': uris},
+      );
+
+      if (result == null) return [];
+
+      return result
+          .cast<Map<dynamic, dynamic>>()
+          .map((map) => AudioFileInfo.fromMap(map.cast<String, dynamic>()))
+          .toList();
+    } on PlatformException catch (e) {
+      throw StorageException('Failed to fetch metadata: ${e.message}');
     }
   }
 

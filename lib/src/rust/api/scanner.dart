@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `fmt`, `fmt`
 
-ScanResult scanRootDir({
+Future<ScanResult> scanRootDir({
   required String rootPath,
   required Map<String, PlatformInt64> knownFiles,
 }) => RustLib.instance.api.crateApiScannerScanRootDir(

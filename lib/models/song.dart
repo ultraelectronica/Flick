@@ -27,6 +27,9 @@ class Song {
   /// File path on device
   final String? filePath;
 
+  /// Date the song was added to the library
+  final DateTime? dateAdded;
+
   const Song({
     required this.id,
     required this.title,
@@ -37,6 +40,7 @@ class Song {
     this.resolution,
     this.album,
     this.filePath,
+    this.dateAdded,
   });
 
   /// Format duration as mm:ss or hh:mm:ss
@@ -62,6 +66,7 @@ class Song {
     String? resolution,
     String? album,
     String? filePath,
+    DateTime? dateAdded,
   }) {
     return Song(
       id: id ?? this.id,
@@ -73,6 +78,7 @@ class Song {
       resolution: resolution ?? this.resolution,
       album: album ?? this.album,
       filePath: filePath ?? this.filePath,
+      dateAdded: dateAdded ?? this.dateAdded,
     );
   }
 

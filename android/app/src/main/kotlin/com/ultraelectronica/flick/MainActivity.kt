@@ -1,17 +1,24 @@
 package com.ultraelectronica.flick
 
 import android.content.Intent
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.ultraelectronica.flick/storage"
     private val REQUEST_OPEN_DOCUMENT_TREE = 1001
 
     private var pendingResult: MethodChannel.Result? = null
+    // Coroutine scope for background tasks
+    private val mainScope = CoroutineScope(Dispatchers.Main)
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -47,10 +54,36 @@ class MainActivity: FlutterActivity() {
                 "listAudioFiles" -> {
                     val uri = call.argument<String>("uri")
                     if (uri != null) {
-                        val files = listAudioFilesRecursive(uri)
-                        result.success(files)
+                        // Launch in background to avoid blocking UI
+                        mainScope.launch {
+                            try {
+                                val files = withContext(Dispatchers.IO) {
+                                    fastScanAudioFiles(uri)
+                                }
+                                result.success(files)
+                            } catch (e: Exception) {
+                                result.error("SCAN_ERROR", "Failed to scan folder: ${e.message}", null)
+                            }
+                        }
                     } else {
                         result.error("INVALID_ARGUMENT", "URI is required", null)
+                    }
+                }
+                "fetchAudioMetadata" -> {
+                    val uris = call.argument<List<String>>("uris")
+                    if (uris != null) {
+                        mainScope.launch {
+                            try {
+                                val metadata = withContext(Dispatchers.IO) {
+                                    extractMetadataForFiles(uris)
+                                }
+                                result.success(metadata)
+                            } catch (e: Exception) {
+                                result.error("METADATA_ERROR", "Failed to fetch metadata: ${e.message}", null)
+                            }
+                        }
+                    } else {
+                        result.error("INVALID_ARGUMENT", "URIs list is required", null)
                     }
                 }
                 "getDocumentDisplayName" -> {
@@ -128,7 +161,8 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    private fun listAudioFilesRecursive(uriString: String): List<Map<String, Any?>> {
+    // Phase 1: Fast Scan (Filesystem only)
+    private fun fastScanAudioFiles(uriString: String): List<Map<String, Any?>> {
         val uri = Uri.parse(uriString)
         val documentFile = DocumentFile.fromTreeUri(this, uri) ?: return emptyList()
         
@@ -159,4 +193,65 @@ class MainActivity: FlutterActivity() {
         scanDirectory(documentFile)
         return result
     }
+
+    // Phase 2: Metadata Extraction (Targeted)
+    private fun extractMetadataForFiles(uris: List<String>): List<Map<String, Any?>> {
+        val retriever = MediaMetadataRetriever()
+        val result = mutableListOf<Map<String, Any?>>()
+        val cacheDir = cacheDir
+
+        for (uriString in uris) {
+            try {
+                val uri = Uri.parse(uriString)
+                retriever.setDataSource(context, uri)
+                
+                val metadata = mutableMapOf<String, Any?>("uri" to uriString)
+                
+                metadata["title"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                metadata["artist"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                metadata["album"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                metadata["bitrate"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
+                metadata["mimeType"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+                
+                val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                if (durationStr != null) {
+                    metadata["duration"] = durationStr.toLongOrNull()
+                }
+
+                // Extract Album Art
+                val embeddedArt = retriever.embeddedPicture
+                if (embeddedArt != null) {
+                    try {
+                        // Use MD5 of URI as filename to avoid collisions and invalid chars
+                        val filename = java.math.BigInteger(1, java.security.MessageDigest.getInstance("MD5").digest(uriString.toByteArray())).toString(16) + ".jpg"
+                        val file = java.io.File(cacheDir, filename)
+                        
+                        // Only write if not exists or maybe overwrite? 
+                        // For performance, check existence. 
+                        // But what if art changed? (Unlikely for same URI without modified time change, but we assume immutable for now)
+                        if (!file.exists()) {
+                            file.writeBytes(embeddedArt)
+                        }
+                        metadata["albumArtPath"] = file.absolutePath
+                    } catch (e: Exception) {
+                        // Failed to save art
+                    }
+                }
+
+                result.add(metadata)
+            } catch (e: Exception) {
+                // Return just the URI if metadata fails, so Dart knows we tried
+                result.add(mapOf("uri" to uriString))
+            }
+        }
+
+        try {
+            retriever.release()
+        } catch (e: Exception) {
+            // Ignore
+        }
+
+        return result
+    }
 }
+

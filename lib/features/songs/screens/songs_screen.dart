@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/features/songs/widgets/orbit_scroll.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+enum SortOption { title, artist, dateAdded }
 
 /// Main songs screen with orbital scrolling.
 class SongsScreen extends StatefulWidget {
@@ -20,14 +24,46 @@ class _SongsScreenState extends State<SongsScreen> {
   bool _isLoading = true;
   final SongRepository _songRepository = SongRepository();
 
+  // Audio Player for Preview
+  final AudioPlayer _player = AudioPlayer();
+  String? _playingFilePath;
+  bool _isPlaying = false;
+
+  // Sorting
+  SortOption _currentSort = SortOption.title;
+
+  // Timer for auto-play debounce
+  Timer? _debounceTimer;
+
   @override
   void initState() {
     super.initState();
     _loadSongs();
+
+    // Listen to player state
+    _player.playerStateStream.listen((state) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = state.playing;
+          if (state.processingState == ProcessingState.completed) {
+            _isPlaying = false;
+            _playingFilePath = null;
+          }
+        });
+      }
+    });
+
     // Listen for changes in the songs collection
     _songRepository.watchSongs().listen((_) {
       _loadSongs();
     });
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    _player.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSongs() async {
@@ -36,6 +72,7 @@ class _SongsScreenState extends State<SongsScreen> {
       if (mounted) {
         setState(() {
           _songs = songs;
+          _sortSongs(); // Apply current sort
           _isLoading = false;
           // Reset selected index if out of bounds
           if (_selectedIndex >= songs.length && songs.isNotEmpty) {
@@ -50,6 +87,70 @@ class _SongsScreenState extends State<SongsScreen> {
           _songs = Song.sampleSongs;
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  void _sortSongs() {
+    setState(() {
+      switch (_currentSort) {
+        case SortOption.title:
+          _songs.sort((a, b) => a.title.compareTo(b.title));
+          break;
+        case SortOption.artist:
+          _songs.sort((a, b) => a.artist.compareTo(b.artist));
+          break;
+        case SortOption.dateAdded:
+          _songs.sort((a, b) {
+            final dateA = a.dateAdded ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final dateB = b.dateAdded ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return dateB.compareTo(dateA); // Newest first
+          });
+          break;
+      }
+    });
+  }
+
+  Future<void> _playPreview(Song song) async {
+    try {
+      final path = song.filePath;
+      if (path == null) return;
+
+      // If already playing this song, do nothing (maintain playback)
+      if (_playingFilePath == path && _isPlaying) return;
+
+      // Use AudioSource.uri to handle both file:// and content:// correctly
+      await _player.setAudioSource(AudioSource.uri(Uri.parse(path)));
+      await _player.play();
+      setState(() {
+        _playingFilePath = path;
+      });
+    } catch (e) {
+      debugPrint("Error playing preview: $e");
+    }
+  }
+
+  Future<void> _togglePreview(Song song) async {
+    try {
+      final path = song.filePath;
+      if (path == null) return;
+
+      if (_playingFilePath == path && _isPlaying) {
+        await _player.pause();
+      } else {
+        // Use AudioSource.uri to handle both file:// and content:// correctly
+        await _player.setAudioSource(AudioSource.uri(Uri.parse(path)));
+        await _player.play();
+        setState(() {
+          _playingFilePath = path;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error playing preview: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to play preview: ${e.toString()}')),
+        );
       }
     }
   }
@@ -84,11 +185,27 @@ class _SongsScreenState extends State<SongsScreen> {
                             setState(() {
                               _selectedIndex = index;
                             });
+
+                            // Auto-play preview with debounce
+                            _debounceTimer?.cancel();
+                            _debounceTimer = Timer(
+                              const Duration(milliseconds: 800),
+                              () {
+                                if (mounted && index < _songs.length) {
+                                  _playPreview(_songs[index]);
+                                }
+                              },
+                            );
                           },
                           onSongSelected: (index) {
-                            setState(() {
-                              _selectedIndex = index;
-                            });
+                            if (_selectedIndex == index) {
+                              // Tap on already selected song -> Toggle Preview
+                              _togglePreview(_songs[index]);
+                            } else {
+                              setState(() {
+                                _selectedIndex = index;
+                              });
+                            }
                           },
                         ),
                 ),
@@ -211,18 +328,56 @@ class _SongsScreenState extends State<SongsScreen> {
             ],
           ),
 
-          // Shuffle/Sort action buttons could go here
+          // Sort Button
           Container(
-            padding: const EdgeInsets.all(AppConstants.spacingSm),
             decoration: BoxDecoration(
               color: AppColors.glassBackground,
               borderRadius: BorderRadius.circular(AppConstants.radiusMd),
               border: Border.all(color: AppColors.glassBorder, width: 1),
             ),
-            child: const Icon(
-              Icons.shuffle_rounded,
-              color: AppColors.textSecondary,
-              size: 20,
+            child: PopupMenuButton<SortOption>(
+              icon: const Icon(
+                Icons.sort_rounded,
+                color: AppColors.textSecondary,
+                size: 20,
+              ),
+              color: AppColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                side: const BorderSide(color: AppColors.glassBorder, width: 1),
+              ),
+              onSelected: (SortOption result) {
+                setState(() {
+                  _currentSort = result;
+                  _sortSongs();
+                  // Reset selection to top or keep? Top is safer.
+                  _selectedIndex = 0;
+                });
+              },
+              itemBuilder: (BuildContext context) =>
+                  <PopupMenuEntry<SortOption>>[
+                    const PopupMenuItem<SortOption>(
+                      value: SortOption.title,
+                      child: Text(
+                        'Sort by Title',
+                        style: TextStyle(color: AppColors.textPrimary),
+                      ),
+                    ),
+                    const PopupMenuItem<SortOption>(
+                      value: SortOption.artist,
+                      child: Text(
+                        'Sort by Artist',
+                        style: TextStyle(color: AppColors.textPrimary),
+                      ),
+                    ),
+                    const PopupMenuItem<SortOption>(
+                      value: SortOption.dateAdded,
+                      child: Text(
+                        'Sort by Date Added',
+                        style: TextStyle(color: AppColors.textPrimary),
+                      ),
+                    ),
+                  ],
             ),
           ),
         ],

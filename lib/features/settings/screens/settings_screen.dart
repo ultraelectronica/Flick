@@ -8,6 +8,7 @@ import 'package:flick/services/music_folder_service.dart';
 import 'package:flick/services/library_scanner_service.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/widgets/common/glass_dialog.dart';
+import 'package:flick/widgets/common/glass_bottom_sheet.dart';
 
 /// Settings screen matching the design language.
 class SettingsScreen extends StatefulWidget {
@@ -33,10 +34,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isScanning = false;
   ScanProgress? _scanProgress;
 
+  // ValueNotifier for bottom sheet progress updates
+  final ValueNotifier<ScanProgress?> _scanProgressNotifier = ValueNotifier(
+    null,
+  );
+
   @override
   void initState() {
     super.initState();
     _loadLibraryData();
+  }
+
+  @override
+  void dispose() {
+    _scanProgressNotifier.dispose();
+    super.dispose();
   }
 
   Future<void> _loadLibraryData() async {
@@ -86,14 +98,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _scanProgress = null;
     });
 
+    // Show scanning bottom sheet
+    _showScanningBottomSheet(displayName);
+
     await for (final progress in _scannerService.scanFolder(uri, displayName)) {
       if (mounted) {
         setState(() => _scanProgress = progress);
+        _scanProgressNotifier.value = progress;
       }
     }
 
     await _loadLibraryData();
     if (mounted) {
+      // Close the bottom sheet
+      Navigator.of(context).pop();
+      _scanProgressNotifier.value = null;
       setState(() {
         _isScanning = false;
         _scanProgress = null;
@@ -107,19 +126,447 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _scanProgress = null;
     });
 
+    // Show scanning bottom sheet
+    _showScanningBottomSheet('All Folders');
+
     await for (final progress in _scannerService.scanAllFolders()) {
       if (mounted) {
         setState(() => _scanProgress = progress);
+        _scanProgressNotifier.value = progress;
       }
     }
 
     await _loadLibraryData();
     if (mounted) {
+      // Close the bottom sheet
+      Navigator.of(context).pop();
+      _scanProgressNotifier.value = null;
       setState(() {
         _isScanning = false;
         _scanProgress = null;
       });
     }
+  }
+
+  void _showScanningBottomSheet(String folderName) {
+    GlassBottomSheet.show(
+      context: context,
+      title: 'Scanning Library',
+      isDismissible: false,
+      enableDrag: false,
+      maxHeightRatio: 0.35,
+      content: ValueListenableBuilder<ScanProgress?>(
+        valueListenable: _scanProgressNotifier,
+        builder: (context, progress, _) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: AppConstants.spacingMd),
+              // Progress indicator
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: AppConstants.spacingMd),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          progress?.currentFolder ?? folderName,
+                          style: const TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textPrimary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          progress?.currentFile ?? 'Initializing...',
+                          style: const TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontSize: 13,
+                            color: AppColors.textTertiary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppConstants.spacingLg),
+              // Stats row
+              Container(
+                padding: const EdgeInsets.all(AppConstants.spacingMd),
+                decoration: BoxDecoration(
+                  color: AppColors.glassBackground,
+                  borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                  border: Border.all(color: AppColors.glassBorder),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildScanStat(
+                      'Songs Found',
+                      '${progress?.songsFound ?? 0}',
+                      LucideIcons.music,
+                    ),
+                    Container(
+                      width: 1,
+                      height: 40,
+                      color: AppColors.glassBorder,
+                    ),
+                    _buildScanStat(
+                      'Total Files',
+                      '${progress?.totalFiles ?? 0}',
+                      LucideIcons.file,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingMd),
+              // Cancel button
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () {
+                    _scannerService.cancelScan();
+                    Navigator.of(context).pop();
+                    _scanProgressNotifier.value = null;
+                    setState(() {
+                      _isScanning = false;
+                      _scanProgress = null;
+                    });
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textSecondary,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      fontFamily: 'ProductSans',
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildScanStat(String label, String value, IconData icon) {
+    return Column(
+      children: [
+        Icon(icon, color: AppColors.textSecondary, size: 20),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: const TextStyle(
+            fontFamily: 'ProductSans',
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(
+            fontFamily: 'ProductSans',
+            fontSize: 12,
+            color: AppColors.textTertiary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showThemeBottomSheet() {
+    GlassBottomSheet.show(
+      context: context,
+      title: 'Theme',
+      maxHeightRatio: 0.4,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildThemeOption('Dark', 'Current theme', true),
+          _buildThemeOption('Light', 'Coming soon', false),
+          _buildThemeOption('System', 'Follow system settings', false),
+          _buildThemeOption('AMOLED', 'Pure black background', false),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThemeOption(String title, String subtitle, bool isSelected) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          if (title == 'Dark') {
+            Navigator.pop(context);
+          }
+        },
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppConstants.spacingMd,
+            vertical: AppConstants.spacingSm,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontFamily: 'ProductSans',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: isSelected
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontFamily: 'ProductSans',
+                        fontSize: 13,
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isSelected)
+                const Icon(
+                  LucideIcons.check,
+                  color: AppColors.textPrimary,
+                  size: 20,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAudioOutputBottomSheet() {
+    GlassBottomSheet.show(
+      context: context,
+      title: 'Audio Output',
+      maxHeightRatio: 0.4,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildOutputOption(
+            'System Default',
+            'Use system audio routing',
+            LucideIcons.smartphone,
+            true,
+          ),
+          _buildOutputOption(
+            'Speaker',
+            'Built-in device speaker',
+            LucideIcons.volume2,
+            false,
+          ),
+          _buildOutputOption(
+            'Bluetooth',
+            'Connected Bluetooth devices',
+            LucideIcons.bluetooth,
+            false,
+          ),
+          _buildOutputOption(
+            'Wired',
+            'Headphones or external DAC',
+            LucideIcons.headphones,
+            false,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOutputOption(
+    String title,
+    String subtitle,
+    IconData icon,
+    bool isSelected,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => Navigator.pop(context),
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppConstants.spacingMd,
+            vertical: AppConstants.spacingSm,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? AppColors.glassBackgroundStrong
+                      : AppColors.glassBackground,
+                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                ),
+                child: Icon(
+                  icon,
+                  color: isSelected
+                      ? AppColors.textPrimary
+                      : AppColors.textSecondary,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: AppConstants.spacingMd),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontFamily: 'ProductSans',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: isSelected
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontFamily: 'ProductSans',
+                        fontSize: 13,
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isSelected)
+                const Icon(
+                  LucideIcons.check,
+                  color: AppColors.textPrimary,
+                  size: 20,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAboutBottomSheet() {
+    GlassBottomSheet.show(
+      context: context,
+      title: 'About Flick Player',
+      maxHeightRatio: 0.5,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: AppConstants.spacingMd),
+          // App icon
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: AppColors.glassBackgroundStrong,
+              borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+              border: Border.all(color: AppColors.glassBorder),
+            ),
+            child: const Icon(
+              LucideIcons.music2,
+              color: AppColors.textPrimary,
+              size: 40,
+            ),
+          ),
+          const SizedBox(height: AppConstants.spacingMd),
+          const Text(
+            'Flick Player',
+            style: TextStyle(
+              fontFamily: 'ProductSans',
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Version 1.0.0',
+            style: TextStyle(
+              fontFamily: 'ProductSans',
+              fontSize: 14,
+              color: AppColors.textTertiary,
+            ),
+          ),
+          const SizedBox(height: AppConstants.spacingLg),
+          Container(
+            padding: const EdgeInsets.all(AppConstants.spacingMd),
+            decoration: BoxDecoration(
+              color: AppColors.glassBackground,
+              borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+              border: Border.all(color: AppColors.glassBorder),
+            ),
+            child: const Text(
+              'A premium music player with custom UAC 2.0 powered by Rust for the best audio experience.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppConstants.spacingMd),
+          // Links
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildAboutLink('GitHub', LucideIcons.github),
+              const SizedBox(width: AppConstants.spacingLg),
+              _buildAboutLink('Website', LucideIcons.globe),
+            ],
+          ),
+          const SizedBox(height: AppConstants.spacingMd),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAboutLink(String label, IconData icon) {
+    return TextButton.icon(
+      onPressed: () {},
+      icon: Icon(icon, size: 18),
+      label: Text(label, style: const TextStyle(fontFamily: 'ProductSans')),
+      style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
+    );
   }
 
   @override
@@ -218,7 +665,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           icon: LucideIcons.palette,
                           title: 'Theme',
                           subtitle: 'Dark',
-                          onTap: () {},
+                          onTap: _showThemeBottomSheet,
                         ),
                       ],
                     ),
@@ -235,7 +682,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           icon: LucideIcons.slidersHorizontal,
                           title: 'Equalizer',
                           subtitle: 'Adjust audio frequencies',
-                          onTap: () {},
+                          onTap: () {}, // TODO: Navigate to Equalizer screen
                         ),
                         _buildDivider(),
                         _buildNavigationSetting(
@@ -243,15 +690,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           icon: LucideIcons.volume2,
                           title: 'Audio Output',
                           subtitle: 'System default',
-                          onTap: () {},
-                        ),
-                        _buildDivider(),
-                        _buildNavigationSetting(
-                          context,
-                          icon: LucideIcons.audioWaveform,
-                          title: 'Audio Quality',
-                          subtitle: 'Original quality',
-                          onTap: () {},
+                          onTap: _showAudioOutputBottomSheet,
                         ),
                       ],
                     ),
@@ -268,7 +707,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           icon: LucideIcons.info,
                           title: 'About Flick Player',
                           subtitle: 'Version 1.0.0',
-                          onTap: () {},
+                          onTap: _showAboutBottomSheet,
                         ),
                         _buildDivider(),
                         _buildNavigationSetting(
@@ -345,9 +784,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _buildLibraryInfo(context),
               _buildDivider(),
 
-              // Scanning progress (if scanning)
-              if (_isScanning && _scanProgress != null) ...[
-                _buildScanProgress(context),
+              // Scanning indicator (progress shown in bottom sheet)
+              if (_isScanning) ...[
+                _buildScanningIndicator(context),
                 _buildDivider(),
               ],
 
@@ -428,38 +867,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildScanProgress(BuildContext context) {
-    final progress = _scanProgress!;
+  Widget _buildScanningIndicator(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(AppConstants.spacingMd),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              const SizedBox(width: AppConstants.spacingSm),
-              Expanded(
-                child: Text(
-                  progress.currentFolder ?? 'Scanning...',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: AppColors.textPrimary,
+            ),
           ),
-          const SizedBox(height: AppConstants.spacingXs),
+          const SizedBox(width: AppConstants.spacingSm),
           Text(
-            'Found ${progress.songsFound} songs',
+            'Scanning... ${_scanProgress?.songsFound ?? 0} songs found',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AppColors.textTertiary),
+            ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
           ),
         ],
       ),
