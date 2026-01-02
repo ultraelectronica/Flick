@@ -571,163 +571,160 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            _buildHeader(context),
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          _buildHeader(context),
 
-            const SizedBox(height: AppConstants.spacingMd),
+          const SizedBox(height: AppConstants.spacingMd),
 
-            // Settings sections
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.spacingMd,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Library section
-                    _buildSectionHeader(context, 'Library'),
-                    _buildLibraryCard(context),
+          // Settings sections
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spacingMd,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Library section
+                  _buildSectionHeader(context, 'Library'),
+                  _buildLibraryCard(context),
 
-                    const SizedBox(height: AppConstants.spacingLg),
+                  const SizedBox(height: AppConstants.spacingLg),
 
-                    // Playback section
-                    _buildSectionHeader(context, 'Playback'),
-                    _buildSettingsCard(
-                      context,
-                      children: [
-                        _buildToggleSetting(
+                  // Playback section
+                  _buildSectionHeader(context, 'Playback'),
+                  _buildSettingsCard(
+                    context,
+                    children: [
+                      _buildToggleSetting(
+                        context,
+                        icon: LucideIcons.repeat,
+                        title: 'Gapless Playback',
+                        subtitle: 'Seamless transition between tracks',
+                        value: _gaplessPlayback,
+                        onChanged: (value) {
+                          setState(() => _gaplessPlayback = value);
+                        },
+                      ),
+                      _buildDivider(),
+                      _buildToggleSetting(
+                        context,
+                        icon: LucideIcons.shuffle,
+                        title: 'Crossfade',
+                        subtitle: 'Blend tracks together',
+                        value: _crossfade,
+                        onChanged: (value) {
+                          setState(() => _crossfade = value);
+                        },
+                      ),
+                      if (_crossfade) ...[
+                        _buildDivider(),
+                        _buildSliderSetting(
                           context,
-                          icon: LucideIcons.repeat,
-                          title: 'Gapless Playback',
-                          subtitle: 'Seamless transition between tracks',
-                          value: _gaplessPlayback,
+                          icon: LucideIcons.timer,
+                          title: 'Crossfade Duration',
+                          subtitle: '${_crossfadeDuration.toInt()} seconds',
+                          value: _crossfadeDuration,
+                          min: 1,
+                          max: 12,
                           onChanged: (value) {
-                            setState(() => _gaplessPlayback = value);
+                            setState(() => _crossfadeDuration = value);
                           },
                         ),
-                        _buildDivider(),
-                        _buildToggleSetting(
-                          context,
-                          icon: LucideIcons.shuffle,
-                          title: 'Crossfade',
-                          subtitle: 'Blend tracks together',
-                          value: _crossfade,
-                          onChanged: (value) {
-                            setState(() => _crossfade = value);
-                          },
-                        ),
-                        if (_crossfade) ...[
-                          _buildDivider(),
-                          _buildSliderSetting(
-                            context,
-                            icon: LucideIcons.timer,
-                            title: 'Crossfade Duration',
-                            subtitle: '${_crossfadeDuration.toInt()} seconds',
-                            value: _crossfadeDuration,
-                            min: 1,
-                            max: 12,
-                            onChanged: (value) {
-                              setState(() => _crossfadeDuration = value);
-                            },
-                          ),
-                        ],
                       ],
-                    ),
+                    ],
+                  ),
 
-                    const SizedBox(height: AppConstants.spacingLg),
+                  const SizedBox(height: AppConstants.spacingLg),
 
-                    // Display section
-                    _buildSectionHeader(context, 'Display'),
-                    _buildSettingsCard(
-                      context,
-                      children: [
-                        _buildToggleSetting(
-                          context,
-                          icon: LucideIcons.image,
-                          title: 'Show Album Art',
-                          subtitle: 'Display album artwork in player',
-                          value: _showAlbumArt,
-                          onChanged: (value) {
-                            setState(() => _showAlbumArt = value);
-                          },
-                        ),
-                        _buildDivider(),
-                        _buildNavigationSetting(
-                          context,
-                          icon: LucideIcons.palette,
-                          title: 'Theme',
-                          subtitle: 'Dark',
-                          onTap: _showThemeBottomSheet,
-                        ),
-                      ],
-                    ),
+                  // Display section
+                  _buildSectionHeader(context, 'Display'),
+                  _buildSettingsCard(
+                    context,
+                    children: [
+                      _buildToggleSetting(
+                        context,
+                        icon: LucideIcons.image,
+                        title: 'Show Album Art',
+                        subtitle: 'Display album artwork in player',
+                        value: _showAlbumArt,
+                        onChanged: (value) {
+                          setState(() => _showAlbumArt = value);
+                        },
+                      ),
+                      _buildDivider(),
+                      _buildNavigationSetting(
+                        context,
+                        icon: LucideIcons.palette,
+                        title: 'Theme',
+                        subtitle: 'Dark',
+                        onTap: _showThemeBottomSheet,
+                      ),
+                    ],
+                  ),
 
-                    const SizedBox(height: AppConstants.spacingLg),
+                  const SizedBox(height: AppConstants.spacingLg),
 
-                    // Audio section
-                    _buildSectionHeader(context, 'Audio'),
-                    _buildSettingsCard(
-                      context,
-                      children: [
-                        _buildNavigationSetting(
-                          context,
-                          icon: LucideIcons.slidersHorizontal,
-                          title: 'Equalizer',
-                          subtitle: 'Adjust audio frequencies',
-                          onTap: () {}, // TODO: Navigate to Equalizer screen
-                        ),
-                        _buildDivider(),
-                        _buildNavigationSetting(
-                          context,
-                          icon: LucideIcons.volume2,
-                          title: 'Audio Output',
-                          subtitle: 'System default',
-                          onTap: _showAudioOutputBottomSheet,
-                        ),
-                      ],
-                    ),
+                  // Audio section
+                  _buildSectionHeader(context, 'Audio'),
+                  _buildSettingsCard(
+                    context,
+                    children: [
+                      _buildNavigationSetting(
+                        context,
+                        icon: LucideIcons.slidersHorizontal,
+                        title: 'Equalizer',
+                        subtitle: 'Adjust audio frequencies',
+                        onTap: () {}, // TODO: Navigate to Equalizer screen
+                      ),
+                      _buildDivider(),
+                      _buildNavigationSetting(
+                        context,
+                        icon: LucideIcons.volume2,
+                        title: 'Audio Output',
+                        subtitle: 'System default',
+                        onTap: _showAudioOutputBottomSheet,
+                      ),
+                    ],
+                  ),
 
-                    const SizedBox(height: AppConstants.spacingLg),
+                  const SizedBox(height: AppConstants.spacingLg),
 
-                    // About section
-                    _buildSectionHeader(context, 'About'),
-                    _buildSettingsCard(
-                      context,
-                      children: [
-                        _buildNavigationSetting(
-                          context,
-                          icon: LucideIcons.info,
-                          title: 'About Flick Player',
-                          subtitle: 'Version 1.0.0',
-                          onTap: _showAboutBottomSheet,
-                        ),
-                        _buildDivider(),
-                        _buildNavigationSetting(
-                          context,
-                          icon: LucideIcons.fileText,
-                          title: 'Licenses',
-                          subtitle: 'Open source licenses',
-                          onTap: () {},
-                        ),
-                      ],
-                    ),
+                  // About section
+                  _buildSectionHeader(context, 'About'),
+                  _buildSettingsCard(
+                    context,
+                    children: [
+                      _buildNavigationSetting(
+                        context,
+                        icon: LucideIcons.info,
+                        title: 'About Flick Player',
+                        subtitle: 'Version 1.0.0',
+                        onTap: _showAboutBottomSheet,
+                      ),
+                      _buildDivider(),
+                      _buildNavigationSetting(
+                        context,
+                        icon: LucideIcons.fileText,
+                        title: 'Licenses',
+                        subtitle: 'Open source licenses',
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
 
-                    // Spacing for nav bar
-                    const SizedBox(height: AppConstants.navBarHeight + 60),
-                  ],
-                ),
+                  // Spacing for nav bar
+                  const SizedBox(height: AppConstants.navBarHeight + 60),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

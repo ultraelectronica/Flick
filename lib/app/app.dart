@@ -128,6 +128,13 @@ class _MainShellState extends State<MainShell>
         onNotification: _handleScrollNotification,
         child: Stack(
           children: [
+            // Base Gradient
+            Container(
+              decoration: const BoxDecoration(
+                gradient: AppColors.backgroundGradient,
+              ),
+            ),
+
             // Persistent Background
             Positioned.fill(
               child: ValueListenableBuilder<Song?>(

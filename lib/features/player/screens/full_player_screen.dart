@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
-import 'dart:ui';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
