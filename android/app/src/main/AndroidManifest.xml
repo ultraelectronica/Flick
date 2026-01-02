@@ -5,6 +5,7 @@
         android:maxSdkVersion="32" />
     <!-- Android 13+ media permission -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <application
         android:label="Flick"
         android:name="${applicationName}"
