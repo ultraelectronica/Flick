@@ -3,9 +3,11 @@ package com.ultraelectronica.flick
 import android.content.Intent
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +16,7 @@ import kotlinx.coroutines.withContext
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.ultraelectronica.flick/storage"
+    private val PLAYER_CHANNEL = "com.ultraelectronica.flick/player"
     private val REQUEST_OPEN_DOCUMENT_TREE = 1001
 
     private var pendingResult: MethodChannel.Result? = null
@@ -94,6 +97,55 @@ class MainActivity: FlutterActivity() {
                     } else {
                         result.error("INVALID_ARGUMENT", "URI is required", null)
                     }
+                }
+                else -> result.notImplemented()
+            }
+        }
+        
+        // Cache the Flutter engine for notification service to use
+        FlutterEngineCache.getInstance().put("main_engine", flutterEngine)
+        
+        // Player channel for notification control
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PLAYER_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "showNotification" -> {
+                    val title = call.argument<String>("title")
+                    val artist = call.argument<String>("artist")
+                    val albumArtPath = call.argument<String>("albumArtPath")
+                    val isPlaying = call.argument<Boolean>("isPlaying") ?: true
+                    
+                    val intent = Intent(this, MusicNotificationService::class.java).apply {
+                        putExtra("title", title)
+                        putExtra("artist", artist)
+                        putExtra("albumArtPath", albumArtPath)
+                        putExtra("isPlaying", isPlaying)
+                    }
+                    
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
+                    result.success(null)
+                }
+                "updateNotification" -> {
+                    val title = call.argument<String>("title")
+                    val artist = call.argument<String>("artist")
+                    val albumArtPath = call.argument<String>("albumArtPath")
+                    val isPlaying = call.argument<Boolean>("isPlaying")
+                    
+                    val intent = Intent(this, MusicNotificationService::class.java).apply {
+                        title?.let { putExtra("title", it) }
+                        artist?.let { putExtra("artist", it) }
+                        albumArtPath?.let { putExtra("albumArtPath", it) }
+                        isPlaying?.let { putExtra("isPlaying", it) }
+                    }
+                    startService(intent)
+                    result.success(null)
+                }
+                "hideNotification" -> {
+                    stopService(Intent(this, MusicNotificationService::class.java))
+                    result.success(null)
                 }
                 else -> result.notImplemented()
             }

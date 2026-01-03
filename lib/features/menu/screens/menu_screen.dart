@@ -11,84 +11,81 @@ class MenuScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            _buildHeader(context),
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          _buildHeader(context),
 
-            const SizedBox(height: AppConstants.spacingLg),
+          const SizedBox(height: AppConstants.spacingLg),
 
-            // Menu items
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.spacingMd,
-                ),
-                child: Column(
-                  children: [
-                    _buildMenuItem(
-                      context,
-                      icon: LucideIcons.library,
-                      title: 'Library',
-                      subtitle: 'All your music in one place',
-                      onTap: () {},
-                    ),
-                    _buildMenuItem(
-                      context,
-                      icon: LucideIcons.listMusic,
-                      title: 'Playlists',
-                      subtitle: 'Create and manage playlists',
-                      onTap: () {},
-                    ),
-                    _buildMenuItem(
-                      context,
-                      icon: LucideIcons.heart,
-                      title: 'Favorites',
-                      subtitle: 'Your liked songs',
-                      onTap: () {},
-                    ),
-                    _buildMenuItem(
-                      context,
-                      icon: LucideIcons.clock,
-                      title: 'Recently Played',
-                      subtitle: 'Jump back into your music',
-                      onTap: () {},
-                    ),
-                    _buildMenuItem(
-                      context,
-                      icon: LucideIcons.folder,
-                      title: 'Folders',
-                      subtitle: 'Browse by folder structure',
-                      onTap: () {},
-                    ),
-                    _buildMenuItem(
-                      context,
-                      icon: LucideIcons.disc,
-                      title: 'Albums',
-                      subtitle: 'Browse by album',
-                      onTap: () {},
-                    ),
-                    _buildMenuItem(
-                      context,
-                      icon: LucideIcons.users,
-                      title: 'Artists',
-                      subtitle: 'Browse by artist',
-                      onTap: () {},
-                    ),
+          // Menu items
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spacingMd,
+              ),
+              child: Column(
+                children: [
+                  _buildMenuItem(
+                    context,
+                    icon: LucideIcons.library,
+                    title: 'Library',
+                    subtitle: 'All your music in one place',
+                    onTap: () {},
+                  ),
+                  _buildMenuItem(
+                    context,
+                    icon: LucideIcons.listMusic,
+                    title: 'Playlists',
+                    subtitle: 'Create and manage playlists',
+                    onTap: () {},
+                  ),
+                  _buildMenuItem(
+                    context,
+                    icon: LucideIcons.heart,
+                    title: 'Favorites',
+                    subtitle: 'Your liked songs',
+                    onTap: () {},
+                  ),
+                  _buildMenuItem(
+                    context,
+                    icon: LucideIcons.clock,
+                    title: 'Recently Played',
+                    subtitle: 'Jump back into your music',
+                    onTap: () {},
+                  ),
+                  _buildMenuItem(
+                    context,
+                    icon: LucideIcons.folder,
+                    title: 'Folders',
+                    subtitle: 'Browse by folder structure',
+                    onTap: () {},
+                  ),
+                  _buildMenuItem(
+                    context,
+                    icon: LucideIcons.disc,
+                    title: 'Albums',
+                    subtitle: 'Browse by album',
+                    onTap: () {},
+                  ),
+                  _buildMenuItem(
+                    context,
+                    icon: LucideIcons.users,
+                    title: 'Artists',
+                    subtitle: 'Browse by artist',
+                    onTap: () {},
+                  ),
 
-                    // Spacing for nav bar
-                    const SizedBox(height: AppConstants.navBarHeight + 60),
-                  ],
-                ),
+                  // Spacing for nav bar
+                  const SizedBox(height: AppConstants.navBarHeight + 60),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

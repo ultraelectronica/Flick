@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:salomon_bottom_bar/salomon_bottom_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -8,6 +9,11 @@ import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/features/songs/screens/songs_screen.dart';
 import 'package:flick/features/menu/screens/menu_screen.dart';
 import 'package:flick/features/settings/screens/settings_screen.dart';
+import 'package:flick/features/player/widgets/mini_player.dart';
+import 'package:flick/core/constants/app_constants.dart';
+import 'package:flick/models/song.dart';
+import 'package:flick/services/player_service.dart';
+import 'package:flick/features/player/widgets/ambient_background.dart';
 
 /// Main application widget for Flick Player.
 class FlickPlayerApp extends StatelessWidget {
@@ -47,6 +53,7 @@ enum NavDestination { menu, songs, settings }
 class _MainShellState extends State<MainShell>
     with SingleTickerProviderStateMixin {
   int _currentIndex = 1; // Default to songs (middle)
+  final PlayerService _playerService = PlayerService();
 
   // Use ValueNotifier for nav bar visibility to avoid full widget rebuilds
   final ValueNotifier<bool> _isNavBarVisible = ValueNotifier(true);
@@ -121,7 +128,25 @@ class _MainShellState extends State<MainShell>
         onNotification: _handleScrollNotification,
         child: Stack(
           children: [
+            // Base Gradient
+            Container(
+              decoration: const BoxDecoration(
+                gradient: AppColors.backgroundGradient,
+              ),
+            ),
+
+            // Persistent Background
+            Positioned.fill(
+              child: ValueListenableBuilder<Song?>(
+                valueListenable: _playerService.currentSongNotifier,
+                builder: (context, song, _) {
+                  return AmbientBackground(song: song);
+                },
+              ),
+            ),
+
             // Main content area with IndexedStack for faster tab switching
+            // Adjusted padding to ensure content isn't hidden behind MiniPlayer
             IndexedStack(
               index: _currentIndex,
               children: const [
@@ -129,6 +154,29 @@ class _MainShellState extends State<MainShell>
                 SongsScreen(key: ValueKey('songs')),
                 SettingsScreen(key: ValueKey('settings')),
               ],
+            ),
+
+            // Mini Player with animated position
+            AnimatedBuilder(
+              animation: _navBarAnimationController,
+              builder: (context, child) {
+                // Controller 0.0 (Visible) -> Bottom: NavBarHeight + 24
+                // Controller 1.0 (Hidden)  -> Bottom: 24 (just margin)
+                final double bottom =
+                    lerpDouble(
+                      AppConstants.navBarHeight + 24,
+                      24,
+                      _navBarAnimationController.value,
+                    ) ??
+                    24;
+
+                return Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: bottom,
+                  child: const MiniPlayer(),
+                );
+              },
             ),
 
             // Navigation bar with isolated repaints

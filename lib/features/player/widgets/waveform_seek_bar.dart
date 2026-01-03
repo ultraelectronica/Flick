@@ -1,0 +1,181 @@
+import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:flick/core/theme/app_colors.dart';
+
+class WaveformSeekBar extends StatefulWidget {
+  final Duration position;
+  final Duration duration;
+  final ValueChanged<Duration> onChanged;
+  final ValueChanged<Duration>? onChangeEnd;
+
+  const WaveformSeekBar({
+    super.key,
+    required this.position,
+    required this.duration,
+    required this.onChanged,
+    this.onChangeEnd,
+    this.barCount = 60,
+  });
+
+  final int barCount;
+
+  @override
+  State<WaveformSeekBar> createState() => _WaveformSeekBarState();
+}
+
+class _WaveformSeekBarState extends State<WaveformSeekBar> {
+  // Cache the waveform data so it doesn't jitter on rebuilds
+  late List<double> _waveformData;
+  Duration? _dragStartDuration;
+  double? _dragStartX;
+
+  @override
+  void initState() {
+    super.initState();
+    _generateWaveform();
+  }
+
+  @override
+  void didUpdateWidget(WaveformSeekBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.duration != oldWidget.duration &&
+        widget.duration.inMilliseconds > 0) {
+      _generateWaveform();
+    }
+  }
+
+  void _generateWaveform() {
+    // Generate pseudo-random bar heights based on duration to be deterministic for the same song
+    final random = Random(widget.duration.inMilliseconds);
+    _waveformData = List.generate(
+      widget.barCount,
+      (index) => 0.3 + random.nextDouble() * 0.7,
+    );
+  }
+
+  void _onDragStart(DragStartDetails details) {
+    _dragStartDuration = widget.position;
+    _dragStartX = details.localPosition.dx;
+  }
+
+  void _onDragUpdate(DragUpdateDetails details, BoxConstraints constraints) {
+    if (_dragStartDuration == null || _dragStartX == null) return;
+
+    final width = constraints.maxWidth;
+    final deltaX = details.localPosition.dx - _dragStartX!;
+    final progressDelta = deltaX / width;
+
+    // Inversed dragging for scrolling effect
+    final newMs =
+        _dragStartDuration!.inMilliseconds -
+        (progressDelta * widget.duration.inMilliseconds);
+
+    final clampedMs = newMs.clamp(0, widget.duration.inMilliseconds).round();
+    widget.onChanged(Duration(milliseconds: clampedMs));
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    if (widget.onChangeEnd != null) {
+      widget.onChangeEnd!(widget.position);
+    }
+    _dragStartDuration = null;
+    _dragStartX = null;
+  }
+
+  void _onTapUp(TapUpDetails details, BoxConstraints constraints) {
+    final width = constraints.maxWidth;
+    final progress = (details.localPosition.dx / width).clamp(0.0, 1.0);
+    final ms = (progress * widget.duration.inMilliseconds).round();
+    final newPos = Duration(milliseconds: ms);
+    widget.onChanged(newPos);
+    widget.onChangeEnd?.call(newPos);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return GestureDetector(
+          onHorizontalDragStart: _onDragStart,
+          onHorizontalDragUpdate: (details) =>
+              _onDragUpdate(details, constraints),
+          onHorizontalDragEnd: _onDragEnd,
+          onTapUp: (details) => _onTapUp(details, constraints),
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            height: 120, // Increased height
+            width: double.infinity,
+            child: CustomPaint(
+              painter: _WaveformPainter(
+                waveformData: _waveformData,
+                position: widget.position,
+                duration: widget.duration,
+                color: AppColors.textTertiary.withValues(alpha: 0.3),
+                activeColor: AppColors.accent,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _WaveformPainter extends CustomPainter {
+  final List<double> waveformData;
+  final Duration position;
+  final Duration duration;
+  final Color color;
+  final Color activeColor;
+
+  _WaveformPainter({
+    required this.waveformData,
+    required this.position,
+    required this.duration,
+    required this.color,
+    required this.activeColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final barCount = waveformData.length;
+    // Spacing between bars
+    final spacing = 2.0;
+    // Calculate total available width for bars (width - total spacing)
+    final totalSpacing = (barCount - 1) * spacing;
+    final barWidth = (size.width - totalSpacing) / barCount;
+
+    final currentProgress = duration.inMilliseconds == 0
+        ? 0.0
+        : position.inMilliseconds / duration.inMilliseconds;
+
+    final paint = Paint()..strokeCap = StrokeCap.round;
+
+    for (int i = 0; i < barCount; i++) {
+      final barHeight = waveformData[i] * size.height;
+      final x = i * (barWidth + spacing) + barWidth / 2;
+      final yCenter = size.height / 2;
+
+      // Check if this bar is "active" (played)
+      // We can do a precise split within a bar if we want, but per-bar color is easier.
+      // Let's do per-bar for simplicity first.
+      final barProgress = i / barCount;
+      final isPlayed = barProgress < currentProgress;
+
+      paint.color = isPlayed ? activeColor : color;
+      paint.strokeWidth = barWidth;
+
+      // Draw line from center up and down
+      canvas.drawLine(
+        Offset(x, yCenter - barHeight / 2),
+        Offset(x, yCenter + barHeight / 2),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WaveformPainter oldDelegate) {
+    return oldDelegate.position != position || oldDelegate.duration != duration;
+  }
+}

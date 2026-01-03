@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/features/songs/widgets/orbit_scroll.dart';
 import 'package:flick/data/repositories/song_repository.dart';
+import 'package:flick/services/player_service.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 enum SortOption { title, artist, dateAdded }
@@ -24,10 +24,7 @@ class _SongsScreenState extends State<SongsScreen> {
   bool _isLoading = true;
   final SongRepository _songRepository = SongRepository();
 
-  // Audio Player for Preview
-  final AudioPlayer _player = AudioPlayer();
-  String? _playingFilePath;
-  bool _isPlaying = false;
+  final PlayerService _playerService = PlayerService();
 
   // Sorting
   SortOption _currentSort = SortOption.title;
@@ -40,30 +37,33 @@ class _SongsScreenState extends State<SongsScreen> {
     super.initState();
     _loadSongs();
 
-    // Listen to player state
-    _player.playerStateStream.listen((state) {
-      if (mounted) {
-        setState(() {
-          _isPlaying = state.playing;
-          if (state.processingState == ProcessingState.completed) {
-            _isPlaying = false;
-            _playingFilePath = null;
-          }
-        });
-      }
-    });
-
     // Listen for changes in the songs collection
     _songRepository.watchSongs().listen((_) {
       _loadSongs();
     });
+
+    // Listen to global player state to sync selection?
+    // Optionally we can sync _selectedIndex to currently playing song.
+    _playerService.currentSongNotifier.addListener(_syncSelectionWithPlayer);
   }
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
-    _player.dispose();
+    _playerService.currentSongNotifier.removeListener(_syncSelectionWithPlayer);
     super.dispose();
+  }
+
+  void _syncSelectionWithPlayer() {
+    final playing = _playerService.currentSongNotifier.value;
+    if (playing != null) {
+      final index = _songs.indexWhere((s) => s.id == playing.id);
+      if (index != -1 && index != _selectedIndex && mounted) {
+        setState(() {
+          _selectedIndex = index;
+        });
+      }
+    }
   }
 
   Future<void> _loadSongs() async {
@@ -81,7 +81,6 @@ class _SongsScreenState extends State<SongsScreen> {
         });
       }
     } catch (e) {
-      // If database not ready, use sample songs for now
       if (mounted) {
         setState(() {
           _songs = Song.sampleSongs;
@@ -111,112 +110,51 @@ class _SongsScreenState extends State<SongsScreen> {
     });
   }
 
-  Future<void> _playPreview(Song song) async {
-    try {
-      final path = song.filePath;
-      if (path == null) return;
-
-      // If already playing this song, do nothing (maintain playback)
-      if (_playingFilePath == path && _isPlaying) return;
-
-      // Use AudioSource.uri to handle both file:// and content:// correctly
-      await _player.setAudioSource(AudioSource.uri(Uri.parse(path)));
-      await _player.play();
-      setState(() {
-        _playingFilePath = path;
-      });
-    } catch (e) {
-      debugPrint("Error playing preview: $e");
-    }
-  }
-
-  Future<void> _togglePreview(Song song) async {
-    try {
-      final path = song.filePath;
-      if (path == null) return;
-
-      if (_playingFilePath == path && _isPlaying) {
-        await _player.pause();
-      } else {
-        // Use AudioSource.uri to handle both file:// and content:// correctly
-        await _player.setAudioSource(AudioSource.uri(Uri.parse(path)));
-        await _player.play();
-        setState(() {
-          _playingFilePath = path;
-        });
-      }
-    } catch (e) {
-      debugPrint("Error playing preview: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to play preview: ${e.toString()}')),
-        );
-      }
-    }
+  Future<void> _playSong(Song song) async {
+    await _playerService.play(song, playlist: _songs);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
-      child: Stack(
-        children: [
-          // Background ambient effects
-          _buildAmbientBackground(),
+    return Stack(
+      children: [
+        // Background ambient effects
+        _buildAmbientBackground(),
 
-          // Main content
-          SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                // Header
-                _buildHeader(),
+        // Main content
+        SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              // Header
+              _buildHeader(),
 
-                // Content based on state
-                Expanded(
-                  child: _isLoading
-                      ? _buildLoadingState()
-                      : _songs.isEmpty
-                      ? _buildEmptyState()
-                      : OrbitScroll(
-                          songs: _songs,
-                          selectedIndex: _selectedIndex,
-                          onSelectedIndexChanged: (index) {
-                            setState(() {
-                              _selectedIndex = index;
-                            });
+              // Content based on state
+              Expanded(
+                child: _isLoading
+                    ? _buildLoadingState()
+                    : _songs.isEmpty
+                    ? _buildEmptyState()
+                    : OrbitScroll(
+                        songs: _songs,
+                        selectedIndex: _selectedIndex,
+                        onSelectedIndexChanged: (index) {
+                          setState(() {
+                            _selectedIndex = index;
+                          });
+                        },
+                        onSongSelected: (index) {
+                          _playSong(_songs[index]);
+                        },
+                      ),
+              ),
 
-                            // Auto-play preview with debounce
-                            _debounceTimer?.cancel();
-                            _debounceTimer = Timer(
-                              const Duration(milliseconds: 800),
-                              () {
-                                if (mounted && index < _songs.length) {
-                                  _playPreview(_songs[index]);
-                                }
-                              },
-                            );
-                          },
-                          onSongSelected: (index) {
-                            if (_selectedIndex == index) {
-                              // Tap on already selected song -> Toggle Preview
-                              _togglePreview(_songs[index]);
-                            } else {
-                              setState(() {
-                                _selectedIndex = index;
-                              });
-                            }
-                          },
-                        ),
-                ),
-
-                // Space for nav bar
-                const SizedBox(height: AppConstants.navBarHeight + 40),
-              ],
-            ),
+              // Space for nav bar & mini player
+              const SizedBox(height: AppConstants.navBarHeight + 90),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

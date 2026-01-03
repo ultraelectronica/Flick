@@ -134,26 +134,29 @@ class SongCard extends StatelessWidget {
   }
 
   Widget _buildAlbumArt(double size) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-        color: AppColors.surfaceLight,
-        border: Border.all(color: AppColors.glassBorder, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-        child: song.albumArt != null
-            ? _buildRawImage(song.albumArt!, fit: BoxFit.cover)
-            : _buildPlaceholderArt(),
+    return Hero(
+      tag: 'song_art_${song.id}',
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+          color: AppColors.surfaceLight,
+          border: Border.all(color: AppColors.glassBorder, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+          child: song.albumArt != null
+              ? _buildRawImage(song.albumArt!, fit: BoxFit.cover)
+              : _buildPlaceholderArt(),
+        ),
       ),
     );
   }

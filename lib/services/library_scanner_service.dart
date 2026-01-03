@@ -158,6 +158,14 @@ class LibraryScannerService {
         continue;
       }
 
+      for (var meta in metadataList) {
+        if (meta.albumArtPath != null && meta.albumArtPath!.isNotEmpty) {
+          debugPrint(
+            "Successfully found album cover for ${meta.title}: ${meta.albumArtPath}",
+          );
+        }
+      }
+
       final batch = <SongEntity>[];
       for (final meta in metadataList) {
         // Merge with basic info
