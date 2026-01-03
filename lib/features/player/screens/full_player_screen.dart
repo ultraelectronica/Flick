@@ -27,6 +27,248 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
     return '$minutes:$seconds';
   }
 
+  void _showSpeedBottomSheet(BuildContext context) {
+    const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.glassBackgroundStrong.withValues(alpha: 0.95),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: AppColors.glassBorder, width: 1),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  LucideIcons.gauge,
+                  color: AppColors.accent,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Playback Speed',
+                  style: TextStyle(
+                    fontFamily: 'ProductSans',
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            ValueListenableBuilder<double>(
+              valueListenable: _playerService.playbackSpeedNotifier,
+              builder: (context, currentSpeed, _) {
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: speeds.map((speed) {
+                    final isSelected = speed == currentSpeed;
+                    return GestureDetector(
+                      onTap: () {
+                        _playerService.setPlaybackSpeed(speed);
+                        Navigator.pop(context);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppColors.accent
+                              : AppColors.glassBackground,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.accent
+                                : AppColors.glassBorder,
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          '${speed}x',
+                          style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontSize: 16,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color: isSelected
+                                ? Colors.white
+                                : AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSleepTimerBottomSheet(BuildContext context) {
+    final timerOptions = [
+      (const Duration(minutes: 15), '15 min'),
+      (const Duration(minutes: 30), '30 min'),
+      (const Duration(minutes: 45), '45 min'),
+      (const Duration(hours: 1), '1 hour'),
+      (const Duration(hours: 2), '2 hours'),
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.glassBackgroundStrong.withValues(alpha: 0.95),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: AppColors.glassBorder, width: 1),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      LucideIcons.moonStar,
+                      color: AppColors.accent,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Sleep Timer',
+                      style: TextStyle(
+                        fontFamily: 'ProductSans',
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_playerService.isSleepTimerActive)
+                  TextButton(
+                    onPressed: () {
+                      _playerService.cancelSleepTimer();
+                      Navigator.pop(context);
+                    },
+                    child: const Text(
+                      'Cancel Timer',
+                      style: TextStyle(
+                        fontFamily: 'ProductSans',
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ValueListenableBuilder<Duration?>(
+              valueListenable: _playerService.sleepTimerRemainingNotifier,
+              builder: (context, remaining, _) {
+                if (remaining != null) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.accent.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            LucideIcons.timer,
+                            color: AppColors.accent,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Stopping in ${_formatDuration(remaining)}',
+                            style: const TextStyle(
+                              fontFamily: 'ProductSans',
+                              fontSize: 14,
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: timerOptions.map((option) {
+                return GestureDetector(
+                  onTap: () {
+                    _playerService.setSleepTimer(option.$1);
+                    Navigator.pop(context);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.glassBackground,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.glassBorder,
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      option.$2,
+                      style: const TextStyle(
+                        fontFamily: 'ProductSans',
+                        fontSize: 16,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -92,12 +334,82 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                   letterSpacing: 1,
                                 ),
                               ),
-                              IconButton(
-                                onPressed: () {}, // Options menu
+                              PopupMenuButton<String>(
                                 icon: const Icon(
                                   Icons.more_vert,
                                   color: AppColors.textPrimary,
                                 ),
+                                color: AppColors.glassBackgroundStrong,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                itemBuilder: (context) => [
+                                  PopupMenuItem(
+                                    value: 'speed',
+                                    child: ValueListenableBuilder<double>(
+                                      valueListenable:
+                                          _playerService.playbackSpeedNotifier,
+                                      builder: (context, speed, _) {
+                                        return Row(
+                                          children: [
+                                            const Icon(
+                                              LucideIcons.gauge,
+                                              color: AppColors.textPrimary,
+                                              size: 20,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Text(
+                                              'Speed: ${speed}x',
+                                              style: const TextStyle(
+                                                fontFamily: 'ProductSans',
+                                                color: AppColors.textPrimary,
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'timer',
+                                    child: ValueListenableBuilder<Duration?>(
+                                      valueListenable: _playerService
+                                          .sleepTimerRemainingNotifier,
+                                      builder: (context, remaining, _) {
+                                        return Row(
+                                          children: [
+                                            Icon(
+                                              LucideIcons.moonStar,
+                                              color: remaining != null
+                                                  ? AppColors.accent
+                                                  : AppColors.textPrimary,
+                                              size: 20,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Text(
+                                              remaining != null
+                                                  ? 'Sleep: ${_formatDuration(remaining)}'
+                                                  : 'Sleep Timer',
+                                              style: TextStyle(
+                                                fontFamily: 'ProductSans',
+                                                color: remaining != null
+                                                    ? AppColors.accent
+                                                    : AppColors.textPrimary,
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                                onSelected: (value) {
+                                  if (value == 'speed') {
+                                    _showSpeedBottomSheet(context);
+                                  } else if (value == 'timer') {
+                                    _showSleepTimerBottomSheet(context);
+                                  }
+                                },
                               ),
                             ],
                           ),
@@ -405,7 +717,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                                   height: 72,
                                                   decoration: BoxDecoration(
                                                     shape: BoxShape.circle,
-                                                    color: AppColors.accent,
+                                                    color: const Color(
+                                                      0xFF121212,
+                                                    ).withValues(alpha: 0.6),
                                                     boxShadow: [
                                                       BoxShadow(
                                                         color: AppColors.accent
