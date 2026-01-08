@@ -742,8 +742,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
 
-                  // Spacing for nav bar
-                  const SizedBox(height: AppConstants.navBarHeight + 60),
+                  // Spacing for nav bar with mini player
+                  const SizedBox(height: AppConstants.navBarHeight + 120),
                 ],
               ),
             ),
