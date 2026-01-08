@@ -25,6 +25,7 @@ class PlaylistsScreen extends StatelessWidget {
         ),
       ),
       floatingActionButton: _buildCreateButton(context),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
@@ -161,27 +162,24 @@ class PlaylistsScreen extends StatelessWidget {
   }
 
   Widget _buildCreateButton(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: AppConstants.navBarHeight + 80),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppConstants.radiusRound),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: AppConstants.glassBlurSigmaLight,
-            sigmaY: AppConstants.glassBlurSigmaLight,
-          ),
-          child: FloatingActionButton.extended(
-            onPressed: () {
-              _showCreatePlaylistDialog(context);
-            },
-            backgroundColor: AppColors.glassBackgroundStrong,
-            foregroundColor: context.adaptiveTextPrimary,
-            elevation: 0,
-            icon: const Icon(LucideIcons.plus),
-            label: const Text(
-              'Create Playlist',
-              style: TextStyle(fontFamily: 'ProductSans'),
-            ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppConstants.radiusRound),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: AppConstants.glassBlurSigmaLight,
+          sigmaY: AppConstants.glassBlurSigmaLight,
+        ),
+        child: FloatingActionButton.extended(
+          onPressed: () {
+            _showCreatePlaylistDialog(context);
+          },
+          backgroundColor: AppColors.glassBackgroundStrong,
+          foregroundColor: context.adaptiveTextPrimary,
+          elevation: 0,
+          icon: const Icon(LucideIcons.plus),
+          label: const Text(
+            'Create Playlist',
+            style: TextStyle(fontFamily: 'ProductSans'),
           ),
         ),
       ),
