@@ -40,6 +40,25 @@ class PermissionService {
     return true;
   }
 
+  /// Check if notification permission is already granted.
+  /// Required for Android 13+ (API 33) to show media playback notifications.
+  Future<bool> hasNotificationPermission() async {
+    if (Platform.isAndroid) {
+      return await Permission.notification.isGranted;
+    }
+    return true; // iOS handles notifications differently
+  }
+
+  /// Request notification permission.
+  /// Returns true if permission is granted.
+  Future<bool> requestNotificationPermission() async {
+    if (Platform.isAndroid) {
+      final status = await Permission.notification.request();
+      return status.isGranted;
+    }
+    return true;
+  }
+
   /// Open the system folder picker (ACTION_OPEN_DOCUMENT_TREE).
   /// Returns the selected folder URI as a string, or null if cancelled.
   Future<String?> openFolderPicker() async {

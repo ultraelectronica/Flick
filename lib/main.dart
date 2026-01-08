@@ -3,6 +3,7 @@ import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flick/src/rust/frb_generated.dart';
 import 'package:flick/app/app.dart';
 import 'package:flick/data/database.dart';
+import 'package:flick/services/permission_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +17,9 @@ Future<void> main() async {
   // Set high refresh rate mode for smoother animations
   await _setOptimalDisplayMode();
 
+  // Request notification permission (required for Android 13+ media controls)
+  await _requestNotificationPermission();
+
   runApp(const FlickPlayerApp());
 }
 
@@ -27,5 +31,15 @@ Future<void> _setOptimalDisplayMode() async {
   } catch (e) {
     // Silently ignore on unsupported platforms (iOS, Web, etc.)
     debugPrint('Display mode not supported: $e');
+  }
+}
+
+/// Request notification permission if not already granted.
+/// This is required for Android 13+ to show media playback notifications.
+Future<void> _requestNotificationPermission() async {
+  final permissionService = PermissionService();
+  final hasPermission = await permissionService.hasNotificationPermission();
+  if (!hasPermission) {
+    await permissionService.requestNotificationPermission();
   }
 }
