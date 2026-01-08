@@ -31,6 +31,8 @@ class MusicNotificationService : Service() {
         const val ACTION_NEXT = "com.ultraelectronica.flick.NEXT"
         const val ACTION_PREVIOUS = "com.ultraelectronica.flick.PREVIOUS"
         const val ACTION_STOP = "com.ultraelectronica.flick.STOP"
+        const val ACTION_SHUFFLE = "com.ultraelectronica.flick.SHUFFLE"
+        const val ACTION_FAVORITE = "com.ultraelectronica.flick.FAVORITE"
         
         private const val PLAYER_CHANNEL = "com.ultraelectronica.flick/player"
     }
@@ -43,6 +45,10 @@ class MusicNotificationService : Service() {
     private var currentArtist: String = "Unknown Artist"
     private var currentAlbumArtPath: String? = null
     private var isPlaying: Boolean = false
+    private var currentDuration: Long = 0
+    private var currentPosition: Long = 0
+    private var isShuffleMode: Boolean = false
+    private var isFavorite: Boolean = false
     
     private val actionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -55,6 +61,8 @@ class MusicNotificationService : Service() {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
+                ACTION_SHUFFLE -> sendCommandToFlutter("toggleShuffle")
+                ACTION_FAVORITE -> sendCommandToFlutter("toggleFavorite")
             }
         }
     }
@@ -71,6 +79,8 @@ class MusicNotificationService : Service() {
             addAction(ACTION_NEXT)
             addAction(ACTION_PREVIOUS)
             addAction(ACTION_STOP)
+            addAction(ACTION_SHUFFLE)
+            addAction(ACTION_FAVORITE)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(actionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -86,16 +96,25 @@ class MusicNotificationService : Service() {
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         intent?.let {
-            currentTitle = it.getStringExtra("title") ?: "Unknown"
-            currentArtist = it.getStringExtra("artist") ?: "Unknown Artist"
-            currentAlbumArtPath = it.getStringExtra("albumArtPath")
-            isPlaying = it.getBooleanExtra("isPlaying", true)
+            if (it.hasExtra("title")) currentTitle = it.getStringExtra("title") ?: "Unknown"
+            if (it.hasExtra("artist")) currentArtist = it.getStringExtra("artist") ?: "Unknown Artist"
+            if (it.hasExtra("albumArtPath")) currentAlbumArtPath = it.getStringExtra("albumArtPath")
+            if (it.hasExtra("isPlaying")) isPlaying = it.getBooleanExtra("isPlaying", false)
+            if (it.hasExtra("duration")) currentDuration = it.getLongExtra("duration", 0)
+            if (it.hasExtra("position")) currentPosition = it.getLongExtra("position", 0)
+            if (it.hasExtra("isShuffle")) isShuffleMode = it.getBooleanExtra("isShuffle", false)
+            if (it.hasExtra("isFavorite")) isFavorite = it.getBooleanExtra("isFavorite", false)
         }
         
         val notification = buildNotification()
         startForeground(NOTIFICATION_ID, notification)
         
-        return START_NOT_STICKY
+        return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // ensure service keeps running
     }
     
     override fun onBind(intent: Intent?): IBinder? = null
@@ -131,30 +150,23 @@ class MusicNotificationService : Service() {
             )
             
             setCallback(object : MediaSessionCompat.Callback() {
-                override fun onPlay() {
-                    sendCommandToFlutter("play")
-                }
-                
-                override fun onPause() {
-                    sendCommandToFlutter("pause")
-                }
-                
-                override fun onSkipToNext() {
-                    sendCommandToFlutter("next")
-                }
-                
-                override fun onSkipToPrevious() {
-                    sendCommandToFlutter("previous")
-                }
-                
+                override fun onPlay() { sendCommandToFlutter("play") }
+                override fun onPause() { sendCommandToFlutter("pause") }
+                override fun onSkipToNext() { sendCommandToFlutter("next") }
+                override fun onSkipToPrevious() { sendCommandToFlutter("previous") }
                 override fun onStop() {
                     sendCommandToFlutter("stop")
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
-                
                 override fun onSeekTo(pos: Long) {
                     sendCommandToFlutter("seek", mapOf("position" to pos))
+                }
+                override fun onCustomAction(action: String?, extras: android.os.Bundle?) {
+                   when(action) {
+                       ACTION_SHUFFLE -> sendCommandToFlutter("toggleShuffle")
+                       ACTION_FAVORITE -> sendCommandToFlutter("toggleFavorite")
+                   }
                 }
             })
             
@@ -169,6 +181,7 @@ class MusicNotificationService : Service() {
         val metadata = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_TITLE, currentTitle)
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, currentArtist)
+            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, currentDuration)
         
         currentAlbumArtPath?.let { path ->
             try {
@@ -201,7 +214,7 @@ class MusicNotificationService : Service() {
                 PlaybackStateCompat.ACTION_STOP or
                 PlaybackStateCompat.ACTION_SEEK_TO
             )
-            .setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+            .setState(state, currentPosition, 1.0f)
             .build()
         
         mediaSession.setPlaybackState(playbackState)
@@ -211,8 +224,9 @@ class MusicNotificationService : Service() {
         updateMediaSessionMetadata()
         updatePlaybackState()
         
-        // Intent to open the app
+        // Intent to open the app (bring to front, don't create new instance)
         val contentIntent = packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
+            intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             PendingIntent.getActivity(
                 this,
                 0,
@@ -227,16 +241,24 @@ class MusicNotificationService : Service() {
             Intent(ACTION_PLAY_PAUSE),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        
         val prevIntent = PendingIntent.getBroadcast(
             this, 2,
             Intent(ACTION_PREVIOUS),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        
         val nextIntent = PendingIntent.getBroadcast(
             this, 3,
             Intent(ACTION_NEXT),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val shuffleIntent = PendingIntent.getBroadcast(
+            this, 5,
+            Intent(ACTION_SHUFFLE),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val favoriteIntent = PendingIntent.getBroadcast(
+            this, 6,
+            Intent(ACTION_FAVORITE),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
@@ -249,14 +271,21 @@ class MusicNotificationService : Service() {
             }
         }
         
-        val playPauseIcon = if (isPlaying) {
-            android.R.drawable.ic_media_pause
-        } else {
-            android.R.drawable.ic_media_play
-        }
-        
+        val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         val playPauseText = if (isPlaying) "Pause" else "Play"
         
+        // Shuffle & Favorite Icons (Using available system resources)
+        // Note: These might vary by device/OS version. In a real app we'd need custom drawables.
+        // Using generic icons as placeholders.
+        val shuffleIcon = android.R.drawable.ic_menu_sort_by_size // Placeholder for Shuffle
+        val shuffleText = if(isShuffleMode) "Shuffle On" else "Shuffle Off"
+        // To indicate ON/OFF visually without custom icons, we'd ideally change the icon or tint. 
+        // Standard notification actions don't support tinting easily. 
+        // We'll trust the user understands for now or needs a real icon asset. 
+        
+        val favoriteIcon = if(isFavorite) android.R.drawable.btn_star_big_on else android.R.drawable.btn_star_big_off
+        val favoriteText = if(isFavorite) "Unfavorite" else "Favorite"
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
@@ -266,35 +295,44 @@ class MusicNotificationService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .setOngoing(true) // Makes notification non-dismissable
+            .setOngoing(true)
+            // Actions: Shuffle, Prev, Play/Pause, Next, Favorite
+            .addAction(shuffleIcon, shuffleText, shuffleIntent)
             .addAction(android.R.drawable.ic_media_previous, "Previous", prevIntent)
             .addAction(playPauseIcon, playPauseText, playPauseIntent)
             .addAction(android.R.drawable.ic_media_next, "Next", nextIntent)
+            .addAction(favoriteIcon, favoriteText, favoriteIntent)
             .setStyle(
                 MediaNotificationCompat.MediaStyle()
                     .setMediaSession(mediaSession.sessionToken)
-                    .setShowActionsInCompactView(0, 1, 2)
+                    // Show Shuffle, Play/Pause, Next in compact view (indices 0, 2, 3) 
+                    // Or Prev, Play/Pause, Next (1, 2, 3)?
+                    // Let's standard: 1 (Prev), 2 (Play), 3 (Next) - Classic
+                    // Expanded will show all 5.
+                    .setShowActionsInCompactView(1, 2, 3)
             )
             .build()
     }
     
-    fun updateNotification(title: String?, artist: String?, albumArtPath: String?, playing: Boolean?) {
+    fun updateNotification(title: String?, artist: String?, albumArtPath: String?, playing: Boolean?, duration: Long?, position: Long?, shuffle: Boolean?, favorite: Boolean?) {
         title?.let { currentTitle = it }
         artist?.let { currentArtist = it }
         albumArtPath?.let { currentAlbumArtPath = it }
         playing?.let { isPlaying = it }
+        duration?.let { currentDuration = it }
+        position?.let { currentPosition = it }
+        shuffle?.let { isShuffleMode = it }
+        favorite?.let { isFavorite = it }
         
         val notification = buildNotification()
         notificationManager.notify(NOTIFICATION_ID, notification)
     }
     
     private fun sendCommandToFlutter(command: String, args: Map<String, Any>? = null) {
-        // Post to main thread to ensure method channel is called correctly
         android.os.Handler(mainLooper).post {
             try {
                 methodChannel?.invokeMethod(command, args)
             } catch (e: Exception) {
-                // Method channel not available
             }
         }
     }

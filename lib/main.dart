@@ -4,6 +4,7 @@ import 'package:flick/src/rust/frb_generated.dart';
 import 'package:flick/app/app.dart';
 import 'package:flick/data/database.dart';
 import 'package:flick/services/permission_service.dart';
+import 'package:flick/services/player_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +20,9 @@ Future<void> main() async {
 
   // Request notification permission (required for Android 13+ media controls)
   await _requestNotificationPermission();
+
+  // Restore last played song state
+  await _restoreLastPlayedSong();
 
   runApp(const FlickPlayerApp());
 }
@@ -41,5 +45,16 @@ Future<void> _requestNotificationPermission() async {
   final hasPermission = await permissionService.hasNotificationPermission();
   if (!hasPermission) {
     await permissionService.requestNotificationPermission();
+  }
+}
+
+/// Restore last played song state from storage.
+/// This allows resuming playback from where the user left off.
+Future<void> _restoreLastPlayedSong() async {
+  try {
+    final playerService = PlayerService();
+    await playerService.restoreLastPlayed();
+  } catch (e) {
+    debugPrint('Failed to restore last played song: $e');
   }
 }
