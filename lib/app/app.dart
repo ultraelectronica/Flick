@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:salomon_bottom_bar/salomon_bottom_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +12,7 @@ import 'package:flick/features/player/screens/full_player_screen.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/features/player/widgets/ambient_background.dart';
+import 'package:flick/widgets/navigation/salomon_nav_bar.dart';
 
 /// Main application widget for Flick Player.
 class FlickPlayerApp extends StatelessWidget {
@@ -174,121 +174,17 @@ class _MainShellState extends State<MainShell>
   }
 
   Widget _buildUnifiedBottomBar() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        // Outer glow effect for premium feel
-        boxShadow: [
-          // Primary shadow
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 20,
-            spreadRadius: 2,
-            offset: const Offset(0, 8),
-          ),
-          // Subtle ambient glow
-          BoxShadow(
-            color: AppColors.accent.withValues(alpha: 0.05),
-            blurRadius: 32,
-            spreadRadius: -4,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: Container(
-          decoration: BoxDecoration(
-            // Glassmorphism background
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.surfaceLight.withValues(alpha: 0.85),
-                AppColors.surface.withValues(alpha: 0.92),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(28),
-            // Subtle border for depth
-            border: Border.all(color: AppColors.glassBorder, width: 1),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Embedded Mini Player
-              _buildEmbeddedMiniPlayer(),
-              // Navigation Bar - shifted up for tighter spacing
-              Transform.translate(
-                offset: const Offset(0, -8),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, -35, 16, 2),
-                  child: SalomonBottomBar(
-                    currentIndex: _currentIndex,
-                    onTap: (index) {
-                      if (_currentIndex != index) {
-                        setState(() {
-                          _currentIndex = index;
-                        });
-                      }
-                    },
-                    margin: EdgeInsets.zero,
-                    itemPadding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    selectedItemColor: AppColors.textPrimary,
-                    unselectedItemColor: AppColors.textTertiary,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutQuart,
-                    items: [
-                      SalomonBottomBarItem(
-                        icon: const Icon(LucideIcons.layoutGrid, size: 20),
-                        title: const Text(
-                          'Menu',
-                          style: TextStyle(
-                            fontFamily: 'ProductSans',
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                        selectedColor: AppColors.accentLight,
-                        unselectedColor: AppColors.textTertiary,
-                      ),
-                      SalomonBottomBarItem(
-                        icon: const Icon(LucideIcons.disc3, size: 20),
-                        title: const Text(
-                          'Songs',
-                          style: TextStyle(
-                            fontFamily: 'ProductSans',
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                        selectedColor: AppColors.accentLight,
-                        unselectedColor: AppColors.textTertiary,
-                      ),
-                      SalomonBottomBarItem(
-                        icon: const Icon(LucideIcons.settings2, size: 20),
-                        title: const Text(
-                          'Settings',
-                          style: TextStyle(
-                            fontFamily: 'ProductSans',
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                        selectedColor: AppColors.accentLight,
-                        unselectedColor: AppColors.textTertiary,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return SalomonNavBar(
+      currentIndex: _currentIndex,
+      onTap: (index) {
+        if (_currentIndex != index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        }
+      },
+      showMiniPlayer: true,
+      miniPlayerWidget: _buildEmbeddedMiniPlayer(),
     );
   }
 
