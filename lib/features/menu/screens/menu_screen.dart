@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 
 /// Menu screen with navigation options matching the design language.
@@ -98,9 +99,10 @@ class MenuScreen extends StatelessWidget {
       ),
       child: Text(
         'Menu',
-        style: Theme.of(
-          context,
-        ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
+        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: context.adaptiveTextPrimary,
+        ),
       ),
     );
   }
@@ -149,7 +151,11 @@ class MenuScreen extends StatelessWidget {
                           width: 1,
                         ),
                       ),
-                      child: Icon(icon, color: AppColors.textPrimary, size: 22),
+                      child: Icon(
+                        icon,
+                        color: context.adaptiveTextPrimary,
+                        size: 22,
+                      ),
                     ),
 
                     const SizedBox(width: AppConstants.spacingMd),
@@ -161,22 +167,23 @@ class MenuScreen extends StatelessWidget {
                         children: [
                           Text(
                             title,
-                            style: Theme.of(context).textTheme.titleMedium,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(color: context.adaptiveTextPrimary),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             subtitle,
                             style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: AppColors.textTertiary),
+                                ?.copyWith(color: context.adaptiveTextTertiary),
                           ),
                         ],
                       ),
                     ),
 
                     // Arrow
-                    const Icon(
+                    Icon(
                       LucideIcons.chevronRight,
-                      color: AppColors.textTertiary,
+                      color: context.adaptiveTextTertiary,
                       size: 20,
                     ),
                   ],

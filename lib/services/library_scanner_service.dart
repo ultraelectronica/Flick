@@ -114,8 +114,12 @@ class LibraryScannerService {
 
         // Check for modification OR missing new metadata (Album Art / Bitrate)
         // This forces a rescan for files that haven't changed but need new fields.
-        final missingMetadata =
-            existing.albumArtPath == null && existing.bitrate == null;
+        // Also check if album art file actually exists on disk (cache may have been cleared)
+        final albumArtMissing =
+            existing.albumArtPath == null ||
+            (existing.albumArtPath != null &&
+                !File(existing.albumArtPath!).existsSync());
+        final missingMetadata = albumArtMissing && existing.bitrate == null;
 
         if (file.lastModified != existingTime || missingMetadata) {
           urisToProcess.add(file.uri);

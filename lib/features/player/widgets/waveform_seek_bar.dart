@@ -151,18 +151,36 @@ class _WaveformPainter extends CustomPainter {
 
     final paint = Paint()..strokeCap = StrokeCap.round;
 
+    // Number of bars for the smooth transition zone
+    const transitionBars = 3.0;
+    final transitionWidth = transitionBars / barCount;
+
     for (int i = 0; i < barCount; i++) {
       final barHeight = waveformData[i] * size.height;
       final x = i * (barWidth + spacing) + barWidth / 2;
       final yCenter = size.height / 2;
 
-      // Check if this bar is "active" (played)
-      // We can do a precise split within a bar if we want, but per-bar color is easier.
-      // Let's do per-bar for simplicity first.
+      // Calculate bar position as progress (0.0 to 1.0)
       final barProgress = i / barCount;
-      final isPlayed = barProgress < currentProgress;
 
-      paint.color = isPlayed ? activeColor : color;
+      // Smooth color interpolation around the current progress
+      // Calculate how far this bar is from the current progress
+      final distanceFromProgress = currentProgress - barProgress;
+
+      Color barColor;
+      if (distanceFromProgress >= transitionWidth) {
+        // Fully played
+        barColor = activeColor;
+      } else if (distanceFromProgress <= 0) {
+        // Not yet played
+        barColor = color;
+      } else {
+        // In the transition zone - smoothly interpolate
+        final t = distanceFromProgress / transitionWidth;
+        barColor = Color.lerp(color, activeColor, t)!;
+      }
+
+      paint.color = barColor;
       paint.strokeWidth = barWidth;
 
       // Draw line from center up and down

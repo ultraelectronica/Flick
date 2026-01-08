@@ -250,7 +250,9 @@ class MainActivity: FlutterActivity() {
     private fun extractMetadataForFiles(uris: List<String>): List<Map<String, Any?>> {
         val retriever = MediaMetadataRetriever()
         val result = mutableListOf<Map<String, Any?>>()
-        val cacheDir = cacheDir
+        // Use filesDir instead of cacheDir for persistent album art storage
+        // cacheDir can be cleared by Android at any time when storage is low
+        val albumArtDir = java.io.File(filesDir, "album_art").apply { mkdirs() }
 
         for (uriString in uris) {
             try {
@@ -276,7 +278,7 @@ class MainActivity: FlutterActivity() {
                     try {
                         // Use MD5 of URI as filename to avoid collisions and invalid chars
                         val filename = java.math.BigInteger(1, java.security.MessageDigest.getInstance("MD5").digest(uriString.toByteArray())).toString(16) + ".jpg"
-                        val file = java.io.File(cacheDir, filename)
+                        val file = java.io.File(albumArtDir, filename)
                         
                         // Only write if not exists or maybe overwrite? 
                         // For performance, check existence. 

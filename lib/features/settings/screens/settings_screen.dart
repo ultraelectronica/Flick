@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/services/music_folder_service.dart';
 import 'package:flick/services/library_scanner_service.dart';
@@ -737,9 +738,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       child: Text(
         'Settings',
-        style: Theme.of(
-          context,
-        ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
+        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: context.adaptiveTextPrimary,
+        ),
       ),
     );
   }
@@ -753,7 +755,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Text(
         title.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: AppColors.textTertiary,
+          color: context.adaptiveTextTertiary,
           letterSpacing: 1.2,
           fontWeight: FontWeight.w600,
         ),
@@ -848,12 +850,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Library', style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  'Library',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: context.adaptiveTextPrimary,
+                  ),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   '$_songCount songs in ${_folders.length} ${_folders.length == 1 ? 'folder' : 'folders'}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textTertiary,
+                    color: context.adaptiveTextTertiary,
                   ),
                 ),
               ],
@@ -869,20 +876,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.all(AppConstants.spacingMd),
       child: Row(
         children: [
-          const SizedBox(
+          SizedBox(
             width: 16,
             height: 16,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: AppColors.textPrimary,
+              color: context.adaptiveTextPrimary,
             ),
           ),
           const SizedBox(width: AppConstants.spacingSm),
           Text(
             'Scanning... ${_scanProgress?.songsFound ?? 0} songs found',
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: context.adaptiveTextSecondary,
+            ),
           ),
         ],
       ),
@@ -906,9 +913,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 color: AppColors.glassBackgroundStrong,
                 borderRadius: BorderRadius.circular(AppConstants.radiusSm),
               ),
-              child: const Icon(
+              child: Icon(
                 LucideIcons.folder,
-                color: AppColors.textSecondary,
+                color: context.adaptiveTextSecondary,
                 size: 20,
               ),
             ),
@@ -919,16 +926,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Text(
                     folder.displayName,
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: context.adaptiveTextPrimary,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
             IconButton(
-              icon: const Icon(
+              icon: Icon(
                 LucideIcons.trash2,
-                color: AppColors.textTertiary,
+                color: context.adaptiveTextTertiary,
                 size: 18,
               ),
               onPressed: () => _confirmRemoveFolder(folder),
@@ -987,8 +996,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Icon(
                   icon,
                   color: onTap != null
-                      ? AppColors.textSecondary
-                      : AppColors.textTertiary,
+                      ? context.adaptiveTextSecondary
+                      : context.adaptiveTextTertiary,
                   size: 20,
                 ),
               ),
@@ -1000,14 +1009,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Text(
                       title,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: onTap != null ? null : AppColors.textTertiary,
+                        color: onTap != null
+                            ? context.adaptiveTextPrimary
+                            : context.adaptiveTextTertiary,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.textTertiary,
+                        color: context.adaptiveTextTertiary,
                       ),
                     ),
                   ],
@@ -1075,7 +1086,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: AppColors.glassBackgroundStrong,
                   borderRadius: BorderRadius.circular(AppConstants.radiusSm),
                 ),
-                child: Icon(icon, color: AppColors.textSecondary, size: 20),
+                child: Icon(
+                  icon,
+                  color: context.adaptiveTextSecondary,
+                  size: 20,
+                ),
               ),
 
               const SizedBox(width: AppConstants.spacingMd),
@@ -1085,12 +1100,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: Theme.of(context).textTheme.titleSmall),
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: context.adaptiveTextPrimary,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.textTertiary,
+                        color: context.adaptiveTextTertiary,
                       ),
                     ),
                   ],
@@ -1171,7 +1191,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: AppColors.glassBackgroundStrong,
                   borderRadius: BorderRadius.circular(AppConstants.radiusSm),
                 ),
-                child: Icon(icon, color: AppColors.textSecondary, size: 20),
+                child: Icon(
+                  icon,
+                  color: context.adaptiveTextSecondary,
+                  size: 20,
+                ),
               ),
 
               const SizedBox(width: AppConstants.spacingMd),
@@ -1181,12 +1205,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: Theme.of(context).textTheme.titleSmall),
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: context.adaptiveTextPrimary,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.textTertiary,
+                        color: context.adaptiveTextTertiary,
                       ),
                     ),
                   ],
@@ -1243,7 +1272,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: AppColors.glassBackgroundStrong,
                   borderRadius: BorderRadius.circular(AppConstants.radiusSm),
                 ),
-                child: Icon(icon, color: AppColors.textSecondary, size: 20),
+                child: Icon(
+                  icon,
+                  color: context.adaptiveTextSecondary,
+                  size: 20,
+                ),
               ),
 
               const SizedBox(width: AppConstants.spacingMd),
@@ -1253,12 +1286,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: Theme.of(context).textTheme.titleSmall),
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: context.adaptiveTextPrimary,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.textTertiary,
+                        color: context.adaptiveTextTertiary,
                       ),
                     ),
                   ],
@@ -1266,9 +1304,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               // Chevron
-              const Icon(
+              Icon(
                 LucideIcons.chevronRight,
-                color: AppColors.textTertiary,
+                color: context.adaptiveTextTertiary,
                 size: 20,
               ),
             ],

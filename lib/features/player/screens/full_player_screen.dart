@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/features/player/widgets/waveform_seek_bar.dart';
 import 'package:flick/features/player/widgets/ambient_background.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:flick/widgets/navigation/salomon_nav_bar.dart';
 
 class FullPlayerScreen extends StatefulWidget {
   final Object heroTag;
@@ -18,6 +20,9 @@ class FullPlayerScreen extends StatefulWidget {
 
 class _FullPlayerScreenState extends State<FullPlayerScreen> {
   final PlayerService _playerService = PlayerService();
+
+  // Track drag offset for swipe-down to dismiss
+  double _dragOffset = 0;
 
   // For nice time formatting (mm:ss)
   String _formatDuration(Duration duration) {
@@ -284,22 +289,38 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
             return const SizedBox.shrink();
           }
 
-          return Dismissible(
-            key: const Key('full_player_dismiss'),
-            direction: DismissDirection.down,
-            onDismissed: (_) {
-              Navigator.of(context).pop();
+          return GestureDetector(
+            onVerticalDragUpdate: (details) {
+              // Only track downward drag
+              if (details.delta.dy > 0) {
+                _dragOffset += details.delta.dy;
+                setState(() {});
+              }
             },
-            child: GestureDetector(
-              onHorizontalDragEnd: (details) {
-                if (details.primaryVelocity! < -500) {
-                  // Swipe Left -> Next
-                  _playerService.next();
-                } else if (details.primaryVelocity! > 500) {
-                  // Swipe Right -> Previous
-                  _playerService.previous();
-                }
-              },
+            onVerticalDragEnd: (details) {
+              // If dragged down enough or with enough velocity, dismiss
+              if (_dragOffset > 100 || details.primaryVelocity! > 500) {
+                Navigator.of(context).pop();
+              }
+              // Reset drag offset
+              _dragOffset = 0;
+              setState(() {});
+            },
+            onHorizontalDragEnd: (details) {
+              if (details.primaryVelocity! < -500) {
+                // Swipe Left -> Next
+                _playerService.next();
+              } else if (details.primaryVelocity! > 500) {
+                // Swipe Right -> Previous
+                _playerService.previous();
+              }
+            },
+            child: AnimatedContainer(
+              duration: _dragOffset == 0
+                  ? const Duration(milliseconds: 200)
+                  : Duration.zero,
+              curve: Curves.easeOut,
+              transform: Matrix4.translationValues(0, _dragOffset * 0.5, 0),
               child: Stack(
                 children: [
                   // Ambient background
@@ -319,25 +340,25 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                             children: [
                               IconButton(
                                 onPressed: () => Navigator.of(context).pop(),
-                                icon: const Icon(
+                                icon: Icon(
                                   LucideIcons.chevronDown,
-                                  color: AppColors.textPrimary,
+                                  color: context.adaptiveTextPrimary,
                                 ),
                               ),
-                              const Text(
+                              Text(
                                 "Now Playing",
                                 style: TextStyle(
                                   fontFamily: 'ProductSans',
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: AppColors.textSecondary,
+                                  color: context.adaptiveTextSecondary,
                                   letterSpacing: 1,
                                 ),
                               ),
                               PopupMenuButton<String>(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.more_vert,
-                                  color: AppColors.textPrimary,
+                                  color: context.adaptiveTextPrimary,
                                 ),
                                 color: AppColors.glassBackgroundStrong,
                                 shape: RoundedRectangleBorder(
@@ -415,7 +436,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                           ),
                         ),
 
-                        const Spacer(),
+                        const Spacer(flex: 1),
 
                         // Hero Album Art
                         Hero(
@@ -454,7 +475,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                 : null,
                           ),
                         ),
-                        const SizedBox(height: 48),
+                        const SizedBox(height: 32),
                         // Metadata (Row with Shuffle/Loop)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -472,8 +493,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                     icon: Icon(
                                       LucideIcons.shuffle,
                                       color: isShuffle
-                                          ? AppColors.accent
-                                          : AppColors.textTertiary,
+                                          ? context.adaptiveAccent
+                                          : context.adaptiveTextTertiary,
                                     ),
                                   );
                                 },
@@ -488,11 +509,11 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                       textAlign: TextAlign.center,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontFamily: 'ProductSans',
                                         fontSize: 24,
                                         fontWeight: FontWeight.bold,
-                                        color: AppColors.textPrimary,
+                                        color: context.adaptiveTextPrimary,
                                       ),
                                     ),
                                     const SizedBox(height: 8),
@@ -501,10 +522,10 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                       textAlign: TextAlign.center,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontFamily: 'ProductSans',
                                         fontSize: 16,
-                                        color: AppColors.textSecondary,
+                                        color: context.adaptiveTextSecondary,
                                       ),
                                     ),
                                   ],
@@ -521,15 +542,15 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                   switch (loopMode) {
                                     case LoopMode.off:
                                       icon = LucideIcons.repeat;
-                                      color = AppColors.textTertiary;
+                                      color = context.adaptiveTextTertiary;
                                       break;
                                     case LoopMode.all:
                                       icon = LucideIcons.repeat;
-                                      color = AppColors.accent;
+                                      color = context.adaptiveAccent;
                                       break;
                                     case LoopMode.one:
                                       icon = LucideIcons.repeat1;
-                                      color = AppColors.accent;
+                                      color = context.adaptiveAccent;
                                       break;
                                   }
                                   return IconButton(
@@ -554,18 +575,18 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.textTertiary.withValues(
+                                color: context.adaptiveTextTertiary.withValues(
                                   alpha: 0.1,
                                 ),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
                                 song.fileType,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: 'ProductSans',
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
-                                  color: AppColors.textSecondary,
+                                  color: context.adaptiveTextSecondary,
                                 ),
                               ),
                             ),
@@ -573,18 +594,18 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                               const SizedBox(width: 8),
                               Text(
                                 song.resolution!,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: 'ProductSans',
                                   fontSize: 11,
-                                  color: AppColors.textTertiary,
+                                  color: context.adaptiveTextTertiary,
                                 ),
                               ),
                             ],
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
 
-                        const Spacer(),
+                        const Spacer(flex: 1),
 
                         // Scrolling Waveform & Controls
                         SizedBox(
@@ -700,9 +721,10 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                                 onPressed: () =>
                                                     _playerService.previous(),
                                                 iconSize: 24,
-                                                icon: const Icon(
+                                                icon: Icon(
                                                   LucideIcons.skipBack,
-                                                  color: AppColors.textPrimary,
+                                                  color: context
+                                                      .adaptiveTextPrimary,
                                                 ),
                                               ),
                                             ),
@@ -762,9 +784,10 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                                 onPressed: () =>
                                                     _playerService.next(),
                                                 iconSize: 24,
-                                                icon: const Icon(
+                                                icon: Icon(
                                                   LucideIcons.skipForward,
-                                                  color: AppColors.textPrimary,
+                                                  color: context
+                                                      .adaptiveTextPrimary,
                                                 ),
                                               ),
                                             ),
@@ -805,8 +828,24 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 130),
                       ],
+                    ),
+                  ),
+
+                  // Navigation Bar (without mini player)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: SalomonNavBar(
+                      currentIndex:
+                          1, // Songs is always selected when in player
+                      onTap: (index) {
+                        // Pop the full player and pass the index to navigate to
+                        Navigator.of(context).pop(index);
+                      },
+                      showMiniPlayer: false,
                     ),
                   ),
                 ],

@@ -1,19 +1,20 @@
-import 'dart:ui';
-import 'package:salomon_bottom_bar/salomon_bottom_bar.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/app_theme.dart';
 import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/features/songs/screens/songs_screen.dart';
 import 'package:flick/features/menu/screens/menu_screen.dart';
 import 'package:flick/features/settings/screens/settings_screen.dart';
-import 'package:flick/features/player/widgets/mini_player.dart';
-import 'package:flick/core/constants/app_constants.dart';
+import 'package:flick/features/player/screens/full_player_screen.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/services/color_extraction_service.dart';
 import 'package:flick/features/player/widgets/ambient_background.dart';
+import 'package:flick/widgets/navigation/salomon_nav_bar.dart';
 
 /// Main application widget for Flick Player.
 class FlickPlayerApp extends StatelessWidget {
@@ -54,9 +55,15 @@ class _MainShellState extends State<MainShell>
     with SingleTickerProviderStateMixin {
   int _currentIndex = 1; // Default to songs (middle)
   final PlayerService _playerService = PlayerService();
+  final ColorExtractionService _colorService = ColorExtractionService();
 
   // Use ValueNotifier for nav bar visibility to avoid full widget rebuilds
   final ValueNotifier<bool> _isNavBarVisible = ValueNotifier(true);
+
+  // Track the current effective background color for adaptive theming
+  final ValueNotifier<Color> _backgroundColorNotifier = ValueNotifier(
+    AppColors.background,
+  );
 
   // Animation controller for smoother nav bar transitions
   late final AnimationController _navBarAnimationController;
@@ -85,14 +92,39 @@ class _MainShellState extends State<MainShell>
 
     // Listen to visibility changes and trigger animation
     _isNavBarVisible.addListener(_onNavBarVisibilityChanged);
+
+    // Listen to song changes to update background color
+    _playerService.currentSongNotifier.addListener(_updateBackgroundColor);
+    // Initial extraction
+    _updateBackgroundColor();
   }
 
   @override
   void dispose() {
+    _playerService.currentSongNotifier.removeListener(_updateBackgroundColor);
     _isNavBarVisible.removeListener(_onNavBarVisibilityChanged);
     _isNavBarVisible.dispose();
+    _backgroundColorNotifier.dispose();
     _navBarAnimationController.dispose();
     super.dispose();
+  }
+
+  /// Extracts dominant color from current song's album art and updates background color.
+  void _updateBackgroundColor() async {
+    final song = _playerService.currentSongNotifier.value;
+    if (song?.albumArt != null) {
+      final color = await _colorService.extractBlendedBackgroundColor(
+        song!.albumArt,
+        blendFactor: 0.3, // Subtle blend with base background
+      );
+      if (mounted) {
+        _backgroundColorNotifier.value = color;
+      }
+    } else {
+      if (mounted) {
+        _backgroundColorNotifier.value = AppColors.background;
+      }
+    }
   }
 
   void _onNavBarVisibilityChanged() {
@@ -121,185 +153,254 @@ class _MainShellState extends State<MainShell>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      extendBody: true,
-      body: NotificationListener<ScrollNotification>(
-        onNotification: _handleScrollNotification,
-        child: Stack(
-          children: [
-            // Base Gradient
-            Container(
-              decoration: const BoxDecoration(
-                gradient: AppColors.backgroundGradient,
+    return ValueListenableBuilder<Color>(
+      valueListenable: _backgroundColorNotifier,
+      builder: (context, backgroundColor, _) {
+        return AdaptiveColorProvider(
+          backgroundColor: backgroundColor,
+          child: Scaffold(
+            backgroundColor: AppColors.background,
+            extendBody: true,
+            body: NotificationListener<ScrollNotification>(
+              onNotification: _handleScrollNotification,
+              child: Stack(
+                children: [
+                  // Base Gradient
+                  Container(
+                    decoration: const BoxDecoration(
+                      gradient: AppColors.backgroundGradient,
+                    ),
+                  ),
+
+                  // Persistent Background
+                  Positioned.fill(
+                    child: ValueListenableBuilder<Song?>(
+                      valueListenable: _playerService.currentSongNotifier,
+                      builder: (context, song, _) {
+                        return AmbientBackground(song: song);
+                      },
+                    ),
+                  ),
+
+                  // Main content area with IndexedStack for faster tab switching
+                  // Adjusted padding to ensure content isn't hidden behind MiniPlayer
+                  IndexedStack(
+                    index: _currentIndex,
+                    children: [
+                      const MenuScreen(key: ValueKey('menu')),
+                      SongsScreen(
+                        key: const ValueKey('songs'),
+                        onNavigationRequested: (index) {
+                          setState(() {
+                            _currentIndex = index;
+                          });
+                        },
+                      ),
+                      const SettingsScreen(key: ValueKey('settings')),
+                    ],
+                  ),
+
+                  // Unified Bottom Bar (Mini Player + Navigation)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: RepaintBoundary(
+                      child: SlideTransition(
+                        position: _navBarSlideAnimation,
+                        child: _buildUnifiedBottomBar(),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-
-            // Persistent Background
-            Positioned.fill(
-              child: ValueListenableBuilder<Song?>(
-                valueListenable: _playerService.currentSongNotifier,
-                builder: (context, song, _) {
-                  return AmbientBackground(song: song);
-                },
-              ),
-            ),
-
-            // Main content area with IndexedStack for faster tab switching
-            // Adjusted padding to ensure content isn't hidden behind MiniPlayer
-            IndexedStack(
-              index: _currentIndex,
-              children: const [
-                MenuScreen(key: ValueKey('menu')),
-                SongsScreen(key: ValueKey('songs')),
-                SettingsScreen(key: ValueKey('settings')),
-              ],
-            ),
-
-            // Mini Player with animated position
-            AnimatedBuilder(
-              animation: _navBarAnimationController,
-              builder: (context, child) {
-                // Controller 0.0 (Visible) -> Bottom: NavBarHeight + 24
-                // Controller 1.0 (Hidden)  -> Bottom: 24 (just margin)
-                final double bottom =
-                    lerpDouble(
-                      AppConstants.navBarHeight + 24,
-                      24,
-                      _navBarAnimationController.value,
-                    ) ??
-                    24;
-
-                return Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: bottom,
-                  child: const MiniPlayer(),
-                );
-              },
-            ),
-
-            // Navigation bar with isolated repaints
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: RepaintBoundary(
-                child: SlideTransition(
-                  position: _navBarSlideAnimation,
-                  child: _buildNavigationBar(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildNavigationBar() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        // Outer glow effect for premium feel
-        boxShadow: [
-          // Primary shadow
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 20,
-            spreadRadius: 2,
-            offset: const Offset(0, 8),
-          ),
-          // Subtle ambient glow
-          BoxShadow(
-            color: AppColors.accent.withValues(alpha: 0.05),
-            blurRadius: 32,
-            spreadRadius: -4,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, -40, 16, 16),
-          decoration: BoxDecoration(
-            // Glassmorphism background
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.surfaceLight.withValues(alpha: 0.85),
-                AppColors.surface.withValues(alpha: 0.92),
-              ],
+  Widget _buildUnifiedBottomBar() {
+    return SalomonNavBar(
+      currentIndex: _currentIndex,
+      onTap: (index) {
+        if (_currentIndex != index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        }
+      },
+      showMiniPlayer: true,
+      miniPlayerWidget: _buildEmbeddedMiniPlayer(),
+    );
+  }
+
+  Widget _buildEmbeddedMiniPlayer() {
+    return ValueListenableBuilder<Song?>(
+      valueListenable: _playerService.currentSongNotifier,
+      builder: (context, song, child) {
+        if (song == null) {
+          return const SizedBox.shrink();
+        }
+
+        return GestureDetector(
+          onTap: () async {
+            final result = await Navigator.of(context).push<int>(
+              PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) =>
+                    FullPlayerScreen(heroTag: 'song_art_${song.id}'),
+                transitionsBuilder:
+                    (context, animation, secondaryAnimation, child) {
+                      const begin = Offset(0.0, 1.0);
+                      const end = Offset.zero;
+                      const curve = Curves.easeOutCubic;
+
+                      var tween = Tween(
+                        begin: begin,
+                        end: end,
+                      ).chain(CurveTween(curve: curve));
+
+                      return SlideTransition(
+                        position: animation.drive(tween),
+                        child: child,
+                      );
+                    },
+                transitionDuration: const Duration(milliseconds: 300),
+                opaque: false,
+                barrierColor: Colors.black,
+              ),
+            );
+            // Navigate to the returned tab index if provided
+            if (result != null && mounted) {
+              setState(() {
+                _currentIndex = result;
+              });
+            }
+          },
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.glassBackground.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: AppColors.glassBorder.withValues(alpha: 0.2),
+              ),
             ),
-            borderRadius: BorderRadius.circular(28),
-            // Subtle border for depth
-            border: Border.all(color: AppColors.glassBorder, width: 1),
-          ),
-          child: SalomonBottomBar(
-            currentIndex: _currentIndex,
-            onTap: (index) {
-              if (_currentIndex != index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              }
-            },
-            margin: EdgeInsets.zero,
-            itemPadding: const EdgeInsets.symmetric(
-              horizontal: 20,
-              vertical: 10,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                children: [
+                  // Progress Bar at bottom
+                  ValueListenableBuilder<Duration>(
+                    valueListenable: _playerService.positionNotifier,
+                    builder: (context, position, _) {
+                      final duration = _playerService.durationNotifier.value;
+                      if (duration.inMilliseconds == 0) {
+                        return const SizedBox.shrink();
+                      }
+                      final progress =
+                          position.inMilliseconds / duration.inMilliseconds;
+
+                      return Align(
+                        alignment: Alignment.bottomLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: progress.clamp(0.0, 1.0),
+                          child: Container(height: 2, color: AppColors.accent),
+                        ),
+                      );
+                    },
+                  ),
+
+                  Row(
+                    children: [
+                      // Album Art
+                      Hero(
+                        tag: 'mini_player_art',
+                        child: Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(16),
+                              bottomLeft: Radius.circular(16),
+                            ),
+                            image: song.albumArt != null
+                                ? DecorationImage(
+                                    image: FileImage(File(song.albumArt!)),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
+                          ),
+                          child: song.albumArt == null
+                              ? const Icon(
+                                  LucideIcons.music,
+                                  size: 22,
+                                  color: AppColors.textTertiary,
+                                )
+                              : null,
+                        ),
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      // Song Info
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              song.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'ProductSans',
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              song.artist,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'ProductSans',
+                                fontSize: 12,
+                                color: AppColors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Controls
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _playerService.isPlayingNotifier,
+                        builder: (context, isPlaying, _) {
+                          return IconButton(
+                            onPressed: () => _playerService.togglePlayPause(),
+                            icon: Icon(
+                              isPlaying ? LucideIcons.pause : LucideIcons.play,
+                              color: AppColors.textPrimary,
+                              size: 20,
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            selectedItemColor: AppColors.textPrimary,
-            unselectedItemColor: AppColors.textTertiary,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutQuart,
-            items: [
-              SalomonBottomBarItem(
-                icon: const Icon(LucideIcons.layoutGrid, size: 20),
-                title: const Text(
-                  'Menu',
-                  style: TextStyle(
-                    fontFamily: 'ProductSans',
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                selectedColor: AppColors.accentLight,
-                unselectedColor: AppColors.textTertiary,
-              ),
-              SalomonBottomBarItem(
-                icon: const Icon(LucideIcons.disc3, size: 20),
-                title: const Text(
-                  'Songs',
-                  style: TextStyle(
-                    fontFamily: 'ProductSans',
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                selectedColor: AppColors.accentLight,
-                unselectedColor: AppColors.textTertiary,
-              ),
-              SalomonBottomBarItem(
-                icon: const Icon(LucideIcons.settings2, size: 20),
-                title: const Text(
-                  'Settings',
-                  style: TextStyle(
-                    fontFamily: 'ProductSans',
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                selectedColor: AppColors.accentLight,
-                unselectedColor: AppColors.textTertiary,
-              ),
-            ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
