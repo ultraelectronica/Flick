@@ -4,6 +4,7 @@ import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/features/songs/widgets/orbit_scroll.dart';
+import 'package:flick/features/player/screens/full_player_screen.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -145,6 +146,42 @@ class _SongsScreenState extends State<SongsScreen> {
                         },
                         onSongSelected: (index) {
                           _playSong(_songs[index]);
+                          // Navigate to full player screen
+                          Navigator.of(context).push(
+                            PageRouteBuilder(
+                              pageBuilder:
+                                  (context, animation, secondaryAnimation) =>
+                                      FullPlayerScreen(
+                                        heroTag: 'song_art_${_songs[index].id}',
+                                      ),
+                              transitionsBuilder:
+                                  (
+                                    context,
+                                    animation,
+                                    secondaryAnimation,
+                                    child,
+                                  ) {
+                                    const begin = Offset(0.0, 1.0);
+                                    const end = Offset.zero;
+                                    const curve = Curves.easeOutCubic;
+
+                                    var tween = Tween(
+                                      begin: begin,
+                                      end: end,
+                                    ).chain(CurveTween(curve: curve));
+
+                                    return SlideTransition(
+                                      position: animation.drive(tween),
+                                      child: child,
+                                    );
+                                  },
+                              transitionDuration: const Duration(
+                                milliseconds: 300,
+                              ),
+                              opaque: false,
+                              barrierColor: Colors.black,
+                            ),
+                          );
                         },
                       ),
               ),
