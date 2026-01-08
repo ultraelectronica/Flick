@@ -8,6 +8,7 @@ import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/services/favorites_service.dart';
 import 'package:flick/features/player/screens/full_player_screen.dart';
 
 /// Favorites screen showing liked songs with heart animations.
@@ -20,8 +21,8 @@ class FavoritesScreen extends StatefulWidget {
 
 class _FavoritesScreenState extends State<FavoritesScreen> {
   final PlayerService _playerService = PlayerService();
+  final FavoritesService _favoritesService = FavoritesService();
 
-  // TODO: Replace with actual favorites from Isar or SharedPreferences
   List<Song> _favorites = [];
   bool _isLoading = true;
 
@@ -32,34 +33,40 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   }
 
   Future<void> _loadFavorites() async {
-    // For now, simulate favorites with first few songs
-    // TODO: Implement actual favorites storage
-    await Future.delayed(const Duration(milliseconds: 300));
+    final favorites = await _favoritesService.getFavorites();
     if (mounted) {
       setState(() {
-        _favorites = []; // Empty until favorites feature is implemented
+        _favorites = favorites;
         _isLoading = false;
       });
     }
   }
 
-  void _removeFavorite(Song song) {
+  Future<void> _removeFavorite(Song song) async {
+    // Optimistically remove from UI
     setState(() {
       _favorites.remove(song);
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Removed "${song.title}" from favorites'),
-        action: SnackBarAction(
-          label: 'Undo',
-          onPressed: () {
-            setState(() {
-              _favorites.add(song);
-            });
-          },
+
+    // Remove from storage
+    await _favoritesService.removeFavorite(song.id);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Removed "${song.title}" from favorites'),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () async {
+              await _favoritesService.addFavorite(song.id);
+              setState(() {
+                _favorites.add(song);
+              });
+            },
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   @override
