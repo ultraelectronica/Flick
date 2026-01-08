@@ -5,10 +5,35 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
+import 'package:flick/features/songs/screens/songs_screen.dart';
+import 'package:flick/features/playlists/screens/playlists_screen.dart';
+import 'package:flick/features/favorites/screens/favorites_screen.dart';
+import 'package:flick/features/recently_played/screens/recently_played_screen.dart';
+import 'package:flick/features/folders/screens/folders_screen.dart';
+import 'package:flick/features/albums/screens/albums_screen.dart';
+import 'package:flick/features/artists/screens/artists_screen.dart';
 
 /// Menu screen with navigation options matching the design language.
 class MenuScreen extends StatelessWidget {
-  const MenuScreen({super.key});
+  /// Callback to navigate to a specific tab index in the main shell
+  final ValueChanged<int>? onNavigateToTab;
+
+  const MenuScreen({super.key, this.onNavigateToTab});
+
+  void _navigateTo(BuildContext context, Widget screen) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => screen,
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 150),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,53 +60,61 @@ class MenuScreen extends StatelessWidget {
                     icon: LucideIcons.library,
                     title: 'Library',
                     subtitle: 'All your music in one place',
-                    onTap: () {},
+                    onTap: () {
+                      // Navigate to Songs tab (index 1) via callback
+                      if (onNavigateToTab != null) {
+                        onNavigateToTab!(1);
+                      } else {
+                        _navigateTo(context, const SongsScreen());
+                      }
+                    },
                   ),
                   _buildMenuItem(
                     context,
                     icon: LucideIcons.listMusic,
                     title: 'Playlists',
                     subtitle: 'Create and manage playlists',
-                    onTap: () {},
+                    onTap: () => _navigateTo(context, const PlaylistsScreen()),
                   ),
                   _buildMenuItem(
                     context,
                     icon: LucideIcons.heart,
                     title: 'Favorites',
                     subtitle: 'Your liked songs',
-                    onTap: () {},
+                    onTap: () => _navigateTo(context, const FavoritesScreen()),
                   ),
                   _buildMenuItem(
                     context,
                     icon: LucideIcons.clock,
                     title: 'Recently Played',
                     subtitle: 'Jump back into your music',
-                    onTap: () {},
+                    onTap: () =>
+                        _navigateTo(context, const RecentlyPlayedScreen()),
                   ),
                   _buildMenuItem(
                     context,
                     icon: LucideIcons.folder,
                     title: 'Folders',
                     subtitle: 'Browse by folder structure',
-                    onTap: () {},
+                    onTap: () => _navigateTo(context, const FoldersScreen()),
                   ),
                   _buildMenuItem(
                     context,
                     icon: LucideIcons.disc,
                     title: 'Albums',
                     subtitle: 'Browse by album',
-                    onTap: () {},
+                    onTap: () => _navigateTo(context, const AlbumsScreen()),
                   ),
                   _buildMenuItem(
                     context,
                     icon: LucideIcons.users,
                     title: 'Artists',
                     subtitle: 'Browse by artist',
-                    onTap: () {},
+                    onTap: () => _navigateTo(context, const ArtistsScreen()),
                   ),
 
-                  // Spacing for nav bar
-                  const SizedBox(height: AppConstants.navBarHeight + 60),
+                  // Spacing for nav bar with mini player
+                  const SizedBox(height: AppConstants.navBarHeight + 120),
                 ],
               ),
             ),

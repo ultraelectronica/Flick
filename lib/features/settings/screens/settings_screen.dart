@@ -7,6 +7,7 @@ import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/services/music_folder_service.dart';
 import 'package:flick/services/library_scanner_service.dart';
+import 'package:flick/services/permission_service.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/widgets/common/glass_dialog.dart';
 import 'package:flick/widgets/common/glass_bottom_sheet.dart';
@@ -65,6 +66,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _addFolder() async {
     try {
+      // Check if we need to request storage permission
+      // Only prompt if there are no existing folders (first-time setup)
+      final permissionService = PermissionService();
+      final hasPermission = await permissionService.hasStoragePermission();
+
+      if (!hasPermission && _folders.isEmpty) {
+        // No permission and no folders - prompt for permission
+        final granted = await permissionService.requestStoragePermission();
+        if (!granted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Storage permission is required to add music folders',
+                ),
+              ),
+            );
+          }
+          return;
+        }
+      }
+
       final folder = await _folderService.addFolder();
       if (folder != null) {
         await _loadLibraryData();
@@ -719,8 +742,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
 
-                  // Spacing for nav bar
-                  const SizedBox(height: AppConstants.navBarHeight + 60),
+                  // Spacing for nav bar with mini player
+                  const SizedBox(height: AppConstants.navBarHeight + 120),
                 ],
               ),
             ),

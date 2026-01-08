@@ -4,6 +4,7 @@ import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/services/favorites_service.dart';
 import 'package:flick/features/player/widgets/waveform_seek_bar.dart';
 import 'package:flick/features/player/widgets/ambient_background.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -20,6 +21,7 @@ class FullPlayerScreen extends StatefulWidget {
 
 class _FullPlayerScreenState extends State<FullPlayerScreen> {
   final PlayerService _playerService = PlayerService();
+  final FavoritesService _favoritesService = FavoritesService();
 
   // Track drag offset for swipe-down to dismiss
   double _dragOffset = 0;
@@ -476,95 +478,40 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                           ),
                         ),
                         const SizedBox(height: 32),
-                        // Metadata (Row with Shuffle/Loop)
+                        // Title & Artist (centered)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          child: Column(
                             children: [
-                              // Shuffle
-                              ValueListenableBuilder<bool>(
-                                valueListenable:
-                                    _playerService.isShuffleNotifier,
-                                builder: (context, isShuffle, _) {
-                                  return IconButton(
-                                    onPressed: () =>
-                                        _playerService.toggleShuffle(),
-                                    icon: Icon(
-                                      LucideIcons.shuffle,
-                                      color: isShuffle
-                                          ? context.adaptiveAccent
-                                          : context.adaptiveTextTertiary,
-                                    ),
-                                  );
-                                },
-                              ),
-
-                              // Title & Artist
-                              Expanded(
-                                child: Column(
-                                  children: [
-                                    Text(
-                                      song.title,
-                                      textAlign: TextAlign.center,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontFamily: 'ProductSans',
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.bold,
-                                        color: context.adaptiveTextPrimary,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      song.artist,
-                                      textAlign: TextAlign.center,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontFamily: 'ProductSans',
-                                        fontSize: 16,
-                                        color: context.adaptiveTextSecondary,
-                                      ),
-                                    ),
-                                  ],
+                              Text(
+                                song.title,
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'ProductSans',
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: context.adaptiveTextPrimary,
                                 ),
                               ),
-
-                              // Loop
-                              ValueListenableBuilder<LoopMode>(
-                                valueListenable:
-                                    _playerService.loopModeNotifier,
-                                builder: (context, loopMode, _) {
-                                  IconData icon;
-                                  Color color;
-                                  switch (loopMode) {
-                                    case LoopMode.off:
-                                      icon = LucideIcons.repeat;
-                                      color = context.adaptiveTextTertiary;
-                                      break;
-                                    case LoopMode.all:
-                                      icon = LucideIcons.repeat;
-                                      color = context.adaptiveAccent;
-                                      break;
-                                    case LoopMode.one:
-                                      icon = LucideIcons.repeat1;
-                                      color = context.adaptiveAccent;
-                                      break;
-                                  }
-                                  return IconButton(
-                                    onPressed: () =>
-                                        _playerService.toggleLoopMode(),
-                                    icon: Icon(icon, color: color),
-                                  );
-                                },
+                              const SizedBox(height: 8),
+                              Text(
+                                song.artist,
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'ProductSans',
+                                  fontSize: 16,
+                                  color: context.adaptiveTextSecondary,
+                                ),
                               ),
                             ],
                           ),
                         ),
 
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         // File Info
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -601,6 +548,97 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                 ),
                               ),
                             ],
+                          ],
+                        ),
+
+                        const SizedBox(height: 16),
+                        // Control buttons row (Shuffle, Loop, Favorite)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Shuffle
+                            ValueListenableBuilder<bool>(
+                              valueListenable: _playerService.isShuffleNotifier,
+                              builder: (context, isShuffle, _) {
+                                return IconButton(
+                                  onPressed: () =>
+                                      _playerService.toggleShuffle(),
+                                  icon: Icon(
+                                    LucideIcons.shuffle,
+                                    color: isShuffle
+                                        ? context.adaptiveAccent
+                                        : context.adaptiveTextTertiary,
+                                    size: 22,
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(width: 16),
+                            // Loop
+                            ValueListenableBuilder<LoopMode>(
+                              valueListenable: _playerService.loopModeNotifier,
+                              builder: (context, loopMode, _) {
+                                IconData icon;
+                                Color color;
+                                switch (loopMode) {
+                                  case LoopMode.off:
+                                    icon = LucideIcons.repeat;
+                                    color = context.adaptiveTextTertiary;
+                                    break;
+                                  case LoopMode.all:
+                                    icon = LucideIcons.repeat;
+                                    color = context.adaptiveAccent;
+                                    break;
+                                  case LoopMode.one:
+                                    icon = LucideIcons.repeat1;
+                                    color = context.adaptiveAccent;
+                                    break;
+                                }
+                                return IconButton(
+                                  onPressed: () =>
+                                      _playerService.toggleLoopMode(),
+                                  icon: Icon(icon, color: color, size: 22),
+                                );
+                              },
+                            ),
+                            const SizedBox(width: 16),
+                            // Favorite
+                            FutureBuilder<bool>(
+                              future: _favoritesService.isFavorite(song.id),
+                              builder: (context, snapshot) {
+                                final isFavorite = snapshot.data ?? false;
+                                return IconButton(
+                                  onPressed: () async {
+                                    final newState = await _favoritesService
+                                        .toggleFavorite(song.id);
+                                    setState(() {});
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            newState
+                                                ? 'Added to favorites'
+                                                : 'Removed from favorites',
+                                          ),
+                                          duration: const Duration(seconds: 1),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  icon: Icon(
+                                    isFavorite
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    color: isFavorite
+                                        ? Colors.red
+                                        : context.adaptiveTextTertiary,
+                                    size: 22,
+                                  ),
+                                );
+                              },
+                            ),
                           ],
                         ),
                         const SizedBox(height: 8),

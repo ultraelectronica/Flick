@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/notification_service.dart';
+import 'package:flick/services/last_played_service.dart';
+import 'package:flick/services/favorites_service.dart';
 
 /// Singleton service to manage global audio playback state.
 class PlayerService {
@@ -18,6 +20,11 @@ class PlayerService {
 
   final AudioPlayer _player = AudioPlayer();
   final NotificationService _notificationService = NotificationService();
+  final LastPlayedService _lastPlayedService = LastPlayedService();
+  final FavoritesService _favoritesService = FavoritesService();
+
+  // Timer to periodically save position
+  Timer? _positionSaveTimer;
 
   // State Notifiers
   final ValueNotifier<Song?> currentSongNotifier = ValueNotifier(null);
@@ -54,6 +61,8 @@ class PlayerService {
       onPrevious: previous,
       onStop: _stopPlayback,
       onSeek: seek,
+      onToggleShuffle: toggleShuffle,
+      onToggleFavorite: _toggleFavoriteFromNotification,
     );
 
     // Listen to player state
@@ -85,8 +94,37 @@ class PlayerService {
     _player.durationStream.listen((dur) {
       if (dur != null) {
         durationNotifier.value = dur;
+        // Update notification duration ifsong matches
+        if (currentSongNotifier.value != null && isPlayingNotifier.value) {
+          _updateNotificationState();
+        }
       }
     });
+  }
+
+  Future<void> _toggleFavoriteFromNotification() async {
+    final song = currentSongNotifier.value;
+    if (song != null) {
+      await _favoritesService.toggleFavorite(song.id);
+      _updateNotificationState();
+    }
+  }
+
+  /// Helper to push current state to notification
+  Future<void> _updateNotificationState() async {
+    final song = currentSongNotifier.value;
+    if (song == null) return;
+
+    final isFav = await _favoritesService.isFavorite(song.id);
+
+    await _notificationService.updateNotification(
+      song: song,
+      isPlaying: isPlayingNotifier.value,
+      duration: durationNotifier.value,
+      position: positionNotifier.value,
+      isShuffle: isShuffleNotifier.value,
+      isFavorite: isFav,
+    );
   }
 
   Future<void> _onSongFinished() async {
@@ -101,6 +139,9 @@ class PlayerService {
   }
 
   void _stopPlayback() async {
+    // Save final position before stopping
+    await _savePosition();
+    _positionSaveTimer?.cancel();
     await pause();
     await seek(Duration.zero);
     cancelSleepTimer();
@@ -111,6 +152,9 @@ class PlayerService {
   /// If [playlist] is provided, it replaces the current queue.
   Future<void> play(Song song, {List<Song>? playlist}) async {
     try {
+      // Cancel any existing position save timer
+      _positionSaveTimer?.cancel();
+
       if (playlist != null) {
         _playlist.clear();
         _playlist.addAll(playlist);
@@ -134,6 +178,19 @@ class PlayerService {
       durationNotifier.value = Duration.zero;
 
       if (song.filePath != null) {
+        // Show notification IMMEDIATELY before loading audio
+        // This ensures metadata is shown right away
+        final isFav = await _favoritesService.isFavorite(song.id);
+
+        await _notificationService.showNotification(
+          song: song,
+          isPlaying: true,
+          duration: song.duration,
+          position: Duration.zero,
+          isShuffle: isShuffleNotifier.value,
+          isFavorite: isFav,
+        );
+
         await _player.setAudioSource(
           AudioSource.uri(Uri.parse(song.filePath!)),
         );
@@ -143,10 +200,10 @@ class PlayerService {
 
         await _player.play();
 
-        // Show notification for background playback
-        await _notificationService.showNotification(
-          song: song,
-          isPlaying: true,
+        // Start periodic position save timer (every 5 seconds)
+        _positionSaveTimer = Timer.periodic(
+          const Duration(seconds: 5),
+          (_) => _savePosition(),
         );
       }
     } catch (e) {
@@ -154,12 +211,56 @@ class PlayerService {
     }
   }
 
+  /// Save current position for resume on app restart
+  Future<void> _savePosition() async {
+    final song = currentSongNotifier.value;
+    if (song != null) {
+      await _lastPlayedService.saveLastPlayed(song.id, positionNotifier.value);
+    }
+  }
+
+  /// Restore last played song state (call on app startup)
+  Future<void> restoreLastPlayed() async {
+    final lastPlayed = await _lastPlayedService.getLastPlayed();
+    if (lastPlayed != null) {
+      // Set up the song but don't auto-play
+      currentSongNotifier.value = lastPlayed.song;
+      _playlist.clear();
+      _playlist.add(lastPlayed.song);
+      _currentIndex = 0;
+
+      if (lastPlayed.song.filePath != null) {
+        try {
+          await _player.setAudioSource(
+            AudioSource.uri(Uri.parse(lastPlayed.song.filePath!)),
+          );
+          await _player.seek(lastPlayed.position);
+          positionNotifier.value = lastPlayed.position;
+
+          // Show notification with paused state
+          final isFav = await _favoritesService.isFavorite(lastPlayed.song.id);
+          await _notificationService.showNotification(
+            song: lastPlayed.song,
+            isPlaying: false,
+            position: lastPlayed.position,
+            isShuffle: isShuffleNotifier.value,
+            isFavorite: isFav,
+          );
+        } catch (e) {
+          debugPrint("Error restoring last played: $e");
+        }
+      }
+    }
+  }
+
   Future<void> pause() async {
     await _player.pause();
+    _updateNotificationState();
   }
 
   Future<void> resume() async {
     await _player.play();
+    _updateNotificationState();
   }
 
   Future<void> togglePlayPause() async {
@@ -172,6 +273,7 @@ class PlayerService {
 
   Future<void> seek(Duration position) async {
     await _player.seek(position);
+    _updateNotificationState();
   }
 
   Future<void> next() async {
@@ -239,6 +341,7 @@ class PlayerService {
         _currentIndex = _playlist.indexOf(current);
       }
     }
+    _updateNotificationState();
   }
 
   void toggleLoopMode() {
@@ -303,6 +406,7 @@ class PlayerService {
   bool get isSleepTimerActive => sleepTimerRemainingNotifier.value != null;
 
   void dispose() {
+    _positionSaveTimer?.cancel();
     cancelSleepTimer();
     _notificationService.hideNotification();
     _player.dispose();

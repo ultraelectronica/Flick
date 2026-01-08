@@ -8,6 +8,7 @@ import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
+import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,18 @@ class MainActivity: FlutterActivity() {
     private var pendingResult: MethodChannel.Result? = null
     // Coroutine scope for background tasks
     private val mainScope = CoroutineScope(Dispatchers.Main)
+
+    override fun provideFlutterEngine(context: android.content.Context): FlutterEngine? {
+        var engine = FlutterEngineCache.getInstance().get("main_engine")
+        if (engine == null) {
+            engine = FlutterEngine(context)
+            engine.dartExecutor.executeDartEntrypoint(
+                DartExecutor.DartEntrypoint.createDefault()
+            )
+            FlutterEngineCache.getInstance().put("main_engine", engine)
+        }
+        return engine
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -103,7 +116,7 @@ class MainActivity: FlutterActivity() {
         }
         
         // Cache the Flutter engine for notification service to use
-        FlutterEngineCache.getInstance().put("main_engine", flutterEngine)
+        // Engine is already cached in provideFlutterEngine
         
         // Player channel for notification control
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PLAYER_CHANNEL).setMethodCallHandler { call, result ->

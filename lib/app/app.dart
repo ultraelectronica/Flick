@@ -187,7 +187,14 @@ class _MainShellState extends State<MainShell>
                   IndexedStack(
                     index: _currentIndex,
                     children: [
-                      const MenuScreen(key: ValueKey('menu')),
+                      MenuScreen(
+                        key: const ValueKey('menu'),
+                        onNavigateToTab: (index) {
+                          setState(() {
+                            _currentIndex = index;
+                          });
+                        },
+                      ),
                       SongsScreen(
                         key: const ValueKey('songs'),
                         onNavigationRequested: (index) {
@@ -245,11 +252,12 @@ class _MainShellState extends State<MainShell>
         }
 
         return GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () async {
             final result = await Navigator.of(context).push<int>(
               PageRouteBuilder(
                 pageBuilder: (context, animation, secondaryAnimation) =>
-                    FullPlayerScreen(heroTag: 'song_art_${song.id}'),
+                    const FullPlayerScreen(heroTag: 'mini_player_art'),
                 transitionsBuilder:
                     (context, animation, secondaryAnimation, child) {
                       const begin = Offset(0.0, 1.0);

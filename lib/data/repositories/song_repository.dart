@@ -135,6 +135,34 @@ class SongRepository {
     });
   }
 
+  /// Get all unique albums with their songs.
+  Future<Map<String, List<Song>>> getSongsByAlbum() async {
+    final songs = await getAllSongs();
+    final albumMap = <String, List<Song>>{};
+    for (final song in songs) {
+      final album = song.album ?? 'Unknown Album';
+      albumMap.putIfAbsent(album, () => []).add(song);
+    }
+    return albumMap;
+  }
+
+  /// Get all unique artists with their songs.
+  Future<Map<String, List<Song>>> getSongsByArtist() async {
+    final songs = await getAllSongs();
+    final artistMap = <String, List<Song>>{};
+    for (final song in songs) {
+      artistMap.putIfAbsent(song.artist, () => []).add(song);
+    }
+    return artistMap;
+  }
+
+  /// Get unique folder URIs from songs.
+  Future<List<String>> getUniqueFolderUris() async {
+    final entities = await _isar.songEntitys.where().findAll();
+    final uris = entities.map((e) => e.folderUri).whereType<String>().toSet();
+    return uris.toList();
+  }
+
   /// Watch for changes in the songs collection.
   Stream<void> watchSongs() {
     return _isar.songEntitys.watchLazy();

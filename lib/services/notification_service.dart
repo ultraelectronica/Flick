@@ -22,6 +22,8 @@ class NotificationService {
     required VoidCallback onPrevious,
     required VoidCallback onStop,
     required Function(Duration) onSeek,
+    required VoidCallback onToggleShuffle,
+    required VoidCallback onToggleFavorite,
   }) {
     _channel.setMethodCallHandler((call) async {
       switch (call.method) {
@@ -49,6 +51,12 @@ class NotificationService {
             onSeek(Duration(milliseconds: position));
           }
           break;
+        case 'toggleShuffle':
+          onToggleShuffle();
+          break;
+        case 'toggleFavorite':
+          onToggleFavorite();
+          break;
       }
     });
   }
@@ -57,6 +65,10 @@ class NotificationService {
   Future<void> showNotification({
     required Song song,
     required bool isPlaying,
+    Duration? duration,
+    Duration? position,
+    bool isShuffle = false,
+    bool isFavorite = false,
   }) async {
     try {
       await _channel.invokeMethod('showNotification', {
@@ -64,6 +76,10 @@ class NotificationService {
         'artist': song.artist,
         'albumArtPath': song.albumArt,
         'isPlaying': isPlaying,
+        'duration': duration?.inMilliseconds ?? 0,
+        'position': position?.inMilliseconds ?? 0,
+        'isShuffle': isShuffle,
+        'isFavorite': isFavorite,
       });
       _isNotificationVisible = true;
     } catch (e) {
@@ -72,30 +88,46 @@ class NotificationService {
   }
 
   /// Update only the playback state (play/pause button) in the notification.
-  Future<void> updatePlaybackState({required bool isPlaying}) async {
+  Future<void> updatePlaybackState({
+    required bool isPlaying,
+    Duration? position,
+  }) async {
     if (!_isNotificationVisible) return;
 
     try {
-      await _channel.invokeMethod('updateNotification', {
-        'isPlaying': isPlaying,
-      });
+      final args = <String, dynamic>{'isPlaying': isPlaying};
+      if (position != null) {
+        args['position'] = position.inMilliseconds;
+      }
+      await _channel.invokeMethod('updateNotification', args);
     } catch (e) {
       debugPrint('Failed to update notification state: $e');
     }
   }
 
-  /// Update the notification with new song metadata.
+  /// Update the notification with new song metadata or state.
   Future<void> updateNotification({
     required Song song,
     required bool isPlaying,
+    Duration? duration,
+    Duration? position,
+    bool? isShuffle,
+    bool? isFavorite,
   }) async {
     try {
-      await _channel.invokeMethod('updateNotification', {
+      final args = <String, dynamic>{
         'title': song.title,
         'artist': song.artist,
         'albumArtPath': song.albumArt,
         'isPlaying': isPlaying,
-      });
+        'duration': duration?.inMilliseconds ?? 0,
+        'position': position?.inMilliseconds ?? 0,
+      };
+
+      if (isShuffle != null) args['isShuffle'] = isShuffle;
+      if (isFavorite != null) args['isFavorite'] = isFavorite;
+
+      await _channel.invokeMethod('updateNotification', args);
       _isNotificationVisible = true;
     } catch (e) {
       debugPrint('Failed to update notification: $e');
