@@ -1,7 +1,7 @@
-import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flick/models/song.dart';
+import 'package:flick/widgets/common/cached_image_widget.dart';
 
 class AmbientBackground extends StatelessWidget {
   final Song? song;
@@ -19,10 +19,12 @@ class AmbientBackground extends StatelessWidget {
         children: [
           // Brighter background image with increased opacity
           Positioned.fill(
-            child: Image.file(
-              File(song!.albumArt!),
-              fit: BoxFit.cover,
-              opacity: const AlwaysStoppedAnimation(0.6),
+            child: Opacity(
+              opacity: 0.6,
+              child: CachedImageWidget(
+                imagePath: song!.albumArt!,
+                fit: BoxFit.cover,
+              ),
             ),
           ),
           // Blurred overlay - reduced sigma from 80 to 25 for better performance

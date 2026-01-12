@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/features/player/screens/full_player_screen.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:flick/widgets/common/cached_image_widget.dart';
 
 class MiniPlayer extends StatefulWidget {
   const MiniPlayer({super.key});
@@ -110,20 +110,26 @@ class _MiniPlayerState extends State<MiniPlayer> {
                               topLeft: Radius.circular(16),
                               bottomLeft: Radius.circular(16),
                             ),
-                            image: song.albumArt != null
-                                ? DecorationImage(
-                                    image: FileImage(File(song.albumArt!)),
-                                    fit: BoxFit.cover,
-                                  )
-                                : null,
                           ),
-                          child: song.albumArt == null
-                              ? const Icon(
-                                  LucideIcons.music,
-                                  size: 24,
-                                  color: AppColors.textTertiary,
-                                )
-                              : null,
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(16),
+                              bottomLeft: Radius.circular(16),
+                            ),
+                            child: song.albumArt != null
+                                ? CachedImageWidget(
+                                    imagePath: song.albumArt!,
+                                    fit: BoxFit.cover,
+                                    useThumbnail: true,
+                                    thumbnailWidth: 128,
+                                    thumbnailHeight: 128,
+                                  )
+                                : const Icon(
+                                    LucideIcons.music,
+                                    size: 24,
+                                    color: AppColors.textTertiary,
+                                  ),
+                          ),
                         ),
                       ),
 

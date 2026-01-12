@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'dart:async';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
@@ -13,6 +12,7 @@ import 'package:flick/features/player/widgets/ambient_background.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:flick/widgets/navigation/flick_nav_bar.dart';
+import 'package:flick/widgets/common/cached_image_widget.dart';
 
 class FullPlayerScreen extends StatefulWidget {
   final Object heroTag;
@@ -492,26 +492,26 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                   offset: const Offset(0, 16),
                                 ),
                               ],
-                              image: song.albumArt != null
-                                  ? DecorationImage(
-                                      image: FileImage(File(song.albumArt!)),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(40),
+                              child: song.albumArt != null
+                                  ? CachedImageWidget(
+                                      imagePath: song.albumArt!,
                                       fit: BoxFit.cover,
                                     )
-                                  : null,
+                                  : Container(
+                                      decoration: BoxDecoration(
+                                        color: AppColors.glassBackgroundStrong,
+                                        borderRadius: BorderRadius.circular(40),
+                                      ),
+                                      child: const Icon(
+                                        LucideIcons.music,
+                                        size: 80,
+                                        color: AppColors.textTertiary,
+                                      ),
+                                    ),
                             ),
-                            child: song.albumArt == null
-                                ? Container(
-                                    decoration: BoxDecoration(
-                                      color: AppColors.glassBackgroundStrong,
-                                      borderRadius: BorderRadius.circular(40),
-                                    ),
-                                    child: const Icon(
-                                      LucideIcons.music,
-                                      size: 80,
-                                      color: AppColors.textTertiary,
-                                    ),
-                                  )
-                                : null,
                           ),
                         ),
                         const SizedBox(height: 32),

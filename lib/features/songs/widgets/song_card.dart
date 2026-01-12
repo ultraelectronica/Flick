@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -6,6 +5,7 @@ import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/widgets/common/marquee_widget.dart';
+import 'package:flick/widgets/common/cached_image_widget.dart';
 
 /// Song card widget for displaying in the orbit scroll.
 class SongCard extends StatelessWidget {
@@ -71,6 +71,7 @@ class SongCard extends StatelessWidget {
                             child: _buildRawImage(
                               song.albumArt!,
                               fit: BoxFit.cover,
+                              artSize: artSize,
                             ),
                           ),
                         ),
@@ -176,27 +177,34 @@ class SongCard extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AppConstants.radiusMd),
           child: song.albumArt != null
-              ? _buildRawImage(song.albumArt!, fit: BoxFit.cover)
+              ? _buildRawImage(song.albumArt!, fit: BoxFit.cover, artSize: size)
               : _buildPlaceholderArt(),
         ),
       ),
     );
   }
 
-  Widget _buildRawImage(String path, {BoxFit fit = BoxFit.cover}) {
-    if (path.startsWith('http')) {
-      return Image.network(
-        path,
-        fit: fit,
-        errorBuilder: (context, error, stackTrace) => _buildPlaceholderArt(),
-      );
-    } else {
-      return Image.file(
-        File(path),
-        fit: fit,
-        errorBuilder: (context, error, stackTrace) => _buildPlaceholderArt(),
-      );
-    }
+  Widget _buildRawImage(
+    String path, {
+    BoxFit fit = BoxFit.cover,
+    required double artSize,
+  }) {
+    // Use thumbnail for smaller album art sizes to improve performance
+    final isThumbnail = artSize <= AppConstants.songCardArtSize;
+
+    return CachedImageWidget(
+      imagePath: path,
+      fit: fit,
+      placeholder: _buildPlaceholderArt(),
+      errorWidget: _buildPlaceholderArt(),
+      useThumbnail: isThumbnail,
+      thumbnailWidth: isThumbnail
+          ? (AppConstants.songCardArtSize * 2).toInt()
+          : null,
+      thumbnailHeight: isThumbnail
+          ? (AppConstants.songCardArtSize * 2).toInt()
+          : null,
+    );
   }
 
   Widget _buildPlaceholderArt() {
