@@ -33,6 +33,7 @@ dependencies:
     sdk: flutter
   flutter_displaymode: ^0.7.0
   flutter_launcher_icons: ^0.14.4
+  flutter_riverpod: ^3.0.3
   flutter_rust_bridge: 2.11.1
   isar_community: ^3.3.0
   isar_community_flutter_libs: ^3.3.0
@@ -40,7 +41,7 @@ dependencies:
   lucide_icons_flutter: ^3.1.8
   path_provider: ^2.1.1
   permission_handler: ^12.0.1
-  riverpod: ^3.1.0
+  riverpod_annotation: ^3.0.3
   rust_lib_flick_player:
     path: rust_builder
   salomon_bottom_bar: ^3.3.2
@@ -55,6 +56,8 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   isar_community_generator: ^3.3.0
+  riverpod_generator: ^3.0.3
+  riverpod_lint: ^3.0.3
 
 flutter_launcher_icons:
   android: "launcher_icon"

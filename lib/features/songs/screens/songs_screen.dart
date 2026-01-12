@@ -1,5 +1,5 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
@@ -7,121 +7,47 @@ import 'package:flick/core/utils/responsive.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/features/songs/widgets/orbit_scroll.dart';
 import 'package:flick/features/player/screens/full_player_screen.dart';
-import 'package:flick/data/repositories/song_repository.dart';
-import 'package:flick/services/player_service.dart';
+import 'package:flick/providers/providers.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-enum SortOption { title, artist, dateAdded }
-
 /// Main songs screen with orbital scrolling.
-class SongsScreen extends StatefulWidget {
+class SongsScreen extends ConsumerStatefulWidget {
   /// Callback when navigation to a different tab is requested from full player
   final ValueChanged<int>? onNavigationRequested;
 
   const SongsScreen({super.key, this.onNavigationRequested});
 
   @override
-  State<SongsScreen> createState() => _SongsScreenState();
+  ConsumerState<SongsScreen> createState() => _SongsScreenState();
 }
 
-class _SongsScreenState extends State<SongsScreen> {
+class _SongsScreenState extends ConsumerState<SongsScreen> {
   int _selectedIndex = 0;
-  List<Song> _songs = [];
-  bool _isLoading = true;
-  final SongRepository _songRepository = SongRepository();
-
-  final PlayerService _playerService = PlayerService();
-
-  // Sorting
-  SortOption _currentSort = SortOption.title;
-
-  // Timer for auto-play debounce
-  Timer? _debounceTimer;
 
   @override
   void initState() {
     super.initState();
-    _loadSongs();
-
-    // Listen for changes in the songs collection
-    _songRepository.watchSongs().listen((_) {
-      _loadSongs();
-    });
-
-    // Listen to global player state to sync selection?
-    // Optionally we can sync _selectedIndex to currently playing song.
-    _playerService.currentSongNotifier.addListener(_syncSelectionWithPlayer);
-  }
-
-  @override
-  void dispose() {
-    _debounceTimer?.cancel();
-    _playerService.currentSongNotifier.removeListener(_syncSelectionWithPlayer);
-    super.dispose();
-  }
-
-  void _syncSelectionWithPlayer() {
-    final playing = _playerService.currentSongNotifier.value;
-    if (playing != null) {
-      final index = _songs.indexWhere((s) => s.id == playing.id);
-      if (index != -1 && index != _selectedIndex && mounted) {
-        setState(() {
-          _selectedIndex = index;
-        });
-      }
-    }
-  }
-
-  Future<void> _loadSongs() async {
-    try {
-      final songs = await _songRepository.getAllSongs();
-      if (mounted) {
-        setState(() {
-          _songs = songs;
-          _sortSongs(); // Apply current sort
-          _isLoading = false;
-          // Reset selected index if out of bounds
-          if (_selectedIndex >= songs.length && songs.isNotEmpty) {
-            _selectedIndex = 0;
-          }
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _songs = Song.sampleSongs;
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  void _sortSongs() {
-    setState(() {
-      switch (_currentSort) {
-        case SortOption.title:
-          _songs.sort((a, b) => a.title.compareTo(b.title));
-          break;
-        case SortOption.artist:
-          _songs.sort((a, b) => a.artist.compareTo(b.artist));
-          break;
-        case SortOption.dateAdded:
-          _songs.sort((a, b) {
-            final dateA = a.dateAdded ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final dateB = b.dateAdded ?? DateTime.fromMillisecondsSinceEpoch(0);
-            return dateB.compareTo(dateA); // Newest first
-          });
-          break;
-      }
-    });
-  }
-
-  Future<void> _playSong(Song song) async {
-    await _playerService.play(song, playlist: _songs);
+    // Listen to player changes to sync selection (handled in build via ref.listen)
   }
 
   @override
   Widget build(BuildContext context) {
+    // Watch the songs provider for reactive updates
+    final songsAsync = ref.watch(songsProvider);
+
+    // Sync selection with currently playing song
+    ref.listen<Song?>(currentSongProvider, (previous, next) {
+      if (next != null) {
+        final songs = ref.read(songsProvider).value?.sortedSongs ?? [];
+        final index = songs.indexWhere((s) => s.id == next.id);
+        if (index != -1 && index != _selectedIndex) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        }
+      }
+    });
+
     return Stack(
       children: [
         // Background ambient effects
@@ -132,70 +58,96 @@ class _SongsScreenState extends State<SongsScreen> {
           bottom: false,
           child: Column(
             children: [
-              // Header
-              _buildHeader(),
+              // Header with sort option
+              _buildHeader(songsAsync),
 
-              // Content based on state
+              // Content based on async state
               Expanded(
-                child: _isLoading
-                    ? _buildLoadingState()
-                    : _songs.isEmpty
-                    ? _buildEmptyState()
-                    : OrbitScroll(
-                        songs: _songs,
-                        selectedIndex: _selectedIndex,
-                        onSelectedIndexChanged: (index) {
-                          setState(() {
-                            _selectedIndex = index;
-                          });
-                        },
-                        onSongSelected: (index) async {
-                          _playSong(_songs[index]);
-                          // Navigate to full player screen
-                          final result = await Navigator.of(context).push<int>(
-                            PageRouteBuilder(
-                              pageBuilder:
-                                  (context, animation, secondaryAnimation) =>
-                                      FullPlayerScreen(
-                                        heroTag: 'song_art_${_songs[index].id}',
-                                      ),
-                              transitionsBuilder:
-                                  (
-                                    context,
-                                    animation,
-                                    secondaryAnimation,
-                                    child,
-                                  ) {
-                                    const begin = Offset(0.0, 1.0);
-                                    const end = Offset.zero;
-                                    const curve = Curves.easeOutCubic;
+                child: songsAsync.when(
+                  loading: () => _buildLoadingState(),
+                  error: (error, stack) => _buildErrorState(error),
+                  data: (songsState) {
+                    final songs = songsState.sortedSongs;
 
-                                    var tween = Tween(
-                                      begin: begin,
-                                      end: end,
-                                    ).chain(CurveTween(curve: curve));
+                    if (songs.isEmpty) {
+                      return _buildEmptyState();
+                    }
 
-                                    return SlideTransition(
-                                      position: animation.drive(tween),
-                                      child: child,
-                                    );
-                                  },
-                              transitionDuration: const Duration(
-                                milliseconds: 300,
-                              ),
-                              opaque: false,
-                              barrierColor: Colors.black,
+                    // Ensure selected index is valid
+                    if (_selectedIndex >= songs.length) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          setState(() => _selectedIndex = 0);
+                        }
+                      });
+                    }
+
+                    return OrbitScroll(
+                      songs: songs,
+                      selectedIndex: _selectedIndex
+                          .clamp(0, songs.length - 1)
+                          .toInt(),
+                      onSelectedIndexChanged: (index) {
+                        setState(() {
+                          _selectedIndex = index;
+                        });
+                      },
+                      onSongSelected: (index) async {
+                        // Play the song with the full playlist context
+                        await ref
+                            .read(playerProvider.notifier)
+                            .play(songs[index], playlist: songs);
+
+                        if (!context.mounted) return;
+
+                        // Navigate to full player screen
+                        final result = await Navigator.of(context).push<int>(
+                          PageRouteBuilder(
+                            pageBuilder:
+                                (context, animation, secondaryAnimation) =>
+                                    FullPlayerScreen(
+                                      heroTag: 'song_art_${songs[index].id}',
+                                    ),
+                            transitionsBuilder:
+                                (
+                                  context,
+                                  animation,
+                                  secondaryAnimation,
+                                  child,
+                                ) {
+                                  const begin = Offset(0.0, 1.0);
+                                  const end = Offset.zero;
+                                  const curve = Curves.easeOutCubic;
+
+                                  var tween = Tween(
+                                    begin: begin,
+                                    end: end,
+                                  ).chain(CurveTween(curve: curve));
+
+                                  return SlideTransition(
+                                    position: animation.drive(tween),
+                                    child: child,
+                                  );
+                                },
+                            transitionDuration: const Duration(
+                              milliseconds: 300,
                             ),
-                          );
-                          // If a navigation index was returned and it's not Songs (1),
-                          // notify the parent to switch tabs
-                          if (result != null &&
-                              result != 1 &&
-                              widget.onNavigationRequested != null) {
-                            widget.onNavigationRequested!(result);
-                          }
-                        },
-                      ),
+                            opaque: false,
+                            barrierColor: Colors.black,
+                          ),
+                        );
+
+                        // If a navigation index was returned and it's not Songs (1),
+                        // notify the parent to switch tabs
+                        if (result != null &&
+                            result != 1 &&
+                            widget.onNavigationRequested != null) {
+                          widget.onNavigationRequested!(result);
+                        }
+                      },
+                    );
+                  },
+                ),
               ),
 
               // Space for nav bar & mini player
@@ -210,6 +162,42 @@ class _SongsScreenState extends State<SongsScreen> {
   Widget _buildLoadingState() {
     return Center(
       child: CircularProgressIndicator(color: context.adaptiveTextSecondary),
+    );
+  }
+
+  Widget _buildErrorState(Object error) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            LucideIcons.circleX,
+            size: context.responsiveIcon(AppConstants.containerSizeLg),
+            color: context.adaptiveTextTertiary.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: AppConstants.spacingLg),
+          Text(
+            'Error loading songs',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: context.adaptiveTextSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppConstants.spacingSm),
+          Text(
+            error.toString(),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: context.adaptiveTextTertiary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppConstants.spacingLg),
+          TextButton(
+            onPressed: () => ref.invalidate(songsProvider),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -287,7 +275,10 @@ class _SongsScreenState extends State<SongsScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(AsyncValue<SongsState> songsAsync) {
+    final songCount = songsAsync.value?.songs.length ?? 0;
+    final currentSort = songsAsync.value?.sortOption ?? SongSortOption.title;
+
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppConstants.spacingLg,
@@ -308,7 +299,7 @@ class _SongsScreenState extends State<SongsScreen> {
               ),
               const SizedBox(height: AppConstants.spacingXxs),
               Text(
-                '${_songs.length} songs',
+                '$songCount songs',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: context.adaptiveTextSecondary,
                 ),
@@ -323,7 +314,7 @@ class _SongsScreenState extends State<SongsScreen> {
               borderRadius: BorderRadius.circular(AppConstants.radiusMd),
               border: Border.all(color: AppColors.glassBorder, width: 1),
             ),
-            child: PopupMenuButton<SortOption>(
+            child: PopupMenuButton<SongSortOption>(
               icon: Icon(
                 Icons.sort_rounded,
                 color: context.adaptiveTextSecondary,
@@ -334,35 +325,64 @@ class _SongsScreenState extends State<SongsScreen> {
                 borderRadius: BorderRadius.circular(AppConstants.radiusMd),
                 side: const BorderSide(color: AppColors.glassBorder, width: 1),
               ),
-              onSelected: (SortOption result) {
+              onSelected: (SongSortOption result) {
+                ref.read(songsProvider.notifier).setSortOption(result);
+                // Reset selection to top
                 setState(() {
-                  _currentSort = result;
-                  _sortSongs();
-                  // Reset selection to top or keep? Top is safer.
                   _selectedIndex = 0;
                 });
               },
               itemBuilder: (BuildContext context) =>
-                  <PopupMenuEntry<SortOption>>[
-                    PopupMenuItem<SortOption>(
-                      value: SortOption.title,
-                      child: Text(
-                        'Sort by Title',
-                        style: TextStyle(color: context.adaptiveTextPrimary),
+                  <PopupMenuEntry<SongSortOption>>[
+                    PopupMenuItem<SongSortOption>(
+                      value: SongSortOption.title,
+                      child: Row(
+                        children: [
+                          if (currentSort == SongSortOption.title)
+                            const Icon(Icons.check, size: 18),
+                          if (currentSort == SongSortOption.title)
+                            const SizedBox(width: 8),
+                          Text(
+                            'Sort by Title',
+                            style: TextStyle(
+                              color: context.adaptiveTextPrimary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    PopupMenuItem<SortOption>(
-                      value: SortOption.artist,
-                      child: Text(
-                        'Sort by Artist',
-                        style: TextStyle(color: context.adaptiveTextPrimary),
+                    PopupMenuItem<SongSortOption>(
+                      value: SongSortOption.artist,
+                      child: Row(
+                        children: [
+                          if (currentSort == SongSortOption.artist)
+                            const Icon(Icons.check, size: 18),
+                          if (currentSort == SongSortOption.artist)
+                            const SizedBox(width: 8),
+                          Text(
+                            'Sort by Artist',
+                            style: TextStyle(
+                              color: context.adaptiveTextPrimary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    PopupMenuItem<SortOption>(
-                      value: SortOption.dateAdded,
-                      child: Text(
-                        'Sort by Date Added',
-                        style: TextStyle(color: context.adaptiveTextPrimary),
+                    PopupMenuItem<SongSortOption>(
+                      value: SongSortOption.dateAdded,
+                      child: Row(
+                        children: [
+                          if (currentSort == SongSortOption.dateAdded)
+                            const Icon(Icons.check, size: 18),
+                          if (currentSort == SongSortOption.dateAdded)
+                            const SizedBox(width: 8),
+                          Text(
+                            'Sort by Date Added',
+                            style: TextStyle(
+                              color: context.adaptiveTextPrimary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

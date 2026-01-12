@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/src/rust/frb_generated.dart';
 import 'package:flick/app/app.dart';
 import 'package:flick/data/database.dart';
@@ -24,7 +25,7 @@ Future<void> main() async {
   // Restore last played song state
   await _restoreLastPlayedSong();
 
-  runApp(const FlickPlayerApp());
+  runApp(const ProviderScope(child: FlickPlayerApp()));
 }
 
 /// Sets the highest available refresh rate mode on Android devices.
