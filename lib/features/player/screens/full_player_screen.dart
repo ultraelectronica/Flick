@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'dart:async';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
@@ -27,6 +28,36 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
 
   // Track drag offset for swipe-down to dismiss
   double _dragOffset = 0;
+
+  // Throttled position for waveform updates (updates every 100ms instead of every frame)
+  Duration _throttledPosition = Duration.zero;
+  Timer? _positionThrottleTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize with current position
+    _throttledPosition = _playerService.positionNotifier.value;
+    // Set up throttled position updates for waveform (100ms interval)
+    _positionThrottleTimer = Timer.periodic(const Duration(milliseconds: 100), (
+      timer,
+    ) {
+      if (mounted) {
+        final newPosition = _playerService.positionNotifier.value;
+        // Only update if position actually changed
+        if (_throttledPosition != newPosition) {
+          _throttledPosition = newPosition;
+          setState(() {});
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _positionThrottleTimer?.cancel();
+    super.dispose();
+  }
 
   // For nice time formatting (mm:ss)
   String _formatDuration(Duration duration) {
@@ -674,54 +705,50 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                               Positioned.fill(
                                 child: ValueListenableBuilder<Duration>(
                                   valueListenable:
-                                      _playerService.positionNotifier,
-                                  builder: (context, position, _) {
-                                    return ValueListenableBuilder<Duration>(
-                                      valueListenable:
-                                          _playerService.durationNotifier,
-                                      builder: (context, duration, _) {
-                                        if (duration.inMilliseconds == 0) {
-                                          return const SizedBox();
-                                        }
+                                      _playerService.durationNotifier,
+                                  builder: (context, duration, _) {
+                                    if (duration.inMilliseconds == 0) {
+                                      return const SizedBox();
+                                    }
 
-                                        final screenWidth = MediaQuery.of(
-                                          context,
-                                        ).size.width;
-                                        final waveWidth = screenWidth * 4;
-                                        final progress =
-                                            position.inMilliseconds /
-                                            duration.inMilliseconds;
-                                        // Center the playhead
-                                        final offset =
-                                            -(progress * waveWidth) +
-                                            (screenWidth / 2);
+                                    final screenWidth = MediaQuery.of(
+                                      context,
+                                    ).size.width;
+                                    final waveWidth = screenWidth * 4;
+                                    final progress =
+                                        _throttledPosition.inMilliseconds /
+                                        duration.inMilliseconds;
+                                    // Center the playhead
+                                    final offset =
+                                        -(progress * waveWidth) +
+                                        (screenWidth / 2);
 
-                                        return ClipRect(
-                                          child: OverflowBox(
-                                            maxWidth: waveWidth,
-                                            minWidth: waveWidth,
-                                            alignment: Alignment.centerLeft,
-                                            child: Transform.translate(
-                                              offset: Offset(offset, 0),
-                                              child: Padding(
-                                                padding: const EdgeInsets.symmetric(
-                                                  vertical: 10,
-                                                ), // Padding for controls space
-                                                child: WaveformSeekBar(
-                                                  barCount: 300,
-                                                  position: position,
-                                                  duration: duration,
-                                                  onChanged: (newPos) {
-                                                    // Seeking on a scrolling waveform is tricky visually
-                                                    // Standard seek might feel weird if it jumps
-                                                    _playerService.seek(newPos);
-                                                  },
-                                                ),
+                                    return ClipRect(
+                                      child: OverflowBox(
+                                        maxWidth: waveWidth,
+                                        minWidth: waveWidth,
+                                        alignment: Alignment.centerLeft,
+                                        child: Transform.translate(
+                                          offset: Offset(offset, 0),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 10,
+                                            ), // Padding for controls space
+                                            child: RepaintBoundary(
+                                              child: WaveformSeekBar(
+                                                barCount: 80,
+                                                position: _throttledPosition,
+                                                duration: duration,
+                                                onChanged: (newPos) {
+                                                  // Seeking on a scrolling waveform is tricky visually
+                                                  // Standard seek might feel weird if it jumps
+                                                  _playerService.seek(newPos);
+                                                },
                                               ),
                                             ),
                                           ),
-                                        );
-                                      },
+                                        ),
+                                      ),
                                     );
                                   },
                                 ),

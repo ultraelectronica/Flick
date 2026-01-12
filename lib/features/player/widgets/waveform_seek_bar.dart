@@ -194,6 +194,28 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_WaveformPainter oldDelegate) {
-    return oldDelegate.position != position || oldDelegate.duration != duration;
+    // Only repaint if duration changed
+    if (oldDelegate.duration != duration) {
+      return true;
+    }
+    
+    // For position changes, only repaint if the visual progress (which bar is highlighted) changed
+    // Calculate which bar index corresponds to the current progress
+    if (duration.inMilliseconds == 0) {
+      return false;
+    }
+    
+    final oldProgress = oldDelegate.position.inMilliseconds / oldDelegate.duration.inMilliseconds;
+    final newProgress = position.inMilliseconds / duration.inMilliseconds;
+    
+    // Calculate bar indices (0 to barCount-1)
+    final barCount = waveformData.length;
+    final oldBarIndex = (oldProgress * barCount).floor();
+    final newBarIndex = (newProgress * barCount).floor();
+    
+    // Only repaint if we've crossed a bar boundary or if the difference is significant
+    // This reduces repaints from ~60fps to ~10fps for a typical song
+    return oldBarIndex != newBarIndex || 
+           (oldProgress - newProgress).abs() > (1.0 / barCount);
   }
 }
