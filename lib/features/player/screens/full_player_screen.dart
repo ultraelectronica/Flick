@@ -11,7 +11,7 @@ import 'package:flick/features/player/widgets/waveform_seek_bar.dart';
 import 'package:flick/features/player/widgets/ambient_background.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:flick/widgets/navigation/salomon_nav_bar.dart';
+import 'package:flick/widgets/navigation/flick_nav_bar.dart';
 
 class FullPlayerScreen extends StatefulWidget {
   final Object heroTag;
@@ -896,7 +896,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    child: SalomonNavBar(
+                    child: FlickNavBar(
                       currentIndex:
                           1, // Songs is always selected when in player
                       onTap: (index) {

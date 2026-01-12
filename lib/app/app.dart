@@ -12,7 +12,7 @@ import 'package:flick/features/menu/screens/menu_screen.dart';
 import 'package:flick/features/settings/screens/settings_screen.dart';
 import 'package:flick/features/player/screens/full_player_screen.dart';
 import 'package:flick/features/player/widgets/ambient_background.dart';
-import 'package:flick/widgets/navigation/salomon_nav_bar.dart';
+import 'package:flick/widgets/navigation/flick_nav_bar.dart';
 import 'package:flick/providers/providers.dart';
 
 /// Main application widget for Flick Player.
@@ -181,7 +181,7 @@ class _MainShellState extends ConsumerState<MainShell>
   Widget _buildUnifiedBottomBar() {
     final currentIndex = ref.watch(navigationIndexProvider);
 
-    return SalomonNavBar(
+    return FlickNavBar(
       currentIndex: currentIndex,
       onTap: (index) {
         if (ref.read(navigationIndexProvider) != index) {

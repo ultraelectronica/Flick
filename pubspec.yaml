@@ -35,6 +35,7 @@ dependencies:
   flutter_launcher_icons: ^0.14.4
   flutter_riverpod: ^3.0.3
   flutter_rust_bridge: 2.11.1
+  flutter_svg: ^2.2.3
   isar_community: ^3.3.0
   isar_community_flutter_libs: ^3.3.0
   just_audio: ^0.10.5
@@ -44,7 +45,6 @@ dependencies:
   riverpod_annotation: ^3.0.3
   rust_lib_flick_player:
     path: rust_builder
-  salomon_bottom_bar: ^3.3.2
   shared_preferences: ^2.2.2
   skeletonizer: ^2.1.2
 
@@ -72,6 +72,15 @@ flutter:
     - assets/icons/flicklogo.png
     - assets/icons/flicklogo_svg.svg
     - assets/icons/flicklogo_transparent.png
+    - assets/icons/svg/menu.svg
+    - assets/icons/svg/record_vinyl.svg
+    - assets/icons/svg/settings.svg
+    - assets/icons/svg/menu_black.svg
+    - assets/icons/svg/record_vinyl_black.svg
+    - assets/icons/svg/settings_black.svg
+    - assets/icons/svg/menu_white.svg
+    - assets/icons/svg/record_vinyl_white.svg
+    - assets/icons/svg/settings_white.svg
 
   fonts:
     - family: ProductSans
