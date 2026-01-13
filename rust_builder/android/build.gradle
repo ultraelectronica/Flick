@@ -40,7 +40,18 @@ android {
     }
 
     defaultConfig {
-        minSdkVersion 19
+        minSdkVersion 21  // cpal/oboe requires API 21+
+        
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+    }
+    
+    // Ensure C++ shared library is packaged
+    packagingOptions {
+        pickFirst '**/libc++_shared.so'
     }
 }
 

@@ -10,11 +10,14 @@ import 'package:flick/services/player_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Rust library
+  // Initialize Rust library (flutter_rust_bridge)
   await RustLib.init();
 
-  // Initialize database
+  // Initialize database FIRST (required by PlayerService)
   await Database.init();
+
+  // Initialize Rust audio engine (requires database)
+  await _initRustAudioEngine();
 
   // Set high refresh rate mode for smoother animations
   await _setOptimalDisplayMode();
@@ -26,6 +29,18 @@ Future<void> main() async {
   await _restoreLastPlayedSong();
 
   runApp(const ProviderScope(child: FlickPlayerApp()));
+}
+
+/// Initialize the Rust audio engine for gapless playback and crossfade.
+Future<void> _initRustAudioEngine() async {
+  try {
+    final playerService = PlayerService();
+    await playerService.initRustAudio();
+    debugPrint('Rust audio engine initialized successfully');
+  } catch (e) {
+    debugPrint('Failed to initialize Rust audio engine: $e');
+    // Continue anyway - the app can still function with degraded audio
+  }
 }
 
 /// Sets the highest available refresh rate mode on Android devices.

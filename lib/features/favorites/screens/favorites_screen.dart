@@ -30,7 +30,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   @override
   void initState() {
     super.initState();
-    _loadFavorites();
+    // Defer data loading to avoid jank during navigation
+    // Load after first frame is rendered
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadFavorites();
+    });
   }
 
   Future<void> _loadFavorites() async {

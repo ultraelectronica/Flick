@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio/just_audio.dart';
 
 import '../models/song.dart';
 import '../services/player_service.dart';
+
+// Re-export LoopMode from player_service
+export '../services/player_service.dart' show LoopMode;
 
 /// State class representing the current player state.
 @immutable
@@ -17,6 +19,8 @@ class PlayerState {
   final LoopMode loopMode;
   final double playbackSpeed;
   final Duration? sleepTimerRemaining;
+  final bool crossfadeEnabled;
+  final double crossfadeDuration;
 
   const PlayerState({
     this.currentSong,
@@ -28,6 +32,8 @@ class PlayerState {
     this.loopMode = LoopMode.off,
     this.playbackSpeed = 1.0,
     this.sleepTimerRemaining,
+    this.crossfadeEnabled = false,
+    this.crossfadeDuration = 3.0,
   });
 
   PlayerState copyWith({
@@ -40,6 +46,8 @@ class PlayerState {
     LoopMode? loopMode,
     double? playbackSpeed,
     Duration? sleepTimerRemaining,
+    bool? crossfadeEnabled,
+    double? crossfadeDuration,
     bool clearSong = false,
     bool clearSleepTimer = false,
   }) {
@@ -55,6 +63,8 @@ class PlayerState {
       sleepTimerRemaining: clearSleepTimer
           ? null
           : (sleepTimerRemaining ?? this.sleepTimerRemaining),
+      crossfadeEnabled: crossfadeEnabled ?? this.crossfadeEnabled,
+      crossfadeDuration: crossfadeDuration ?? this.crossfadeDuration,
     );
   }
 
@@ -93,6 +103,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
       loopMode: _service.loopModeNotifier.value,
       playbackSpeed: _service.playbackSpeedNotifier.value,
       sleepTimerRemaining: _service.sleepTimerRemainingNotifier.value,
+      crossfadeEnabled: _service.crossfadeEnabledNotifier.value,
+      crossfadeDuration: _service.crossfadeDurationNotifier.value,
     );
 
     // Listen to ValueNotifiers and update state
@@ -107,6 +119,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
         loopMode: _service.loopModeNotifier.value,
         playbackSpeed: _service.playbackSpeedNotifier.value,
         sleepTimerRemaining: _service.sleepTimerRemainingNotifier.value,
+        crossfadeEnabled: _service.crossfadeEnabledNotifier.value,
+        crossfadeDuration: _service.crossfadeDurationNotifier.value,
         clearSong: _service.currentSongNotifier.value == null,
         clearSleepTimer: _service.sleepTimerRemainingNotifier.value == null,
       );
@@ -122,6 +136,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
     _service.loopModeNotifier.addListener(syncState);
     _service.playbackSpeedNotifier.addListener(syncState);
     _service.sleepTimerRemainingNotifier.addListener(syncState);
+    _service.crossfadeEnabledNotifier.addListener(syncState);
+    _service.crossfadeDurationNotifier.addListener(syncState);
 
     // Cleanup listeners when provider is disposed
     ref.onDispose(() {
@@ -134,6 +150,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
       _service.loopModeNotifier.removeListener(syncState);
       _service.playbackSpeedNotifier.removeListener(syncState);
       _service.sleepTimerRemainingNotifier.removeListener(syncState);
+      _service.crossfadeEnabledNotifier.removeListener(syncState);
+      _service.crossfadeDurationNotifier.removeListener(syncState);
     });
 
     return initial;
@@ -203,6 +221,21 @@ class PlayerNotifier extends Notifier<PlayerState> {
   void cancelSleepTimer() {
     _service.cancelSleepTimer();
   }
+
+  /// Enable or disable crossfade.
+  Future<void> setCrossfadeEnabled(bool enabled) async {
+    await _service.setCrossfadeEnabled(enabled);
+  }
+
+  /// Set crossfade duration in seconds.
+  Future<void> setCrossfadeDuration(double durationSecs) async {
+    await _service.setCrossfadeDuration(durationSecs);
+  }
+
+  /// Set volume (0.0 to 1.0).
+  Future<void> setVolume(double volume) async {
+    await _service.setVolume(volume);
+  }
 }
 
 /// Main player state provider.
@@ -257,4 +290,14 @@ final playbackSpeedProvider = Provider<double>((ref) {
 /// Sleep timer remaining selector.
 final sleepTimerRemainingProvider = Provider<Duration?>((ref) {
   return ref.watch(playerProvider.select((state) => state.sleepTimerRemaining));
+});
+
+/// Crossfade enabled selector.
+final crossfadeEnabledProvider = Provider<bool>((ref) {
+  return ref.watch(playerProvider.select((state) => state.crossfadeEnabled));
+});
+
+/// Crossfade duration selector.
+final crossfadeDurationProvider = Provider<double>((ref) {
+  return ref.watch(playerProvider.select((state) => state.crossfadeDuration));
 });

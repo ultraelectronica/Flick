@@ -1,13 +1,21 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:just_audio/just_audio.dart' as just_audio;
 import 'package:flick/models/song.dart';
 import 'package:flick/services/notification_service.dart';
 import 'package:flick/services/last_played_service.dart';
 import 'package:flick/services/favorites_service.dart';
+import 'package:flick/services/rust_audio_service.dart';
 import 'package:flick/data/repositories/recently_played_repository.dart';
 
+/// Loop mode for playback
+enum LoopMode { off, one, all }
+
 /// Singleton service to manage global audio playback state.
+///
+/// Uses the Rust audio engine for high-performance playback with
+/// gapless playback and crossfade support on desktop platforms.
+/// Falls back to just_audio on Android.
 class PlayerService {
   static final PlayerService _instance = PlayerService._internal();
 
@@ -19,7 +27,15 @@ class PlayerService {
     _init();
   }
 
-  final AudioPlayer _player = AudioPlayer();
+  // Rust audio engine (used on desktop)
+  final RustAudioService _rustAudio = RustAudioService();
+
+  // just_audio player (used as fallback on Android)
+  final just_audio.AudioPlayer _justAudioPlayer = just_audio.AudioPlayer();
+
+  // Whether we're using native Rust audio or just_audio fallback
+  bool _useNativeAudio = false;
+
   final NotificationService _notificationService = NotificationService();
   final LastPlayedService _lastPlayedService = LastPlayedService();
   final FavoritesService _favoritesService = FavoritesService();
@@ -42,8 +58,12 @@ class PlayerService {
   final ValueNotifier<bool> isShuffleNotifier = ValueNotifier(false);
   final ValueNotifier<LoopMode> loopModeNotifier = ValueNotifier(LoopMode.off);
 
-  // Playback Speed (0.5x - 2.0x)
+  // Playback Speed
   final ValueNotifier<double> playbackSpeedNotifier = ValueNotifier(1.0);
+
+  // Crossfade settings
+  final ValueNotifier<bool> crossfadeEnabledNotifier = ValueNotifier(false);
+  final ValueNotifier<double> crossfadeDurationNotifier = ValueNotifier(3.0);
 
   // Sleep Timer
   final ValueNotifier<Duration?> sleepTimerRemainingNotifier = ValueNotifier(
@@ -54,7 +74,11 @@ class PlayerService {
 
   // Playlist Management
   final List<Song> _playlist = [];
+  final List<Song> _originalPlaylist = []; // For shuffle restore
   int _currentIndex = -1;
+
+  /// Whether native (Rust) audio engine is being used.
+  bool get isUsingNativeAudio => _useNativeAudio;
 
   void _init() {
     // Initialize notification service with callbacks
@@ -67,42 +91,125 @@ class PlayerService {
       onToggleShuffle: toggleShuffle,
       onToggleFavorite: _toggleFavoriteFromNotification,
     );
+  }
 
-    // Listen to player state
-    _player.playerStateStream.listen((state) {
+  /// Initialize the audio engine.
+  /// Attempts to use native Rust audio, falls back to just_audio if unavailable.
+  Future<void> initRustAudio() async {
+    bool nativeInitialized = false;
+
+    try {
+      nativeInitialized = await _rustAudio.init();
+    } catch (e) {
+      debugPrint('Rust audio init failed: $e');
+      nativeInitialized = false;
+    }
+
+    if (nativeInitialized) {
+      _useNativeAudio = true;
+      debugPrint('Using native Rust audio engine');
+
+      // Set up Rust audio callbacks
+      _rustAudio.onTrackEnded = _onTrackEnded;
+      _rustAudio.onCrossfadeStarted = (from, to) {
+        debugPrint('Crossfade started: $from -> $to');
+      };
+      _rustAudio.onError = (message) {
+        debugPrint('Audio error: $message');
+      };
+
+      // Listen to Rust audio state changes
+      _rustAudio.stateNotifier.addListener(_onRustStateChanged);
+      _rustAudio.positionNotifier.addListener(_onRustPositionChanged);
+      _rustAudio.durationNotifier.addListener(_onRustDurationChanged);
+      _rustAudio.bufferLevelNotifier.addListener(_onRustBufferChanged);
+
+      // Sync crossfade settings
+      await _rustAudio.setCrossfade(
+        enabled: crossfadeEnabledNotifier.value,
+        durationSecs: crossfadeDurationNotifier.value,
+      );
+    } else {
+      _useNativeAudio = false;
+      debugPrint('Using just_audio fallback');
+
+      // Set up just_audio listeners
+      _setupJustAudioListeners();
+    }
+  }
+
+  void _setupJustAudioListeners() {
+    _justAudioPlayer.playerStateStream.listen((state) {
       final wasPlaying = isPlayingNotifier.value;
       isPlayingNotifier.value = state.playing;
 
-      // Update notification on play/pause state change
       if (wasPlaying != state.playing && currentSongNotifier.value != null) {
         _notificationService.updatePlaybackState(isPlaying: state.playing);
       }
 
-      if (state.processingState == ProcessingState.completed) {
+      if (state.processingState == just_audio.ProcessingState.completed) {
         _onSongFinished();
       }
     });
 
-    // Listen to position updates
-    _player.positionStream.listen((pos) {
+    _justAudioPlayer.positionStream.listen((pos) {
       positionNotifier.value = pos;
     });
 
-    // Listen to buffered position
-    _player.bufferedPositionStream.listen((pos) {
+    _justAudioPlayer.bufferedPositionStream.listen((pos) {
       bufferedPositionNotifier.value = pos;
     });
 
-    // Listen to duration changes
-    _player.durationStream.listen((dur) {
+    _justAudioPlayer.durationStream.listen((dur) {
       if (dur != null) {
         durationNotifier.value = dur;
-        // Update notification duration ifsong matches
         if (currentSongNotifier.value != null && isPlayingNotifier.value) {
           _updateNotificationState();
         }
       }
     });
+  }
+
+  void _onRustStateChanged() {
+    final state = _rustAudio.stateNotifier.value;
+    final wasPlaying = isPlayingNotifier.value;
+
+    isPlayingNotifier.value =
+        state == RustPlaybackState.playing ||
+        state == RustPlaybackState.crossfading;
+
+    if (wasPlaying != isPlayingNotifier.value &&
+        currentSongNotifier.value != null) {
+      _notificationService.updatePlaybackState(
+        isPlaying: isPlayingNotifier.value,
+      );
+    }
+  }
+
+  void _onRustPositionChanged() {
+    positionNotifier.value = _rustAudio.positionNotifier.value;
+  }
+
+  void _onRustDurationChanged() {
+    final dur = _rustAudio.durationNotifier.value;
+    if (dur != Duration.zero) {
+      durationNotifier.value = dur;
+      if (currentSongNotifier.value != null && isPlayingNotifier.value) {
+        _updateNotificationState();
+      }
+    }
+  }
+
+  void _onRustBufferChanged() {
+    final bufferLevel = _rustAudio.bufferLevelNotifier.value;
+    final duration = durationNotifier.value;
+    bufferedPositionNotifier.value = Duration(
+      milliseconds: (duration.inMilliseconds * bufferLevel).round(),
+    );
+  }
+
+  void _onTrackEnded(String path) {
+    _onSongFinished();
   }
 
   Future<void> _toggleFavoriteFromNotification() async {
@@ -113,7 +220,6 @@ class PlayerService {
     }
   }
 
-  /// Helper to push current state to notification
   Future<void> _updateNotificationState() async {
     final song = currentSongNotifier.value;
     if (song == null) return;
@@ -131,7 +237,6 @@ class PlayerService {
   }
 
   Future<void> _onSongFinished() async {
-    // Auto-advance logic
     if (loopModeNotifier.value == LoopMode.one) {
       if (currentSongNotifier.value != null) {
         await play(currentSongNotifier.value!);
@@ -142,32 +247,37 @@ class PlayerService {
   }
 
   void _stopPlayback() async {
-    // Save final position before stopping
     await _savePosition();
     _positionSaveTimer?.cancel();
-    await pause();
-    await seek(Duration.zero);
+
+    if (_useNativeAudio) {
+      await _rustAudio.stop();
+    } else {
+      await _justAudioPlayer.pause();
+      await _justAudioPlayer.seek(Duration.zero);
+    }
+
     cancelSleepTimer();
     _notificationService.hideNotification();
   }
 
   /// Play a specific song.
-  /// If [playlist] is provided, it replaces the current queue.
   Future<void> play(Song song, {List<Song>? playlist}) async {
     try {
-      // Cancel any existing position save timer
       _positionSaveTimer?.cancel();
 
       if (playlist != null) {
         _playlist.clear();
         _playlist.addAll(playlist);
+        _originalPlaylist.clear();
+        _originalPlaylist.addAll(playlist);
         _currentIndex = _playlist.indexOf(song);
       } else {
-        // If playing a standalone song not in current playlist, add it or just play it?
-        // For simplicity, let's treat it as a single song playlist if queue is empty/desync.
         if (!_playlist.contains(song)) {
           _playlist.clear();
           _playlist.add(song);
+          _originalPlaylist.clear();
+          _originalPlaylist.add(song);
           _currentIndex = 0;
         } else {
           _currentIndex = _playlist.indexOf(song);
@@ -175,17 +285,12 @@ class PlayerService {
       }
 
       currentSongNotifier.value = song;
-
-      // Record to play history
       _recentlyPlayedRepository.recordPlay(song.id);
 
-      // Reset duration/position for UI responsiveness
       positionNotifier.value = Duration.zero;
       durationNotifier.value = Duration.zero;
 
       if (song.filePath != null) {
-        // Show notification IMMEDIATELY before loading audio
-        // This ensures metadata is shown right away
         final isFav = await _favoritesService.isFavorite(song.id);
 
         await _notificationService.showNotification(
@@ -197,16 +302,17 @@ class PlayerService {
           isFavorite: isFav,
         );
 
-        await _player.setAudioSource(
-          AudioSource.uri(Uri.parse(song.filePath!)),
-        );
+        if (_useNativeAudio) {
+          await _rustAudio.play(song.filePath!);
+          await _queueNextTrackForGapless();
+        } else {
+          await _justAudioPlayer.setAudioSource(
+            just_audio.AudioSource.uri(Uri.parse(song.filePath!)),
+          );
+          await _justAudioPlayer.setSpeed(playbackSpeedNotifier.value);
+          await _justAudioPlayer.play();
+        }
 
-        // Apply current playback speed
-        await _player.setSpeed(playbackSpeedNotifier.value);
-
-        await _player.play();
-
-        // Start periodic position save timer (every 5 seconds)
         _positionSaveTimer = Timer.periodic(
           const Duration(seconds: 5),
           (_) => _savePosition(),
@@ -217,7 +323,24 @@ class PlayerService {
     }
   }
 
-  /// Save current position for resume on app restart
+  Future<void> _queueNextTrackForGapless() async {
+    if (!_useNativeAudio) return;
+    if (_playlist.isEmpty || _currentIndex < 0) return;
+
+    Song? nextSong;
+
+    if (_currentIndex < _playlist.length - 1) {
+      nextSong = _playlist[_currentIndex + 1];
+    } else if (loopModeNotifier.value == LoopMode.all) {
+      nextSong = _playlist[0];
+    }
+
+    if (nextSong?.filePath != null) {
+      await _rustAudio.queueNext(nextSong!.filePath!);
+      debugPrint('Queued next track for gapless: ${nextSong.title}');
+    }
+  }
+
   Future<void> _savePosition() async {
     final song = currentSongNotifier.value;
     if (song != null) {
@@ -225,25 +348,21 @@ class PlayerService {
     }
   }
 
-  /// Restore last played song state (call on app startup)
   Future<void> restoreLastPlayed() async {
     final lastPlayed = await _lastPlayedService.getLastPlayed();
     if (lastPlayed != null) {
-      // Set up the song but don't auto-play
       currentSongNotifier.value = lastPlayed.song;
       _playlist.clear();
       _playlist.add(lastPlayed.song);
+      _originalPlaylist.clear();
+      _originalPlaylist.add(lastPlayed.song);
       _currentIndex = 0;
 
       if (lastPlayed.song.filePath != null) {
         try {
-          await _player.setAudioSource(
-            AudioSource.uri(Uri.parse(lastPlayed.song.filePath!)),
-          );
-          await _player.seek(lastPlayed.position);
           positionNotifier.value = lastPlayed.position;
+          durationNotifier.value = lastPlayed.song.duration;
 
-          // Show notification with paused state
           final isFav = await _favoritesService.isFavorite(lastPlayed.song.id);
           await _notificationService.showNotification(
             song: lastPlayed.song,
@@ -260,12 +379,44 @@ class PlayerService {
   }
 
   Future<void> pause() async {
-    await _player.pause();
+    // Immediately update the playing state for responsive UI
+    isPlayingNotifier.value = false;
+
+    if (_useNativeAudio) {
+      await _rustAudio.pause();
+    } else {
+      await _justAudioPlayer.pause();
+    }
     _updateNotificationState();
   }
 
   Future<void> resume() async {
-    await _player.play();
+    final song = currentSongNotifier.value;
+
+    // Immediately update the playing state for responsive UI
+    isPlayingNotifier.value = true;
+
+    if (_useNativeAudio) {
+      if (song?.filePath != null &&
+          (_rustAudio.state == RustPlaybackState.idle ||
+              _rustAudio.state == RustPlaybackState.stopped)) {
+        await _rustAudio.play(song!.filePath!);
+        if (positionNotifier.value != Duration.zero) {
+          await _rustAudio.seek(positionNotifier.value);
+        }
+      } else {
+        await _rustAudio.resume();
+      }
+    } else {
+      if (song?.filePath != null &&
+          _justAudioPlayer.processingState == just_audio.ProcessingState.idle) {
+        await _justAudioPlayer.setAudioSource(
+          just_audio.AudioSource.uri(Uri.parse(song!.filePath!)),
+        );
+        await _justAudioPlayer.seek(positionNotifier.value);
+      }
+      await _justAudioPlayer.play();
+    }
     _updateNotificationState();
   }
 
@@ -278,7 +429,11 @@ class PlayerService {
   }
 
   Future<void> seek(Duration position) async {
-    await _player.seek(position);
+    if (_useNativeAudio) {
+      await _rustAudio.seek(position);
+    } else {
+      await _justAudioPlayer.seek(position);
+    }
     _updateNotificationState();
   }
 
@@ -292,8 +447,6 @@ class PlayerService {
       _currentIndex = 0;
       await play(_playlist[_currentIndex]);
     } else {
-      // End of playlist, stop or stay?
-      // Let's stop
       await pause();
       await seek(Duration.zero);
     }
@@ -302,7 +455,6 @@ class PlayerService {
   Future<void> previous() async {
     if (_playlist.isEmpty) return;
 
-    // If more than 3 seconds in, restart song
     if (positionNotifier.value.inSeconds > 3) {
       await seek(Duration.zero);
     } else {
@@ -310,42 +462,59 @@ class PlayerService {
         _currentIndex--;
         await play(_playlist[_currentIndex]);
       } else {
-        // Wrap around if desired, or just restart first song
         await seek(Duration.zero);
       }
     }
   }
 
-  // Shuffle/Loop Toggles
+  // ==================== Crossfade Settings ====================
+
+  Future<void> setCrossfadeEnabled(bool enabled) async {
+    crossfadeEnabledNotifier.value = enabled;
+    if (_useNativeAudio) {
+      await _rustAudio.setCrossfade(
+        enabled: enabled,
+        durationSecs: crossfadeDurationNotifier.value,
+      );
+    }
+    // Note: just_audio doesn't support crossfade natively
+  }
+
+  Future<void> setCrossfadeDuration(double durationSecs) async {
+    crossfadeDurationNotifier.value = durationSecs.clamp(0.5, 12.0);
+    if (_useNativeAudio && crossfadeEnabledNotifier.value) {
+      await _rustAudio.setCrossfade(
+        enabled: true,
+        durationSecs: crossfadeDurationNotifier.value,
+      );
+    }
+  }
+
+  // ==================== Shuffle/Loop Toggles ====================
+
   void toggleShuffle() {
     final enable = !isShuffleNotifier.value;
     isShuffleNotifier.value = enable;
 
     if (enable) {
-      // Enable shuffle: shuffle the current playlist (except current song stays first ideally, or just shuffle all)
-      // For a proper shuffle, we should keep the current song playing.
-      // A simple approach:
       final current = currentSongNotifier.value;
       if (current != null) {
-        // Remove current, shuffle rest, put current back at 0?
-        // Or just shuffle mostly.
-        // Let's just shuffle the whole thing for now to keep it simple, finding new index.
         _playlist.shuffle();
         _currentIndex = _playlist.indexOf(current);
       } else {
         _playlist.shuffle();
       }
     } else {
-      // Disable shuffle: Restore original order?
-      // We didn't save original order in this simple implementation.
-      // Enhancing this would require storing _originalPlaylist.
-      // Let's sort by title as a fallback or just leave it as is (randomized order becomes new order).
-      // User might expect it to revert.
-      _playlist.sort((a, b) => a.title.compareTo(b.title));
       final current = currentSongNotifier.value;
+      _playlist.clear();
+      _playlist.addAll(_originalPlaylist);
       if (current != null) {
         _currentIndex = _playlist.indexOf(current);
       }
+    }
+
+    if (_useNativeAudio) {
+      _queueNextTrackForGapless();
     }
     _updateNotificationState();
   }
@@ -354,18 +523,35 @@ class PlayerService {
     final modes = LoopMode.values;
     final nextIndex = (loopModeNotifier.value.index + 1) % modes.length;
     loopModeNotifier.value = modes[nextIndex];
+
+    if (_useNativeAudio) {
+      _queueNextTrackForGapless();
+    }
+  }
+
+  // ==================== Volume ====================
+
+  Future<void> setVolume(double volume) async {
+    if (_useNativeAudio) {
+      await _rustAudio.setVolume(volume);
+    } else {
+      await _justAudioPlayer.setVolume(volume);
+    }
   }
 
   // ==================== Playback Speed ====================
 
-  /// Set playback speed (0.5 - 2.0)
   Future<void> setPlaybackSpeed(double speed) async {
     final clampedSpeed = speed.clamp(0.5, 2.0);
     playbackSpeedNotifier.value = clampedSpeed;
-    await _player.setSpeed(clampedSpeed);
+
+    if (_useNativeAudio) {
+      await _rustAudio.setPlaybackSpeed(clampedSpeed);
+    } else {
+      await _justAudioPlayer.setSpeed(clampedSpeed);
+    }
   }
 
-  /// Cycle through common playback speeds
   Future<void> cyclePlaybackSpeed() async {
     const speeds = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
     final currentIndex = speeds.indexOf(playbackSpeedNotifier.value);
@@ -375,19 +561,16 @@ class PlayerService {
 
   // ==================== Sleep Timer ====================
 
-  /// Set a sleep timer to stop playback after [duration].
   void setSleepTimer(Duration duration) {
     cancelSleepTimer();
 
     sleepTimerRemainingNotifier.value = duration;
 
-    // Main timer to stop playback
     _sleepTimer = Timer(duration, () {
       _stopPlayback();
       sleepTimerRemainingNotifier.value = null;
     });
 
-    // Countdown timer to update remaining time every second
     _sleepTimerCountdown = Timer.periodic(const Duration(seconds: 1), (timer) {
       final remaining = sleepTimerRemainingNotifier.value;
       if (remaining != null && remaining.inSeconds > 0) {
@@ -399,7 +582,6 @@ class PlayerService {
     });
   }
 
-  /// Cancel any active sleep timer.
   void cancelSleepTimer() {
     _sleepTimer?.cancel();
     _sleepTimer = null;
@@ -408,20 +590,28 @@ class PlayerService {
     sleepTimerRemainingNotifier.value = null;
   }
 
-  /// Check if sleep timer is active.
   bool get isSleepTimerActive => sleepTimerRemainingNotifier.value != null;
 
   void dispose() {
     _positionSaveTimer?.cancel();
     cancelSleepTimer();
     _notificationService.hideNotification();
-    _player.dispose();
+
+    if (_useNativeAudio) {
+      _rustAudio.shutdown();
+      _rustAudio.dispose();
+    } else {
+      _justAudioPlayer.dispose();
+    }
+
     currentSongNotifier.dispose();
     isPlayingNotifier.dispose();
     positionNotifier.dispose();
     durationNotifier.dispose();
     bufferedPositionNotifier.dispose();
     playbackSpeedNotifier.dispose();
+    crossfadeEnabledNotifier.dispose();
+    crossfadeDurationNotifier.dispose();
     sleepTimerRemainingNotifier.dispose();
   }
 }

@@ -10,7 +10,6 @@ import 'package:flick/services/favorites_service.dart';
 import 'package:flick/features/player/widgets/waveform_seek_bar.dart';
 import 'package:flick/features/player/widgets/ambient_background.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:flick/widgets/navigation/flick_nav_bar.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
 
@@ -22,24 +21,41 @@ class FullPlayerScreen extends StatefulWidget {
   State<FullPlayerScreen> createState() => _FullPlayerScreenState();
 }
 
-class _FullPlayerScreenState extends State<FullPlayerScreen> {
+class _FullPlayerScreenState extends State<FullPlayerScreen>
+    with SingleTickerProviderStateMixin {
   final PlayerService _playerService = PlayerService();
   final FavoritesService _favoritesService = FavoritesService();
 
-  // Track drag offset for swipe-down to dismiss
-  double _dragOffset = 0;
+  // Animation controller for drag offset (replaces setState)
+  late AnimationController _dragController;
 
-  // Throttled position for waveform updates (updates every 100ms instead of every frame)
+  // Track current drag offset (updated directly, no setState)
+  double _dragOffset = 0.0;
+
+  // Last drag update time for throttling
+  DateTime _lastDragUpdate = DateTime.now();
+
+  // Throttled position for waveform updates (updates every 50ms for smooth animation)
   Duration _throttledPosition = Duration.zero;
   Timer? _positionThrottleTimer;
 
   @override
   void initState() {
     super.initState();
+
+    // Initialize drag animation controller for smooth return animation
+    _dragController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+      lowerBound: 0.0,
+      upperBound: 1000.0, // Max drag distance
+    );
+    _dragController.value = 0.0;
+
     // Initialize with current position
     _throttledPosition = _playerService.positionNotifier.value;
-    // Set up throttled position updates for waveform (100ms interval)
-    _positionThrottleTimer = Timer.periodic(const Duration(milliseconds: 100), (
+    // Set up throttled position updates for waveform (50ms interval for smooth animation)
+    _positionThrottleTimer = Timer.periodic(const Duration(milliseconds: 50), (
       timer,
     ) {
       if (mounted) {
@@ -56,6 +72,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
   @override
   void dispose() {
     _positionThrottleTimer?.cancel();
+    _dragController.dispose();
     super.dispose();
   }
 
@@ -325,21 +342,38 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
           }
 
           return GestureDetector(
+            onVerticalDragStart: (_) {
+              _dragController.stop();
+            },
             onVerticalDragUpdate: (details) {
               // Only track downward drag
               if (details.delta.dy > 0) {
-                _dragOffset += details.delta.dy;
-                setState(() {});
+                // Throttle updates to every 16ms (~60fps) to avoid excessive updates
+                final now = DateTime.now();
+                if (now.difference(_lastDragUpdate).inMilliseconds < 16) {
+                  return;
+                }
+                _lastDragUpdate = now;
+
+                // Update drag offset directly (no setState)
+                _dragOffset = (_dragOffset + details.delta.dy).clamp(
+                  0.0,
+                  1000.0,
+                );
+                // Update controller value for AnimatedBuilder
+                _dragController.value = _dragOffset;
               }
             },
             onVerticalDragEnd: (details) {
               // If dragged down enough or with enough velocity, dismiss
               if (_dragOffset > 100 || details.primaryVelocity! > 500) {
                 Navigator.of(context).pop();
+                return;
               }
-              // Reset drag offset
-              _dragOffset = 0;
-              setState(() {});
+
+              // Animate back to 0
+              _dragOffset = 0.0;
+              _dragController.animateTo(0.0);
             },
             onHorizontalDragEnd: (details) {
               if (details.primaryVelocity! < -500) {
@@ -350,16 +384,21 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                 _playerService.previous();
               }
             },
-            child: AnimatedContainer(
-              duration: _dragOffset == 0
-                  ? const Duration(milliseconds: 200)
-                  : Duration.zero,
-              curve: Curves.easeOut,
-              transform: Matrix4.translationValues(0, _dragOffset * 0.5, 0),
+            child: AnimatedBuilder(
+              animation: _dragController,
+              builder: (context, child) {
+                // Use Transform.translate during drag (lightweight)
+                // Only use animation when releasing
+                final offset = _dragController.value * 0.5;
+                return Transform.translate(
+                  offset: Offset(0, offset),
+                  child: child!,
+                );
+              },
               child: Stack(
                 children: [
-                  // Ambient background
-                  AmbientBackground(song: song),
+                  // Ambient background - wrapped in RepaintBoundary
+                  RepaintBoundary(child: AmbientBackground(song: song)),
 
                   SafeArea(
                     child: Column(
@@ -706,6 +745,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                 child: _WaveformLayer(
                                   playerService: _playerService,
                                   throttledPosition: _throttledPosition,
+                                  currentSong: song,
                                 ),
                               ),
 
@@ -714,6 +754,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                 child: _PlayerControls(
                                   playerService: _playerService,
                                   formatDuration: _formatDuration,
+                                  currentSong: song,
                                 ),
                               ),
                             ],
@@ -750,57 +791,74 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
 }
 
 /// Extracted waveform layer widget to reduce nesting and improve performance
+/// Uses TweenAnimationBuilder for smooth position interpolation between updates
 class _WaveformLayer extends StatelessWidget {
   final PlayerService playerService;
   final Duration throttledPosition;
+  final Song? currentSong;
 
   const _WaveformLayer({
     required this.playerService,
     required this.throttledPosition,
+    required this.currentSong,
   });
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: ValueListenableBuilder<Duration>(
-        valueListenable: playerService.durationNotifier,
-        builder: (context, duration, _) {
-          if (duration.inMilliseconds == 0) {
-            return const SizedBox();
-          }
+    return ValueListenableBuilder<Duration>(
+      valueListenable: playerService.durationNotifier,
+      builder: (context, engineDuration, _) {
+        // Use engine duration if available, otherwise fallback to song duration
+        final duration = engineDuration.inMilliseconds > 0
+            ? engineDuration
+            : (currentSong?.duration ?? Duration.zero);
 
-          final screenWidth = MediaQuery.of(context).size.width;
-          final waveWidth = screenWidth * 4;
-          final progress =
-              throttledPosition.inMilliseconds / duration.inMilliseconds;
-          // Center the playhead
-          final offset = -(progress * waveWidth) + (screenWidth / 2);
+        if (duration.inMilliseconds == 0) {
+          return const SizedBox();
+        }
 
-          return ClipRect(
-            child: OverflowBox(
-              maxWidth: waveWidth,
-              minWidth: waveWidth,
-              alignment: Alignment.centerLeft,
-              child: Transform.translate(
-                offset: Offset(offset, 0),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: RepaintBoundary(
-                    child: WaveformSeekBar(
-                      barCount: 80,
-                      position: throttledPosition,
-                      duration: duration,
-                      onChanged: (newPos) {
-                        playerService.seek(newPos);
-                      },
-                    ),
-                  ),
+        final screenWidth = MediaQuery.of(context).size.width;
+        final waveWidth = screenWidth * 4;
+        final progress =
+            throttledPosition.inMilliseconds / duration.inMilliseconds;
+        // Center the playhead - clamp progress to avoid overflow
+        final clampedProgress = progress.clamp(0.0, 1.0);
+        final targetOffset = -(clampedProgress * waveWidth) + (screenWidth / 2);
+
+        // Use TweenAnimationBuilder to smoothly interpolate between position updates
+        // Duration slightly exceeds update interval (50ms) for seamless motion
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: targetOffset),
+          duration: const Duration(milliseconds: 60),
+          curve: Curves.linear, // Linear for constant-speed audio playback
+          builder: (context, animatedOffset, child) {
+            return ClipRect(
+              child: OverflowBox(
+                maxWidth: waveWidth,
+                minWidth: waveWidth,
+                alignment: Alignment.centerLeft,
+                child: Transform.translate(
+                  offset: Offset(animatedOffset, 0),
+                  child: child,
                 ),
               ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: RepaintBoundary(
+              child: WaveformSeekBar(
+                barCount: 80,
+                position: throttledPosition,
+                duration: duration,
+                onChanged: (newPos) {
+                  playerService.seek(newPos);
+                },
+              ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -809,10 +867,12 @@ class _WaveformLayer extends StatelessWidget {
 class _PlayerControls extends StatelessWidget {
   final PlayerService playerService;
   final String Function(Duration) formatDuration;
+  final Song? currentSong;
 
   const _PlayerControls({
     required this.playerService,
     required this.formatDuration,
+    required this.currentSong,
   });
 
   @override
@@ -823,7 +883,12 @@ class _PlayerControls extends StatelessWidget {
         builder: (context, position, _) {
           return ValueListenableBuilder<Duration>(
             valueListenable: playerService.durationNotifier,
-            builder: (context, duration, _) {
+            builder: (context, engineDuration, _) {
+              // Use engine duration if available, otherwise fallback to song duration
+              final duration = engineDuration.inMilliseconds > 0
+                  ? engineDuration
+                  : (currentSong?.duration ?? Duration.zero);
+
               return Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

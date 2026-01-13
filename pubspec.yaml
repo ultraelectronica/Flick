@@ -49,12 +49,14 @@ dependencies:
     path: rust_builder
   shared_preferences: ^2.2.2
   skeletonizer: ^2.1.2
+  freezed_annotation: ^3.0.0
 
 dev_dependencies:
   build_runner: ^2.4.13
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
+  freezed: ^3.0.0
   integration_test:
     sdk: flutter
   isar_community_generator: ^3.3.0
