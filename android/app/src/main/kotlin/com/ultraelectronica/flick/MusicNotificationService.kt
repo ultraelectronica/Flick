@@ -162,6 +162,9 @@ class MusicNotificationService : Service() {
                 override fun onSeekTo(pos: Long) {
                     sendCommandToFlutter("seek", mapOf("position" to pos))
                 }
+                override fun onSetShuffleMode(shuffleMode: Int) {
+                    sendCommandToFlutter("toggleShuffle")
+                }
                 override fun onCustomAction(action: String?, extras: android.os.Bundle?) {
                    when(action) {
                        ACTION_SHUFFLE -> sendCommandToFlutter("toggleShuffle")
@@ -204,6 +207,9 @@ class MusicNotificationService : Service() {
             PlaybackStateCompat.STATE_PAUSED
         }
         
+        // Playback speed: 1.0f when playing, 0.0f when paused (for progress bar animation)
+        val playbackSpeed = if (isPlaying) 1.0f else 0.0f
+        
         val playbackState = PlaybackStateCompat.Builder()
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY or
@@ -212,9 +218,17 @@ class MusicNotificationService : Service() {
                 PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
                 PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
                 PlaybackStateCompat.ACTION_STOP or
-                PlaybackStateCompat.ACTION_SEEK_TO
+                PlaybackStateCompat.ACTION_SEEK_TO or
+                PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE
             )
-            .setState(state, currentPosition, 1.0f)
+            .setState(state, currentPosition, playbackSpeed, android.os.SystemClock.elapsedRealtime())
+            .addCustomAction(
+                PlaybackStateCompat.CustomAction.Builder(
+                    ACTION_SHUFFLE,
+                    if (isShuffleMode) "Shuffle On" else "Shuffle Off",
+                    if (isShuffleMode) android.R.drawable.ic_menu_sort_by_size else android.R.drawable.ic_menu_sort_alphabetically
+                ).build()
+            )
             .build()
         
         mediaSession.setPlaybackState(playbackState)
@@ -289,13 +303,13 @@ class MusicNotificationService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_notification)
             .setLargeIcon(albumArt)
             .setContentIntent(contentIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .setOngoing(true)
+            .setOngoing(isPlaying)
             // Actions: Shuffle, Prev, Play/Pause, Next, Favorite
             .addAction(shuffleIcon, shuffleText, shuffleIntent)
             .addAction(android.R.drawable.ic_media_previous, "Previous", prevIntent)
@@ -305,11 +319,9 @@ class MusicNotificationService : Service() {
             .setStyle(
                 MediaNotificationCompat.MediaStyle()
                     .setMediaSession(mediaSession.sessionToken)
-                    // Show Shuffle, Play/Pause, Next in compact view (indices 0, 2, 3) 
-                    // Or Prev, Play/Pause, Next (1, 2, 3)?
-                    // Let's standard: 1 (Prev), 2 (Play), 3 (Next) - Classic
-                    // Expanded will show all 5.
-                    .setShowActionsInCompactView(1, 2, 3)
+                    // Compact view: Shuffle (0), Play/Pause (2), Next (3)
+                    .setShowActionsInCompactView(0, 2, 3)
+                    .setShowCancelButton(true)
             )
             .build()
     }
