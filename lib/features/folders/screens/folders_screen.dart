@@ -31,7 +31,10 @@ class _FoldersScreenState extends State<FoldersScreen> {
   @override
   void initState() {
     super.initState();
-    _loadFolders();
+    // Defer data loading to avoid jank during navigation
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadFolders();
+    });
   }
 
   Future<void> _loadFolders() async {
@@ -46,12 +49,29 @@ class _FoldersScreenState extends State<FoldersScreen> {
 
   void _openFolder(MusicFolder folder) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _FolderDetailScreen(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            _FolderDetailScreen(
           folder: folder,
           songRepository: _songRepository,
           playerService: _playerService,
         ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          // Use SlideTransition for better performance
+          const begin = Offset(0.0, 0.05);
+          const end = Offset.zero;
+          const curve = Curves.easeOutCubic;
+
+          final tween = Tween(begin: begin, end: end)
+              .chain(CurveTween(curve: curve));
+
+          return SlideTransition(
+            position: animation.drive(tween),
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 200),
+        opaque: true,
       ),
     );
   }

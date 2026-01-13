@@ -33,8 +33,11 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
   @override
   void initState() {
     super.initState();
-    _loadHistory();
-    _watchHistory();
+    // Defer data loading to avoid jank during navigation
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadHistory();
+      _watchHistory();
+    });
   }
 
   @override

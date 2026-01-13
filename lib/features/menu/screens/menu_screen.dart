@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/app_colors.dart';
@@ -26,12 +24,25 @@ class MenuScreen extends StatelessWidget {
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => screen,
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(
-            opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          // Use SlideTransition instead of FadeTransition for better performance
+          // SlideTransition is lighter than FadeTransition
+          const begin = Offset(0.0, 0.05);
+          const end = Offset.zero;
+          const curve = Curves.easeOutCubic;
+
+          final tween = Tween(
+            begin: begin,
+            end: end,
+          ).chain(CurveTween(curve: curve));
+
+          return SlideTransition(
+            position: animation.drive(tween),
             child: child,
           );
         },
-        transitionDuration: const Duration(milliseconds: 150),
+        transitionDuration: const Duration(milliseconds: 200),
+        // Use opaque: true for better performance
+        opaque: true,
       ),
     );
   }
@@ -150,78 +161,72 @@ class MenuScreen extends StatelessWidget {
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: AppConstants.spacingSm),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-          child: ClipRRect(
+      child: RepaintBoundary(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
             borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: AppConstants.glassBlurSigmaLight,
-                sigmaY: AppConstants.glassBlurSigmaLight,
+            child: Container(
+              padding: const EdgeInsets.all(AppConstants.spacingMd),
+              decoration: BoxDecoration(
+                // Removed BackdropFilter - use solid background for better performance
+                color: AppColors.glassBackground,
+                borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+                border: Border.all(color: AppColors.glassBorder, width: 1),
               ),
-              child: Container(
-                padding: const EdgeInsets.all(AppConstants.spacingMd),
-                decoration: BoxDecoration(
-                  color: AppColors.glassBackground,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                  border: Border.all(color: AppColors.glassBorder, width: 1),
-                ),
-                child: Row(
-                  children: [
-                    // Icon container
-                    Container(
-                      width: context.scaleSize(AppConstants.containerSizeMd),
-                      height: context.scaleSize(AppConstants.containerSizeMd),
-                      decoration: BoxDecoration(
-                        color: AppColors.glassBackgroundStrong,
-                        borderRadius: BorderRadius.circular(
-                          AppConstants.radiusMd,
-                        ),
-                        border: Border.all(
-                          color: AppColors.glassBorder,
-                          width: 1,
-                        ),
+              child: Row(
+                children: [
+                  // Icon container
+                  Container(
+                    width: context.scaleSize(AppConstants.containerSizeMd),
+                    height: context.scaleSize(AppConstants.containerSizeMd),
+                    decoration: BoxDecoration(
+                      color: AppColors.glassBackgroundStrong,
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusMd,
                       ),
-                      child: Icon(
-                        icon,
-                        color: context.adaptiveTextPrimary,
-                        size: context.responsiveIcon(AppConstants.iconSizeMd),
+                      border: Border.all(
+                        color: AppColors.glassBorder,
+                        width: 1,
                       ),
                     ),
-
-                    const SizedBox(width: AppConstants.spacingMd),
-
-                    // Text content
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(color: context.adaptiveTextPrimary),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            subtitle,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: context.adaptiveTextTertiary),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // Arrow
-                    Icon(
-                      LucideIcons.chevronRight,
-                      color: context.adaptiveTextTertiary,
+                    child: Icon(
+                      icon,
+                      color: context.adaptiveTextPrimary,
                       size: context.responsiveIcon(AppConstants.iconSizeMd),
                     ),
-                  ],
-                ),
+                  ),
+
+                  const SizedBox(width: AppConstants.spacingMd),
+
+                  // Text content
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(color: context.adaptiveTextPrimary),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: context.adaptiveTextTertiary),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Arrow
+                  Icon(
+                    LucideIcons.chevronRight,
+                    color: context.adaptiveTextTertiary,
+                    size: context.responsiveIcon(AppConstants.iconSizeMd),
+                  ),
+                ],
               ),
             ),
           ),

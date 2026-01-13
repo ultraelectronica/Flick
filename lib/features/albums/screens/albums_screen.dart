@@ -29,7 +29,10 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAlbums();
+    // Defer data loading to avoid jank during navigation
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAlbums();
+    });
   }
 
   Future<void> _loadAlbums() async {
@@ -53,13 +56,30 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
 
   void _openAlbumDetail(String albumName, List<Song> songs) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _AlbumDetailScreen(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            _AlbumDetailScreen(
           albumName: albumName,
           songs: songs,
           albumArt: _getAlbumArt(songs),
           playerService: _playerService,
         ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          // Use SlideTransition for better performance
+          const begin = Offset(0.0, 0.05);
+          const end = Offset.zero;
+          const curve = Curves.easeOutCubic;
+
+          final tween = Tween(begin: begin, end: end)
+              .chain(CurveTween(curve: curve));
+
+          return SlideTransition(
+            position: animation.drive(tween),
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 200),
+        opaque: true,
       ),
     );
   }
