@@ -35,7 +35,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
   // Last drag update time for throttling
   DateTime _lastDragUpdate = DateTime.now();
 
-  // Throttled position for waveform updates (updates every 100ms instead of every frame)
+  // Throttled position for waveform updates (updates every 50ms for smooth animation)
   Duration _throttledPosition = Duration.zero;
   Timer? _positionThrottleTimer;
 
@@ -54,8 +54,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
 
     // Initialize with current position
     _throttledPosition = _playerService.positionNotifier.value;
-    // Set up throttled position updates for waveform (100ms interval)
-    _positionThrottleTimer = Timer.periodic(const Duration(milliseconds: 100), (
+    // Set up throttled position updates for waveform (50ms interval for smooth animation)
+    _positionThrottleTimer = Timer.periodic(const Duration(milliseconds: 50), (
       timer,
     ) {
       if (mounted) {
@@ -791,6 +791,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
 }
 
 /// Extracted waveform layer widget to reduce nesting and improve performance
+/// Uses TweenAnimationBuilder for smooth position interpolation between updates
 class _WaveformLayer extends StatelessWidget {
   final PlayerService playerService;
   final Duration throttledPosition;
@@ -822,27 +823,37 @@ class _WaveformLayer extends StatelessWidget {
             throttledPosition.inMilliseconds / duration.inMilliseconds;
         // Center the playhead - clamp progress to avoid overflow
         final clampedProgress = progress.clamp(0.0, 1.0);
-        final offset = -(clampedProgress * waveWidth) + (screenWidth / 2);
+        final targetOffset = -(clampedProgress * waveWidth) + (screenWidth / 2);
 
-        return ClipRect(
-          child: OverflowBox(
-            maxWidth: waveWidth,
-            minWidth: waveWidth,
-            alignment: Alignment.centerLeft,
-            child: Transform.translate(
-              offset: Offset(offset, 0),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: RepaintBoundary(
-                  child: WaveformSeekBar(
-                    barCount: 80,
-                    position: throttledPosition,
-                    duration: duration,
-                    onChanged: (newPos) {
-                      playerService.seek(newPos);
-                    },
-                  ),
+        // Use TweenAnimationBuilder to smoothly interpolate between position updates
+        // Duration slightly exceeds update interval (50ms) for seamless motion
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: targetOffset),
+          duration: const Duration(milliseconds: 60),
+          curve: Curves.linear, // Linear for constant-speed audio playback
+          builder: (context, animatedOffset, child) {
+            return ClipRect(
+              child: OverflowBox(
+                maxWidth: waveWidth,
+                minWidth: waveWidth,
+                alignment: Alignment.centerLeft,
+                child: Transform.translate(
+                  offset: Offset(animatedOffset, 0),
+                  child: child,
                 ),
+              ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: RepaintBoundary(
+              child: WaveformSeekBar(
+                barCount: 80,
+                position: throttledPosition,
+                duration: duration,
+                onChanged: (newPos) {
+                  playerService.seek(newPos);
+                },
               ),
             ),
           ),

@@ -216,8 +216,8 @@ class RustAudioService {
   void _startProgressUpdates() {
     _stopProgressUpdates();
 
-    // Update progress every 100ms for smooth UI updates
-    _progressTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+    // Update progress every 50ms for smooth UI updates
+    _progressTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
       _updateProgress();
     });
   }
