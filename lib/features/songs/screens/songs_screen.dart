@@ -4,9 +4,9 @@ import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/utils/responsive.dart';
+import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/features/songs/widgets/orbit_scroll.dart';
-import 'package:flick/features/player/screens/full_player_screen.dart';
 import 'package:flick/providers/providers.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -100,42 +100,12 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
 
                         if (!context.mounted) return;
 
-                        // Navigate to full player screen
-                        final result = await Navigator.of(context).push<int>(
-                          PageRouteBuilder(
-                            pageBuilder:
-                                (context, animation, secondaryAnimation) =>
-                                    FullPlayerScreen(
-                                      heroTag: 'song_art_${songs[index].id}',
-                                    ),
-                            transitionsBuilder:
-                                (
-                                  context,
-                                  animation,
-                                  secondaryAnimation,
-                                  child,
-                                ) {
-                                  const begin = Offset(0.0, 1.0);
-                                  const end = Offset.zero;
-                                  const curve = Curves.easeOutCubic;
-
-                                  var tween = Tween(
-                                    begin: begin,
-                                    end: end,
-                                  ).chain(CurveTween(curve: curve));
-
-                                  return SlideTransition(
-                                    position: animation.drive(tween),
-                                    child: child,
-                                  );
-                                },
-                            transitionDuration: const Duration(
-                              milliseconds: 300,
-                            ),
-                            opaque: false,
-                            barrierColor: Colors.black,
-                          ),
-                        );
+                        // Navigate to full player screen using helper to prevent duplicates
+                        final result =
+                            await NavigationHelper.navigateToFullPlayer(
+                              context,
+                              heroTag: 'song_art_${songs[index].id}',
+                            );
 
                         // If a navigation index was returned and it's not Songs (1),
                         // notify the parent to switch tabs

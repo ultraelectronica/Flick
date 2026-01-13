@@ -7,10 +7,10 @@ import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/utils/responsive.dart';
+import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/services/favorites_service.dart';
-import 'package:flick/features/player/screens/full_player_screen.dart';
 
 /// Favorites screen showing liked songs with heart animations.
 class FavoritesScreen extends StatefulWidget {
@@ -214,11 +214,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           onTap: () async {
             await _playerService.play(song, playlist: _favorites);
             if (context.mounted) {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      FullPlayerScreen(heroTag: 'favorite_song_${song.id}'),
-                ),
+              await NavigationHelper.navigateToFullPlayer(
+                context,
+                heroTag: 'favorite_song_${song.id}',
               );
             }
           },

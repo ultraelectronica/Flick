@@ -7,11 +7,11 @@ import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/utils/responsive.dart';
+import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/services/music_folder_service.dart';
 import 'package:flick/services/player_service.dart';
-import 'package:flick/features/player/screens/full_player_screen.dart';
 
 /// Folders screen with directory browser.
 class FoldersScreen extends StatefulWidget {
@@ -52,18 +52,20 @@ class _FoldersScreenState extends State<FoldersScreen> {
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
             _FolderDetailScreen(
-          folder: folder,
-          songRepository: _songRepository,
-          playerService: _playerService,
-        ),
+              folder: folder,
+              songRepository: _songRepository,
+              playerService: _playerService,
+            ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           // Use SlideTransition for better performance
           const begin = Offset(0.0, 0.05);
           const end = Offset.zero;
           const curve = Curves.easeOutCubic;
 
-          final tween = Tween(begin: begin, end: end)
-              .chain(CurveTween(curve: curve));
+          final tween = Tween(
+            begin: begin,
+            end: end,
+          ).chain(CurveTween(curve: curve));
 
           return SlideTransition(
             position: animation.drive(tween),
@@ -496,11 +498,9 @@ class _FolderDetailScreenState extends State<_FolderDetailScreen> {
           onTap: () async {
             await widget.playerService.play(song, playlist: _songs);
             if (context.mounted) {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      FullPlayerScreen(heroTag: 'folder_song_${song.id}'),
-                ),
+              await NavigationHelper.navigateToFullPlayer(
+                context,
+                heroTag: 'folder_song_${song.id}',
               );
             }
           },

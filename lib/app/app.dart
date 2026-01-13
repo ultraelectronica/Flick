@@ -9,7 +9,7 @@ import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/features/songs/screens/songs_screen.dart';
 import 'package:flick/features/menu/screens/menu_screen.dart';
 import 'package:flick/features/settings/screens/settings_screen.dart';
-import 'package:flick/features/player/screens/full_player_screen.dart';
+import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/features/player/widgets/ambient_background.dart';
 import 'package:flick/widgets/navigation/flick_nav_bar.dart';
 import 'package:flick/providers/providers.dart';
@@ -209,30 +209,9 @@ class _EmbeddedMiniPlayer extends ConsumerWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () async {
-        final result = await Navigator.of(context).push<int>(
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                const FullPlayerScreen(heroTag: 'mini_player_art'),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-                  const begin = Offset(0.0, 1.0);
-                  const end = Offset.zero;
-                  const curve = Curves.easeOutCubic;
-
-                  var tween = Tween(
-                    begin: begin,
-                    end: end,
-                  ).chain(CurveTween(curve: curve));
-
-                  return SlideTransition(
-                    position: animation.drive(tween),
-                    child: child,
-                  );
-                },
-            transitionDuration: const Duration(milliseconds: 300),
-            opaque: false,
-            barrierColor: Colors.black,
-          ),
+        final result = await NavigationHelper.navigateToFullPlayer(
+          context,
+          heroTag: 'mini_player_art',
         );
         // Navigate to the returned tab index if provided
         if (result != null && context.mounted) {

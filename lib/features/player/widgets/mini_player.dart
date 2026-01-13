@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
-import 'package:flick/features/player/screens/full_player_screen.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
 
@@ -27,30 +27,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
 
         return GestureDetector(
           onTap: () {
-            Navigator.of(context).push(
-              PageRouteBuilder(
-                pageBuilder: (context, animation, secondaryAnimation) =>
-                    FullPlayerScreen(heroTag: 'song_art_${song.id}'),
-                transitionsBuilder:
-                    (context, animation, secondaryAnimation, child) {
-                      const begin = Offset(0.0, 1.0);
-                      const end = Offset.zero;
-                      const curve = Curves.easeOutCubic;
-
-                      var tween = Tween(
-                        begin: begin,
-                        end: end,
-                      ).chain(CurveTween(curve: curve));
-
-                      return SlideTransition(
-                        position: animation.drive(tween),
-                        child: child,
-                      );
-                    },
-                transitionDuration: const Duration(milliseconds: 300),
-                opaque: false, // Important for Hero
-                barrierColor: Colors.black, // Or transparent
-              ),
+            NavigationHelper.navigateToFullPlayer(
+              context,
+              heroTag: 'song_art_${song.id}',
             );
           },
           child: Container(

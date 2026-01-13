@@ -7,10 +7,10 @@ import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/utils/responsive.dart';
+import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/services/player_service.dart';
-import 'package:flick/features/player/screens/full_player_screen.dart';
 
 /// Artists screen with circular avatar cards.
 class ArtistsScreen extends StatefulWidget {
@@ -546,11 +546,9 @@ class _AlbumSection extends StatelessWidget {
             onTap: () async {
               await playerService.play(song, playlist: songs);
               if (context.mounted) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        FullPlayerScreen(heroTag: 'artist_song_${song.id}'),
-                  ),
+                await NavigationHelper.navigateToFullPlayer(
+                  context,
+                  heroTag: 'artist_song_${song.id}',
                 );
               }
             },

@@ -8,9 +8,9 @@ import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/utils/responsive.dart';
+import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
-import 'package:flick/features/player/screens/full_player_screen.dart';
 import 'package:flick/data/repositories/recently_played_repository.dart';
 
 /// Recently Played screen with timeline-style layout.
@@ -371,12 +371,9 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
                 onTap: () async {
                   await _playerService.play(entry.song);
                   if (context.mounted) {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => FullPlayerScreen(
-                          heroTag: 'recent_song_${entry.song.id}',
-                        ),
-                      ),
+                    await NavigationHelper.navigateToFullPlayer(
+                      context,
+                      heroTag: 'recent_song_${entry.song.id}',
                     );
                   }
                 },
