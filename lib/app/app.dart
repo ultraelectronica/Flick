@@ -14,6 +14,7 @@ import 'package:flick/features/player/widgets/ambient_background.dart';
 import 'package:flick/widgets/navigation/flick_nav_bar.dart';
 import 'package:flick/providers/providers.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
+import 'package:flick/models/song.dart';
 
 /// Main application widget for Flick Player.
 class FlickPlayerApp extends StatelessWidget {
@@ -53,6 +54,9 @@ class _MainShellState extends ConsumerState<MainShell>
   // Animation controller for smoother nav bar transitions
   late final AnimationController _navBarAnimationController;
   late final Animation<Offset> _navBarSlideAnimation;
+
+  // Track previous song to detect changes
+  Song? _previousSong;
 
   @override
   void initState() {
@@ -107,6 +111,31 @@ class _MainShellState extends ConsumerState<MainShell>
     // Listen to nav bar visibility changes and animate
     ref.listen<bool>(navBarVisibleProvider, (previous, next) {
       _onNavBarVisibilityChanged(next);
+    });
+
+    // Listen to song changes and automatically navigate to full player
+    ref.listen<Song?>(currentSongProvider, (previousSong, nextSong) {
+      // Navigate if:
+      // 1. There is a new song (not null)
+      // 2. The song actually changed (different from previous, or first song)
+      // 3. The context is still mounted
+      final songChanged =
+          nextSong != null &&
+          (_previousSong == null || _previousSong!.id != nextSong.id);
+
+      if (songChanged && context.mounted) {
+        final song = nextSong; // Capture for closure
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (context.mounted) {
+            NavigationHelper.navigateToFullPlayer(
+              context,
+              heroTag: 'auto_nav_${song.id}',
+            );
+          }
+        });
+      }
+      // Update previous song
+      _previousSong = nextSong;
     });
 
     return AdaptiveColorProvider(
