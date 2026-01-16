@@ -100,8 +100,24 @@ class MusicNotificationService : Service() {
             if (it.hasExtra("artist")) currentArtist = it.getStringExtra("artist") ?: "Unknown Artist"
             if (it.hasExtra("albumArtPath")) currentAlbumArtPath = it.getStringExtra("albumArtPath")
             if (it.hasExtra("isPlaying")) isPlaying = it.getBooleanExtra("isPlaying", false)
-            if (it.hasExtra("duration")) currentDuration = it.getLongExtra("duration", 0)
-            if (it.hasExtra("position")) currentPosition = it.getLongExtra("position", 0)
+            if (it.hasExtra("duration")) {
+                val durationValue = it.extras?.get("duration")
+                currentDuration = when (durationValue) {
+                    is Long -> durationValue
+                    is Int -> durationValue.toLong()
+                    is Number -> durationValue.toLong()
+                    else -> it.getLongExtra("duration", 0)
+                }
+            }
+            if (it.hasExtra("position")) {
+                val positionValue = it.extras?.get("position")
+                currentPosition = when (positionValue) {
+                    is Long -> positionValue
+                    is Int -> positionValue.toLong()
+                    is Number -> positionValue.toLong()
+                    else -> it.getLongExtra("position", 0)
+                }
+            }
             if (it.hasExtra("isShuffle")) isShuffleMode = it.getBooleanExtra("isShuffle", false)
             if (it.hasExtra("isFavorite")) isFavorite = it.getBooleanExtra("isFavorite", false)
         }
@@ -210,6 +226,15 @@ class MusicNotificationService : Service() {
         // Playback speed: 1.0f when playing, 0.0f when paused (for progress bar animation)
         val playbackSpeed = if (isPlaying) 1.0f else 0.0f
         
+        // Set shuffle mode on MediaSession
+        mediaSession.setShuffleMode(
+            if (isShuffleMode) {
+                PlaybackStateCompat.SHUFFLE_MODE_ALL
+            } else {
+                PlaybackStateCompat.SHUFFLE_MODE_NONE
+            }
+        )
+        
         val playbackState = PlaybackStateCompat.Builder()
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY or
@@ -222,13 +247,6 @@ class MusicNotificationService : Service() {
                 PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE
             )
             .setState(state, currentPosition, playbackSpeed, android.os.SystemClock.elapsedRealtime())
-            .addCustomAction(
-                PlaybackStateCompat.CustomAction.Builder(
-                    ACTION_SHUFFLE,
-                    if (isShuffleMode) "Shuffle On" else "Shuffle Off",
-                    if (isShuffleMode) android.R.drawable.ic_menu_sort_by_size else android.R.drawable.ic_menu_sort_alphabetically
-                ).build()
-            )
             .build()
         
         mediaSession.setPlaybackState(playbackState)
@@ -288,14 +306,9 @@ class MusicNotificationService : Service() {
         val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         val playPauseText = if (isPlaying) "Pause" else "Play"
         
-        // Shuffle & Favorite Icons (Using available system resources)
-        // Note: These might vary by device/OS version. In a real app we'd need custom drawables.
-        // Using generic icons as placeholders.
-        val shuffleIcon = android.R.drawable.ic_menu_sort_by_size // Placeholder for Shuffle
+        // Shuffle & Favorite Icons
+        val shuffleIcon = if(isShuffleMode) R.drawable.ic_shuffle_on else R.drawable.ic_shuffle
         val shuffleText = if(isShuffleMode) "Shuffle On" else "Shuffle Off"
-        // To indicate ON/OFF visually without custom icons, we'd ideally change the icon or tint. 
-        // Standard notification actions don't support tinting easily. 
-        // We'll trust the user understands for now or needs a real icon asset. 
         
         val favoriteIcon = if(isFavorite) android.R.drawable.btn_star_big_on else android.R.drawable.btn_star_big_off
         val favoriteText = if(isFavorite) "Unfavorite" else "Favorite"

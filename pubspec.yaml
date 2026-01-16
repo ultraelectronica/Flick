@@ -85,6 +85,8 @@ flutter:
     - assets/icons/svg/menu_white.svg
     - assets/icons/svg/record_vinyl_white.svg
     - assets/icons/svg/settings_white.svg
+    - assets/icons/svg/shuffle_black.svg
+    - assets/icons/svg/shuffle_white.svg
 
   fonts:
     - family: ProductSans

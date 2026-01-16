@@ -126,12 +126,29 @@ class MainActivity: FlutterActivity() {
                     val artist = call.argument<String>("artist")
                     val albumArtPath = call.argument<String>("albumArtPath")
                     val isPlaying = call.argument<Boolean>("isPlaying") ?: true
+                    // Handle both Integer and Long types from Flutter
+                    val duration = when (val d = call.argument<Any>("duration")) {
+                        is Long -> d
+                        is Int -> d.toLong()
+                        else -> 0L
+                    }
+                    val position = when (val p = call.argument<Any>("position")) {
+                        is Long -> p
+                        is Int -> p.toLong()
+                        else -> 0L
+                    }
+                    val isShuffle = call.argument<Boolean>("isShuffle") ?: false
+                    val isFavorite = call.argument<Boolean>("isFavorite") ?: false
                     
                     val intent = Intent(this, MusicNotificationService::class.java).apply {
                         putExtra("title", title)
                         putExtra("artist", artist)
                         putExtra("albumArtPath", albumArtPath)
                         putExtra("isPlaying", isPlaying)
+                        putExtra("duration", duration)
+                        putExtra("position", position)
+                        putExtra("isShuffle", isShuffle)
+                        putExtra("isFavorite", isFavorite)
                     }
                     
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -146,12 +163,33 @@ class MainActivity: FlutterActivity() {
                     val artist = call.argument<String>("artist")
                     val albumArtPath = call.argument<String>("albumArtPath")
                     val isPlaying = call.argument<Boolean>("isPlaying")
+                    // Handle both Integer and Long types from Flutter
+                    val duration = call.argument<Any>("duration")?.let { d ->
+                        when (d) {
+                            is Long -> d
+                            is Int -> d.toLong()
+                            else -> null
+                        }
+                    }
+                    val position = call.argument<Any>("position")?.let { p ->
+                        when (p) {
+                            is Long -> p
+                            is Int -> p.toLong()
+                            else -> null
+                        }
+                    }
+                    val isShuffle = call.argument<Boolean>("isShuffle")
+                    val isFavorite = call.argument<Boolean>("isFavorite")
                     
                     val intent = Intent(this, MusicNotificationService::class.java).apply {
                         title?.let { putExtra("title", it) }
                         artist?.let { putExtra("artist", it) }
                         albumArtPath?.let { putExtra("albumArtPath", it) }
                         isPlaying?.let { putExtra("isPlaying", it) }
+                        duration?.let { putExtra("duration", it) }
+                        position?.let { putExtra("position", it) }
+                        isShuffle?.let { putExtra("isShuffle", it) }
+                        isFavorite?.let { putExtra("isFavorite", it) }
                     }
                     startService(intent)
                     result.success(null)
