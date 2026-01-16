@@ -283,11 +283,6 @@ class MusicNotificationService : Service() {
             Intent(ACTION_NEXT),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val shuffleIntent = PendingIntent.getBroadcast(
-            this, 5,
-            Intent(ACTION_SHUFFLE),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
         val favoriteIntent = PendingIntent.getBroadcast(
             this, 6,
             Intent(ACTION_FAVORITE),
@@ -306,10 +301,6 @@ class MusicNotificationService : Service() {
         val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         val playPauseText = if (isPlaying) "Pause" else "Play"
         
-        // Shuffle & Favorite Icons
-        val shuffleIcon = if(isShuffleMode) R.drawable.ic_shuffle_on else R.drawable.ic_shuffle
-        val shuffleText = if(isShuffleMode) "Shuffle On" else "Shuffle Off"
-        
         val favoriteIcon = if(isFavorite) android.R.drawable.btn_star_big_on else android.R.drawable.btn_star_big_off
         val favoriteText = if(isFavorite) "Unfavorite" else "Favorite"
 
@@ -323,8 +314,7 @@ class MusicNotificationService : Service() {
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setOngoing(isPlaying)
-            // Actions: Shuffle, Prev, Play/Pause, Next, Favorite
-            .addAction(shuffleIcon, shuffleText, shuffleIntent)
+            // Actions: Prev, Play/Pause, Next, Favorite
             .addAction(android.R.drawable.ic_media_previous, "Previous", prevIntent)
             .addAction(playPauseIcon, playPauseText, playPauseIntent)
             .addAction(android.R.drawable.ic_media_next, "Next", nextIntent)
@@ -332,8 +322,8 @@ class MusicNotificationService : Service() {
             .setStyle(
                 MediaNotificationCompat.MediaStyle()
                     .setMediaSession(mediaSession.sessionToken)
-                    // Compact view: Shuffle (0), Play/Pause (2), Next (3)
-                    .setShowActionsInCompactView(0, 2, 3)
+                    // Compact view: Play/Pause (1), Next (2)
+                    .setShowActionsInCompactView(1, 2)
                     .setShowCancelButton(true)
             )
             .build()
