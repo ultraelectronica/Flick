@@ -357,34 +357,40 @@ impl SourceProvider {
     /// * Number of samples read
     /// * Whether a track transition occurred
     #[inline]
-    pub fn read(&mut self, output: &mut [f32]) -> (usize, bool) {
-        let Some(ref mut current) = self.current else {
+    pub fn read(&mut self, output: &mut [f32]) -> (usize, Option<AudioSource>) {
+        if self.current.is_none() {
             // No source - fill with silence
             output.fill(0.0);
-            return (0, false);
+            return (0, None);
+        }
+
+        // Borrow scope for playing current
+        let (read, finished) = {
+            let current = self.current.as_mut().unwrap();
+            let read = current.read(output);
+            (read, read < output.len() && current.is_finished())
         };
 
-        let read = current.read(output);
-
         // If we didn't get enough samples and source is finished, transition
-        if read < output.len() && current.is_finished() {
+        if finished {
             // Fill remaining with silence or next track
-            if let Some(ref mut next) = self.next {
+            if self.next.is_some() {
                 // Gapless transition!
+                // Swap current with next, keeping the old current to return
+                let old_source = self.current.replace(self.next.take().unwrap());
+                
                 let remaining = &mut output[read..];
-                let next_read = next.read(remaining);
+                // Read from new current (which was next)
+                let next_read = self.current.as_mut().unwrap().read(remaining);
                 
-                // Advance to next track
-                self.current = self.next.take();
-                
-                return (read + next_read, true);
+                return (read + next_read, old_source);
             } else {
                 // No next track - fill with silence
                 output[read..].fill(0.0);
             }
         }
 
-        (read, false)
+        (read, None)
     }
 
     /// Check if the current track is near the end (for triggering look-ahead).

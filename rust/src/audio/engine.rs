@@ -7,7 +7,7 @@ use crate::audio::commands::{AudioCommand, AudioEvent, PlaybackProgress, Playbac
 use crate::audio::crossfader::Crossfader;
 use crate::audio::decoder::DecoderThread;
 use crate::audio::resampler::DEFAULT_OUTPUT_SAMPLE_RATE;
-use crate::audio::source::SourceProvider;
+use crate::audio::source::{AudioSource, SourceProvider};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleRate, StreamConfig};
@@ -42,10 +42,12 @@ pub struct AudioCallbackData {
     speed_buffer: Mutex<Vec<f32>>,
     /// Fractional sample position for speed interpolation
     speed_frac_pos: Mutex<f64>,
+    /// Channel for sending finished tracks to command thread
+    finished_tracks: Sender<AudioSource>,
 }
 
 impl AudioCallbackData {
-    pub fn new(sample_rate: u32, channels: usize) -> Self {
+    pub fn new(sample_rate: u32, channels: usize, finished_tracks: Sender<AudioSource>) -> Self {
         // Pre-allocate mix buffers (enough for ~100ms of audio)
         let buffer_size = (sample_rate as usize / 10) * channels;
         // Speed buffer needs to be larger to handle 2x speed (need 2x input for 1x output)
@@ -62,6 +64,7 @@ impl AudioCallbackData {
             mix_buffer_b: Mutex::new(vec![0.0; buffer_size]),
             speed_buffer: Mutex::new(vec![0.0; speed_buffer_size]),
             speed_frac_pos: Mutex::new(0.0),
+            finished_tracks,
         }
     }
 
@@ -217,6 +220,12 @@ impl AudioEngineHandle {
         })
     }
 
+    /// Get the current track path.
+    pub fn get_current_path(&self) -> Option<PathBuf> {
+        let sources = self.callback_data.sources.lock();
+        sources.current().map(|source| source.info.path.clone())
+    }
+
     /// Try to receive an event (non-blocking).
     pub fn try_recv_event(&self) -> Option<AudioEvent> {
         self.event_rx.try_recv().ok()
@@ -270,8 +279,11 @@ pub fn create_audio_engine() -> Result<AudioEngineHandle, String> {
         buffer_size: cpal::BufferSize::Default,
     };
 
+    // Create finished tracks channel (from audio callback to command thread)
+    let (finished_tx, finished_rx) = bounded::<AudioSource>(32);
+
     // Create shared data
-    let callback_data = Arc::new(AudioCallbackData::new(target_sample_rate, channels));
+    let callback_data = Arc::new(AudioCallbackData::new(target_sample_rate, channels, finished_tx));
     let callback_data_clone = Arc::clone(&callback_data);
 
     // Create event channel
@@ -327,6 +339,7 @@ pub fn create_audio_engine() -> Result<AudioEngineHandle, String> {
             // Run command processing loop
             command_processing_loop(
                 command_rx,
+                finished_rx,
                 event_tx,
                 callback_data_for_thread,
                 state_clone,
@@ -388,7 +401,12 @@ fn audio_callback(
         Some(c) => c,
         None => {
             // Couldn't get lock - just read from current source without speed processing
-            let (read, _) = sources.read(output);
+            let (read, old_source) = sources.read(output);
+            
+            if let Some(source) = old_source {
+                let _ = data.finished_tracks.try_send(source);
+            }
+            
             if read < output.len() {
                 output[read..].fill(0.0);
             }
@@ -439,13 +457,20 @@ fn audio_callback(
 
         if !crossfader.is_active() {
             drop(crossfader);
-            sources.advance_to_next();
+            if let Some(source) = sources.advance_to_next() {
+                let _ = data.finished_tracks.try_send(source);
+            }
         }
     } else {
         // Normal playback - apply speed processing if needed
         if (speed - 1.0).abs() < 0.001 {
             // Speed is 1.0 - direct read
-            let (read, _) = sources.read(output);
+            let (read, old_source) = sources.read(output);
+            
+            if let Some(source) = old_source {
+                let _ = data.finished_tracks.try_send(source);
+            }
+
             if read < output.len() {
                 output[read..].fill(0.0);
             }
@@ -476,7 +501,12 @@ fn audio_callback(
             }
 
             // Read source samples
-            let (read, _) = sources.read(&mut speed_buf[..input_samples_needed]);
+            let (read, old_source) = sources.read(&mut speed_buf[..input_samples_needed]);
+            
+            if let Some(source) = old_source {
+                let _ = data.finished_tracks.try_send(source);
+            }
+
             if read < channels {
                 output.fill(0.0);
                 return;
@@ -522,6 +552,7 @@ fn audio_callback(
 /// Command processing loop running in the audio thread.
 fn command_processing_loop(
     command_rx: Receiver<AudioCommand>,
+    finished_rx: Receiver<AudioSource>,
     event_tx: Sender<AudioEvent>,
     callback_data: Arc<AudioCallbackData>,
     state: Arc<AtomicU8>,
@@ -535,7 +566,13 @@ fn command_processing_loop(
             break;
         }
 
-        match command_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+        // Check for finished tracks
+        while let Ok(source) = finished_rx.try_recv() {
+            let path = source.info.path.to_string_lossy().to_string();
+            let _ = event_tx.try_send(AudioEvent::TrackEnded { path });
+        }
+
+        match command_rx.recv_timeout(std::time::Duration::from_millis(50)) {
             Ok(command) => {
                 match command {
                     AudioCommand::Play { path } => {

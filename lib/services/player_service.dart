@@ -5,7 +5,6 @@ import 'package:flick/models/song.dart';
 import 'package:flick/services/notification_service.dart';
 import 'package:flick/services/last_played_service.dart';
 import 'package:flick/services/favorites_service.dart';
-import 'package:flick/services/rust_audio_service.dart';
 import 'package:flick/data/repositories/recently_played_repository.dart';
 
 /// Loop mode for playback
@@ -13,9 +12,7 @@ enum LoopMode { off, one, all }
 
 /// Singleton service to manage global audio playback state.
 ///
-/// Uses the Rust audio engine for high-performance playback with
-/// gapless playback and crossfade support on desktop platforms.
-/// Falls back to just_audio on Android.
+/// Uses just_audio for playback with gapless playback support.
 class PlayerService {
   static final PlayerService _instance = PlayerService._internal();
 
@@ -27,14 +24,8 @@ class PlayerService {
     _init();
   }
 
-  // Rust audio engine (used on desktop)
-  final RustAudioService _rustAudio = RustAudioService();
-
-  // just_audio player (used as fallback on Android)
+  // just_audio player with gapless playback support
   final just_audio.AudioPlayer _justAudioPlayer = just_audio.AudioPlayer();
-
-  // Whether we're using native Rust audio or just_audio fallback
-  bool _useNativeAudio = false;
 
   final NotificationService _notificationService = NotificationService();
   final LastPlayedService _lastPlayedService = LastPlayedService();
@@ -61,10 +52,6 @@ class PlayerService {
   // Playback Speed
   final ValueNotifier<double> playbackSpeedNotifier = ValueNotifier(1.0);
 
-  // Crossfade settings
-  final ValueNotifier<bool> crossfadeEnabledNotifier = ValueNotifier(false);
-  final ValueNotifier<double> crossfadeDurationNotifier = ValueNotifier(3.0);
-
   // Sleep Timer
   final ValueNotifier<Duration?> sleepTimerRemainingNotifier = ValueNotifier(
     null,
@@ -76,9 +63,6 @@ class PlayerService {
   final List<Song> _playlist = [];
   final List<Song> _originalPlaylist = []; // For shuffle restore
   int _currentIndex = -1;
-
-  /// Whether native (Rust) audio engine is being used.
-  bool get isUsingNativeAudio => _useNativeAudio;
 
   void _init() {
     // Initialize notification service with callbacks
@@ -94,48 +78,15 @@ class PlayerService {
   }
 
   /// Initialize the audio engine.
-  /// Attempts to use native Rust audio, falls back to just_audio if unavailable.
-  Future<void> initRustAudio() async {
-    bool nativeInitialized = false;
+  /// Sets up just_audio with gapless playback support.
+  Future<void> initAudio() async {
+    debugPrint('Initializing just_audio with gapless playback support');
 
-    try {
-      nativeInitialized = await _rustAudio.init();
-    } catch (e) {
-      debugPrint('Rust audio init failed: $e');
-      nativeInitialized = false;
-    }
+    // Set up just_audio listeners
+    _setupJustAudioListeners();
 
-    if (nativeInitialized) {
-      _useNativeAudio = true;
-      debugPrint('Using native Rust audio engine');
-
-      // Set up Rust audio callbacks
-      _rustAudio.onTrackEnded = _onTrackEnded;
-      _rustAudio.onCrossfadeStarted = (from, to) {
-        debugPrint('Crossfade started: $from -> $to');
-      };
-      _rustAudio.onError = (message) {
-        debugPrint('Audio error: $message');
-      };
-
-      // Listen to Rust audio state changes
-      _rustAudio.stateNotifier.addListener(_onRustStateChanged);
-      _rustAudio.positionNotifier.addListener(_onRustPositionChanged);
-      _rustAudio.durationNotifier.addListener(_onRustDurationChanged);
-      _rustAudio.bufferLevelNotifier.addListener(_onRustBufferChanged);
-
-      // Sync crossfade settings
-      await _rustAudio.setCrossfade(
-        enabled: crossfadeEnabledNotifier.value,
-        durationSecs: crossfadeDurationNotifier.value,
-      );
-    } else {
-      _useNativeAudio = false;
-      debugPrint('Using just_audio fallback');
-
-      // Set up just_audio listeners
-      _setupJustAudioListeners();
-    }
+    // Set initial loop mode
+    await _updateLoopMode();
   }
 
   void _setupJustAudioListeners() {
@@ -168,48 +119,26 @@ class PlayerService {
         }
       }
     });
-  }
 
-  void _onRustStateChanged() {
-    final state = _rustAudio.stateNotifier.value;
-    final wasPlaying = isPlayingNotifier.value;
-
-    isPlayingNotifier.value =
-        state == RustPlaybackState.playing ||
-        state == RustPlaybackState.crossfading;
-
-    if (wasPlaying != isPlayingNotifier.value &&
-        currentSongNotifier.value != null) {
-      _notificationService.updatePlaybackState(
-        isPlaying: isPlayingNotifier.value,
-      );
-    }
-  }
-
-  void _onRustPositionChanged() {
-    positionNotifier.value = _rustAudio.positionNotifier.value;
-  }
-
-  void _onRustDurationChanged() {
-    final dur = _rustAudio.durationNotifier.value;
-    if (dur != Duration.zero) {
-      durationNotifier.value = dur;
-      if (currentSongNotifier.value != null && isPlayingNotifier.value) {
-        _updateNotificationState();
+    // Listen to sequence state changes for gapless transitions
+    _justAudioPlayer.sequenceStateStream.listen((sequenceState) {
+      if (sequenceState.currentIndex != null) {
+        final newIndex = sequenceState.currentIndex!;
+        if (newIndex != _currentIndex && newIndex < _playlist.length) {
+          _currentIndex = newIndex;
+          final newSong = _playlist[newIndex];
+          if (newSong != currentSongNotifier.value) {
+            debugPrint(
+              'Gapless transition: ${currentSongNotifier.value?.title} -> ${newSong.title}',
+            );
+            currentSongNotifier.value = newSong;
+            _recentlyPlayedRepository.recordPlay(newSong.id);
+            positionNotifier.value = Duration.zero;
+            _updateNotificationState();
+          }
+        }
       }
-    }
-  }
-
-  void _onRustBufferChanged() {
-    final bufferLevel = _rustAudio.bufferLevelNotifier.value;
-    final duration = durationNotifier.value;
-    bufferedPositionNotifier.value = Duration(
-      milliseconds: (duration.inMilliseconds * bufferLevel).round(),
-    );
-  }
-
-  void _onTrackEnded(String path) {
-    _onSongFinished();
+    });
   }
 
   Future<void> _toggleFavoriteFromNotification() async {
@@ -237,11 +166,16 @@ class PlayerService {
   }
 
   Future<void> _onSongFinished() async {
+    debugPrint(
+      '_onSongFinished: loopMode=${loopModeNotifier.value}, currentIndex=$_currentIndex, playlistLength=${_playlist.length}',
+    );
     if (loopModeNotifier.value == LoopMode.one) {
       if (currentSongNotifier.value != null) {
+        debugPrint('_onSongFinished: LoopMode.one, replaying current song');
         await play(currentSongNotifier.value!);
       }
     } else {
+      debugPrint('_onSongFinished: Calling next()');
       await next();
     }
   }
@@ -250,15 +184,21 @@ class PlayerService {
     await _savePosition();
     _positionSaveTimer?.cancel();
 
-    if (_useNativeAudio) {
-      await _rustAudio.stop();
-    } else {
-      await _justAudioPlayer.pause();
-      await _justAudioPlayer.seek(Duration.zero);
-    }
+    await _justAudioPlayer.pause();
+    await _justAudioPlayer.seek(Duration.zero);
 
     cancelSleepTimer();
     _notificationService.hideNotification();
+  }
+
+  /// Build audio sources for the playlist (gapless playback).
+  List<just_audio.AudioSource> _buildAudioSources() {
+    return _playlist.map((song) {
+      if (song.filePath == null) {
+        return just_audio.AudioSource.uri(Uri.parse(''));
+      }
+      return just_audio.AudioSource.uri(Uri.parse(song.filePath!));
+    }).toList();
   }
 
   /// Play a specific song.
@@ -302,16 +242,17 @@ class PlayerService {
           isFavorite: isFav,
         );
 
-        if (_useNativeAudio) {
-          await _rustAudio.play(song.filePath!);
-          await _queueNextTrackForGapless();
-        } else {
-          await _justAudioPlayer.setAudioSource(
-            just_audio.AudioSource.uri(Uri.parse(song.filePath!)),
-          );
-          await _justAudioPlayer.setSpeed(playbackSpeedNotifier.value);
-          await _justAudioPlayer.play();
-        }
+        // Build audio sources for gapless playback
+        final sources = _buildAudioSources();
+
+        await _justAudioPlayer.setAudioSources(
+          sources,
+          initialIndex: _currentIndex,
+          preload: true, // Enable gapless playback by preloading next track
+        );
+        await _justAudioPlayer.setSpeed(playbackSpeedNotifier.value);
+        await _updateLoopMode();
+        await _justAudioPlayer.play();
 
         _positionSaveTimer = Timer.periodic(
           const Duration(seconds: 5),
@@ -320,24 +261,6 @@ class PlayerService {
       }
     } catch (e) {
       debugPrint("Error playing song: $e");
-    }
-  }
-
-  Future<void> _queueNextTrackForGapless() async {
-    if (!_useNativeAudio) return;
-    if (_playlist.isEmpty || _currentIndex < 0) return;
-
-    Song? nextSong;
-
-    if (_currentIndex < _playlist.length - 1) {
-      nextSong = _playlist[_currentIndex + 1];
-    } else if (loopModeNotifier.value == LoopMode.all) {
-      nextSong = _playlist[0];
-    }
-
-    if (nextSong?.filePath != null) {
-      await _rustAudio.queueNext(nextSong!.filePath!);
-      debugPrint('Queued next track for gapless: ${nextSong.title}');
     }
   }
 
@@ -382,11 +305,7 @@ class PlayerService {
     // Immediately update the playing state for responsive UI
     isPlayingNotifier.value = false;
 
-    if (_useNativeAudio) {
-      await _rustAudio.pause();
-    } else {
-      await _justAudioPlayer.pause();
-    }
+    await _justAudioPlayer.pause();
     _updateNotificationState();
   }
 
@@ -396,27 +315,18 @@ class PlayerService {
     // Immediately update the playing state for responsive UI
     isPlayingNotifier.value = true;
 
-    if (_useNativeAudio) {
-      if (song?.filePath != null &&
-          (_rustAudio.state == RustPlaybackState.idle ||
-              _rustAudio.state == RustPlaybackState.stopped)) {
-        await _rustAudio.play(song!.filePath!);
-        if (positionNotifier.value != Duration.zero) {
-          await _rustAudio.seek(positionNotifier.value);
-        }
-      } else {
-        await _rustAudio.resume();
-      }
-    } else {
-      if (song?.filePath != null &&
-          _justAudioPlayer.processingState == just_audio.ProcessingState.idle) {
-        await _justAudioPlayer.setAudioSource(
-          just_audio.AudioSource.uri(Uri.parse(song!.filePath!)),
-        );
-        await _justAudioPlayer.seek(positionNotifier.value);
-      }
-      await _justAudioPlayer.play();
+    if (song?.filePath != null &&
+        _justAudioPlayer.processingState == just_audio.ProcessingState.idle) {
+      // Rebuild playlist if needed
+      final sources = _buildAudioSources();
+      await _justAudioPlayer.setAudioSources(
+        sources,
+        initialIndex: _currentIndex >= 0 ? _currentIndex : 0,
+        preload: true,
+      );
+      await _justAudioPlayer.seek(positionNotifier.value);
     }
+    await _justAudioPlayer.play();
     _updateNotificationState();
   }
 
@@ -429,24 +339,27 @@ class PlayerService {
   }
 
   Future<void> seek(Duration position) async {
-    if (_useNativeAudio) {
-      await _rustAudio.seek(position);
-    } else {
-      await _justAudioPlayer.seek(position);
-    }
+    await _justAudioPlayer.seek(position);
     _updateNotificationState();
   }
 
   Future<void> next() async {
     if (_playlist.isEmpty) return;
 
+    debugPrint(
+      'next(): currentIndex=$_currentIndex, playlistLength=${_playlist.length}, loopMode=${loopModeNotifier.value}',
+    );
+
     if (_currentIndex < _playlist.length - 1) {
       _currentIndex++;
+      debugPrint('next(): Advancing to index $_currentIndex');
       await play(_playlist[_currentIndex]);
     } else if (loopModeNotifier.value == LoopMode.all) {
       _currentIndex = 0;
+      debugPrint('next(): LoopMode.all, wrapping to index 0');
       await play(_playlist[_currentIndex]);
     } else {
+      debugPrint('next(): End of playlist, pausing');
       await pause();
       await seek(Duration.zero);
     }
@@ -467,26 +380,45 @@ class PlayerService {
     }
   }
 
-  // ==================== Crossfade Settings ====================
+  /// Rebuild the current playlist with updated settings
+  Future<void> _rebuildPlaylist() async {
+    if (_playlist.isEmpty || _currentIndex < 0) return;
 
-  Future<void> setCrossfadeEnabled(bool enabled) async {
-    crossfadeEnabledNotifier.value = enabled;
-    if (_useNativeAudio) {
-      await _rustAudio.setCrossfade(
-        enabled: enabled,
-        durationSecs: crossfadeDurationNotifier.value,
+    try {
+      final wasPlaying = isPlayingNotifier.value;
+      final currentPosition = positionNotifier.value;
+
+      final sources = _buildAudioSources();
+
+      await _justAudioPlayer.setAudioSources(
+        sources,
+        initialIndex: _currentIndex,
+        preload: true,
       );
+
+      await _justAudioPlayer.seek(currentPosition);
+      await _updateLoopMode();
+
+      if (wasPlaying) {
+        await _justAudioPlayer.play();
+      }
+    } catch (e) {
+      debugPrint('Error rebuilding playlist: $e');
     }
-    // Note: just_audio doesn't support crossfade natively
   }
 
-  Future<void> setCrossfadeDuration(double durationSecs) async {
-    crossfadeDurationNotifier.value = durationSecs.clamp(0.5, 12.0);
-    if (_useNativeAudio && crossfadeEnabledNotifier.value) {
-      await _rustAudio.setCrossfade(
-        enabled: true,
-        durationSecs: crossfadeDurationNotifier.value,
-      );
+  /// Update loop mode based on current loop mode setting
+  Future<void> _updateLoopMode() async {
+    switch (loopModeNotifier.value) {
+      case LoopMode.off:
+        await _justAudioPlayer.setLoopMode(just_audio.LoopMode.off);
+        break;
+      case LoopMode.one:
+        await _justAudioPlayer.setLoopMode(just_audio.LoopMode.one);
+        break;
+      case LoopMode.all:
+        await _justAudioPlayer.setLoopMode(just_audio.LoopMode.all);
+        break;
     }
   }
 
@@ -513,9 +445,8 @@ class PlayerService {
       }
     }
 
-    if (_useNativeAudio) {
-      _queueNextTrackForGapless();
-    }
+    // Rebuild playlist with new order
+    _rebuildPlaylist();
     _updateNotificationState();
   }
 
@@ -524,19 +455,13 @@ class PlayerService {
     final nextIndex = (loopModeNotifier.value.index + 1) % modes.length;
     loopModeNotifier.value = modes[nextIndex];
 
-    if (_useNativeAudio) {
-      _queueNextTrackForGapless();
-    }
+    _updateLoopMode();
   }
 
   // ==================== Volume ====================
 
   Future<void> setVolume(double volume) async {
-    if (_useNativeAudio) {
-      await _rustAudio.setVolume(volume);
-    } else {
-      await _justAudioPlayer.setVolume(volume);
-    }
+    await _justAudioPlayer.setVolume(volume);
   }
 
   // ==================== Playback Speed ====================
@@ -544,12 +469,7 @@ class PlayerService {
   Future<void> setPlaybackSpeed(double speed) async {
     final clampedSpeed = speed.clamp(0.5, 2.0);
     playbackSpeedNotifier.value = clampedSpeed;
-
-    if (_useNativeAudio) {
-      await _rustAudio.setPlaybackSpeed(clampedSpeed);
-    } else {
-      await _justAudioPlayer.setSpeed(clampedSpeed);
-    }
+    await _justAudioPlayer.setSpeed(clampedSpeed);
   }
 
   Future<void> cyclePlaybackSpeed() async {
@@ -597,12 +517,7 @@ class PlayerService {
     cancelSleepTimer();
     _notificationService.hideNotification();
 
-    if (_useNativeAudio) {
-      _rustAudio.shutdown();
-      _rustAudio.dispose();
-    } else {
-      _justAudioPlayer.dispose();
-    }
+    _justAudioPlayer.dispose();
 
     currentSongNotifier.dispose();
     isPlayingNotifier.dispose();
@@ -610,8 +525,6 @@ class PlayerService {
     durationNotifier.dispose();
     bufferedPositionNotifier.dispose();
     playbackSpeedNotifier.dispose();
-    crossfadeEnabledNotifier.dispose();
-    crossfadeDurationNotifier.dispose();
     sleepTimerRemainingNotifier.dispose();
   }
 }

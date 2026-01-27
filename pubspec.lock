@@ -387,6 +387,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.11.1"
+  flutter_soloud:
+    dependency: "direct main"
+    description:
+      name: flutter_soloud
+      sha256: "5d0277ab9e7516cc9c0558f739c158b638bb11ad2f4388a743d35eb3baf54b1c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.4.8"
   flutter_svg:
     dependency: "direct main"
     description:

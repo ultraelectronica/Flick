@@ -22,7 +22,7 @@ class FullPlayerScreen extends StatefulWidget {
 }
 
 class _FullPlayerScreenState extends State<FullPlayerScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final PlayerService _playerService = PlayerService();
   final FavoritesService _favoritesService = FavoritesService();
 
@@ -554,40 +554,69 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                           ),
                         ),
                         const SizedBox(height: 32),
-                        // Title & Artist (centered)
+                        // Title & Artist (centered) with slide animation
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Column(
-                            children: [
-                              Text(
-                                song.title,
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontFamily: 'ProductSans',
-                                  fontSize: context.responsiveText(
-                                    AppConstants.fontSizeXxl,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            transitionBuilder:
+                                (Widget child, Animation<double> animation) {
+                                  // Slide in from right, slide out to left
+                                  return SlideTransition(
+                                    position:
+                                        Tween<Offset>(
+                                          begin: const Offset(
+                                            1.0,
+                                            0.0,
+                                          ), // Start from right
+                                          end: Offset.zero, // End at center
+                                        ).animate(
+                                          CurvedAnimation(
+                                            parent: animation,
+                                            curve: Curves.easeInOut,
+                                          ),
+                                        ),
+                                    child: FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                            child: Column(
+                              key: ValueKey(
+                                song.id,
+                              ), // Unique key triggers animation on change
+                              children: [
+                                Text(
+                                  song.title,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: 'ProductSans',
+                                    fontSize: context.responsiveText(
+                                      AppConstants.fontSizeXxl,
+                                    ),
+                                    fontWeight: FontWeight.bold,
+                                    color: context.adaptiveTextPrimary,
                                   ),
-                                  fontWeight: FontWeight.bold,
-                                  color: context.adaptiveTextPrimary,
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                song.artist,
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontFamily: 'ProductSans',
-                                  fontSize: context.responsiveText(
-                                    AppConstants.fontSizeLg,
+                                const SizedBox(height: 8),
+                                Text(
+                                  song.artist,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: 'ProductSans',
+                                    fontSize: context.responsiveText(
+                                      AppConstants.fontSizeLg,
+                                    ),
+                                    color: context.adaptiveTextSecondary,
                                   ),
-                                  color: context.adaptiveTextSecondary,
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
 

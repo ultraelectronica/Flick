@@ -88,7 +88,15 @@ class RustAudioService {
       stateNotifier.value == RustPlaybackState.crossfading;
 
   /// Get the current track path.
-  String? get currentPath => _currentPath;
+  String? get currentPath {
+    if (!_initialized) return null;
+    try {
+      return rust_audio.audioGetCurrentPath();
+    } catch (e) {
+      debugPrint('Error getting current path: $e');
+      return _currentPath; // Fallback to cached value
+    }
+  }
 
   /// Play an audio file.
   Future<void> play(String path) async {
@@ -96,8 +104,10 @@ class RustAudioService {
       throw StateError('Rust audio engine not initialized');
     }
 
-    _currentPath = path;
     await rust_audio.audioPlay(path: path);
+    _currentPath = path;
+    // Also sync from Rust engine to ensure accuracy
+    _currentPath = rust_audio.audioGetCurrentPath() ?? path;
     _startProgressUpdates();
   }
 
@@ -319,6 +329,9 @@ class RustAudioService {
           if (_nextPath != null) {
             _currentPath = _nextPath;
             _nextPath = null;
+          } else {
+            // Update from Rust engine to ensure sync
+            _currentPath = rust_audio.audioGetCurrentPath();
           }
           onTrackEnded?.call(path);
         },

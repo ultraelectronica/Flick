@@ -87,6 +87,10 @@ Future<void> audioSetCrossfadeCurve({required CrossfadeCurveType curve}) =>
 int? audioGetSampleRate() =>
     RustLib.instance.api.crateApiAudioApiAudioGetSampleRate();
 
+/// Get the current track path.
+String? audioGetCurrentPath() =>
+    RustLib.instance.api.crateApiAudioApiAudioGetCurrentPath();
+
 /// Get the number of audio channels.
 BigInt? audioGetChannels() =>
     RustLib.instance.api.crateApiAudioApiAudioGetChannels();

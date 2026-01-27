@@ -180,7 +180,9 @@ class RecentlyPlayedRepository {
   String _buildResolutionString(SongEntity entity) {
     final parts = <String>[];
     if (entity.bitrate != null) {
-      parts.add('${entity.bitrate}kbps');
+      // Convert from bits per second to kilobits per second
+      final bitrateKbps = (entity.bitrate! / 1000).round();
+      parts.add('${bitrateKbps}kbps');
     }
     if (entity.sampleRate != null) {
       parts.add('${entity.sampleRate}Hz');

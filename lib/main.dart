@@ -16,8 +16,8 @@ Future<void> main() async {
   // Initialize database FIRST (required by PlayerService)
   await Database.init();
 
-  // Initialize Rust audio engine (requires database)
-  await _initRustAudioEngine();
+  // Initialize audio engine with just_audio (requires database)
+  await _initAudioEngine();
 
   // Set high refresh rate mode for smoother animations
   await _setOptimalDisplayMode();
@@ -31,14 +31,14 @@ Future<void> main() async {
   runApp(const ProviderScope(child: FlickPlayerApp()));
 }
 
-/// Initialize the Rust audio engine for gapless playback and crossfade.
-Future<void> _initRustAudioEngine() async {
+/// Initialize the audio engine with just_audio for gapless playback.
+Future<void> _initAudioEngine() async {
   try {
     final playerService = PlayerService();
-    await playerService.initRustAudio();
-    debugPrint('Rust audio engine initialized successfully');
+    await playerService.initAudio();
+    debugPrint('Audio engine initialized successfully');
   } catch (e) {
-    debugPrint('Failed to initialize Rust audio engine: $e');
+    debugPrint('Failed to initialize audio engine: $e');
     // Continue anyway - the app can still function with degraded audio
   }
 }

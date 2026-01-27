@@ -346,6 +346,22 @@ pub fn audio_get_sample_rate() -> Option<u32> {
     { None }
 }
 
+/// Get the current track path.
+#[flutter_rust_bridge::frb(sync)]
+pub fn audio_get_current_path() -> Option<String> {
+    #[cfg(not(target_os = "android"))]
+    {
+        AUDIO_ENGINE
+            .get()
+            .and_then(|h| h.get_current_path())
+            .map(|p| p.to_string_lossy().to_string())
+    }
+    #[cfg(target_os = "android")]
+    {
+        None
+    }
+}
+
 /// Get the number of audio channels.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_get_channels() -> Option<usize> {

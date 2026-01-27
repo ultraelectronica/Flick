@@ -12,6 +12,7 @@ import 'package:flick/services/permission_service.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/widgets/common/glass_dialog.dart';
 import 'package:flick/widgets/common/glass_bottom_sheet.dart';
+import 'package:flick/features/settings/screens/equalizer_screen.dart';
 
 /// Settings screen matching the design language.
 class SettingsScreen extends StatefulWidget {
@@ -24,9 +25,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   // Sample settings state
   bool _gaplessPlayback = true;
-  bool _crossfade = false;
   bool _showAlbumArt = true;
-  double _crossfadeDuration = 5.0;
 
   // Library state
   final MusicFolderService _folderService = MusicFolderService();
@@ -637,32 +636,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             setState(() => _gaplessPlayback = value);
                           },
                         ),
-                        _buildDivider(),
-                        _buildToggleSetting(
-                          context,
-                          icon: LucideIcons.shuffle,
-                          title: 'Crossfade',
-                          subtitle: 'Blend tracks together',
-                          value: _crossfade,
-                          onChanged: (value) {
-                            setState(() => _crossfade = value);
-                          },
-                        ),
-                        if (_crossfade) ...[
-                          _buildDivider(),
-                          _buildSliderSetting(
-                            context,
-                            icon: LucideIcons.timer,
-                            title: 'Crossfade Duration',
-                            subtitle: '${_crossfadeDuration.toInt()} seconds',
-                            value: _crossfadeDuration,
-                            min: 1,
-                            max: 12,
-                            onChanged: (value) {
-                              setState(() => _crossfadeDuration = value);
-                            },
-                          ),
-                        ],
                       ],
                     ),
 
@@ -706,7 +679,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           icon: LucideIcons.slidersHorizontal,
                           title: 'Equalizer',
                           subtitle: 'Adjust audio frequencies',
-                          onTap: () {}, // TODO: Navigate to Equalizer screen
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const EqualizerScreen(),
+                              ),
+                            );
+                          },
                         ),
                         _buildDivider(),
                         _buildNavigationSetting(
@@ -1198,90 +1177,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSliderSetting(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required double value,
-    required double min,
-    required double max,
-    required ValueChanged<double> onChanged,
-  }) {
-    return RepaintBoundary(
-      child: Padding(
-        padding: const EdgeInsets.all(AppConstants.spacingMd),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                // Icon
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.glassBackgroundStrong,
-                    borderRadius: BorderRadius.circular(AppConstants.radiusSm),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: context.adaptiveTextSecondary,
-                    size: 20,
-                  ),
-                ),
-
-                const SizedBox(width: AppConstants.spacingMd),
-
-                // Text
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: context.adaptiveTextPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: context.adaptiveTextTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: AppConstants.spacingSm),
-
-            // Slider
-            SliderTheme(
-              data: SliderThemeData(
-                trackHeight: 4,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
-                activeTrackColor: AppColors.textPrimary,
-                inactiveTrackColor: AppColors.glassBackgroundStrong,
-                thumbColor: AppColors.textPrimary,
-                overlayColor: AppColors.textPrimary.withValues(alpha: 0.2),
-              ),
-              child: Slider(
-                value: value,
-                min: min,
-                max: max,
-                onChanged: onChanged,
-              ),
-            ),
-          ],
         ),
       ),
     );
