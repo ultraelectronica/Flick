@@ -12,6 +12,7 @@ import 'package:flick/services/permission_service.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/widgets/common/glass_dialog.dart';
 import 'package:flick/widgets/common/glass_bottom_sheet.dart';
+import 'package:flick/features/settings/screens/equalizer_screen.dart';
 
 /// Settings screen matching the design language.
 class SettingsScreen extends StatefulWidget {
@@ -678,7 +679,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           icon: LucideIcons.slidersHorizontal,
                           title: 'Equalizer',
                           subtitle: 'Adjust audio frequencies',
-                          onTap: () {}, // TODO: Navigate to Equalizer screen
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const EqualizerScreen(),
+                              ),
+                            );
+                          },
                         ),
                         _buildDivider(),
                         _buildNavigationSetting(
