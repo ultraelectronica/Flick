@@ -743,7 +743,7 @@ class _GraphicEqView extends ConsumerWidget {
             child: RepaintBoundary(
               child: Opacity(
                 opacity: enabled ? 1.0 : 0.5,
-                child: const SizedBox(height: 160, child: GraphicEqGraph()),
+                child: const SizedBox(height: 220, child: GraphicEqGraph()),
               ),
             ),
           ),
@@ -751,7 +751,7 @@ class _GraphicEqView extends ConsumerWidget {
         const SizedBox(height: AppConstants.spacingMd),
         _GlassCard(
           child: SizedBox(
-            height: 260,
+            height: 320,
             child: RepaintBoundary(
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
@@ -869,6 +869,9 @@ class _ParametricEqView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enabled = ref.watch(eqEnabledProvider);
+    final bandCount = ref.watch(
+      equalizerProvider.select((s) => s.parametricBands.length),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -881,7 +884,7 @@ class _ParametricEqView extends ConsumerWidget {
             child: RepaintBoundary(
               child: Opacity(
                 opacity: enabled ? 1.0 : 0.5,
-                child: const SizedBox(height: 180, child: ParametricEqGraph()),
+                child: const SizedBox(height: 220, child: ParametricEqGraph()),
               ),
             ),
           ),
@@ -889,16 +892,45 @@ class _ParametricEqView extends ConsumerWidget {
         const SizedBox(height: AppConstants.spacingLg),
         _GlassCard(
           child: RepaintBoundary(
-            child: ListView.separated(
-              physics: const NeverScrollableScrollPhysics(),
-              shrinkWrap: true,
+            child: Padding(
               padding: const EdgeInsets.all(AppConstants.spacingMd),
-              itemCount: EqualizerState.defaultParametricFrequenciesHz.length,
-              separatorBuilder: (_, _) =>
-                  const SizedBox(height: AppConstants.spacingMd),
-              itemBuilder: (context, i) {
-                return _ParametricBandEditor(index: i, enabled: enabled);
-              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListView.separated(
+                    physics: const NeverScrollableScrollPhysics(),
+                    shrinkWrap: true,
+                    itemCount: bandCount,
+                    separatorBuilder: (_, _) =>
+                        const SizedBox(height: AppConstants.spacingMd),
+                    itemBuilder: (context, i) {
+                      return _ParametricBandEditor(index: i, enabled: enabled);
+                    },
+                  ),
+                  const SizedBox(height: AppConstants.spacingSm),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: enabled
+                          ? () => ref
+                                .read(equalizerProvider.notifier)
+                                .addParametricBand()
+                          : null,
+                      icon: const Icon(LucideIcons.plus, size: 18),
+                      label: const Text(
+                        'Add band',
+                        style: TextStyle(
+                          fontFamily: 'ProductSans',
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: context.adaptiveTextPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -999,16 +1031,101 @@ class _ParametricBandEditor extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: AppConstants.spacingSm),
-            _LabeledSlider(
-              icon: LucideIcons.waves,
-              label: 'Frequency',
-              valueLabel: _hzLabel(band.frequencyHz),
-              value: _hzToT(band.frequencyHz),
-              onChanged: enabled && band.enabled
-                  ? (t) => ref
-                        .read(equalizerProvider.notifier)
-                        .setParamBandFreqHz(index, _tToHz(t))
-                  : null,
+            // Frequency: slider + direct Hz input
+            Row(
+              children: [
+                Icon(
+                  LucideIcons.waves,
+                  size: context.responsiveIcon(AppConstants.iconSizeSm),
+                  color: (enabled && band.enabled)
+                      ? context.adaptiveTextSecondary
+                      : context.adaptiveTextTertiary,
+                ),
+                const SizedBox(width: AppConstants.spacingSm),
+                Expanded(
+                  child: Text(
+                    'Frequency',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: (enabled && band.enabled)
+                          ? context.adaptiveTextSecondary
+                          : context.adaptiveTextTertiary,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 80,
+                  child: TextFormField(
+                    key: ValueKey('param_freq_${index}_${band.frequencyHz}'),
+                    initialValue: band.frequencyHz.toStringAsFixed(0),
+                    enabled: enabled && band.enabled,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: false,
+                      signed: false,
+                    ),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: context.adaptiveTextPrimary,
+                    ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusSm,
+                        ),
+                        borderSide: BorderSide(color: AppColors.glassBorder),
+                      ),
+                      disabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusSm,
+                        ),
+                        borderSide: BorderSide(color: AppColors.glassBorder),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusSm,
+                        ),
+                        borderSide: BorderSide(
+                          color: context.adaptiveTextPrimary,
+                        ),
+                      ),
+                      suffixText: 'Hz',
+                      suffixStyle: Theme.of(context).textTheme.labelSmall
+                          ?.copyWith(color: context.adaptiveTextTertiary),
+                    ),
+                    onFieldSubmitted: (value) {
+                      final parsed = double.tryParse(value.trim());
+                      if (parsed == null) return;
+                      ref
+                          .read(equalizerProvider.notifier)
+                          .setParamBandFreqHz(index, parsed);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                activeTrackColor: context.adaptiveTextPrimary,
+                inactiveTrackColor: AppColors.glassBorderStrong,
+                thumbColor: context.adaptiveTextPrimary,
+                overlayColor: context.adaptiveTextPrimary.withValues(
+                  alpha: 0.08,
+                ),
+              ),
+              child: Slider(
+                value: _hzToT(band.frequencyHz),
+                min: 0.0,
+                max: 1.0,
+                onChanged: enabled && band.enabled
+                    ? (t) => ref
+                          .read(equalizerProvider.notifier)
+                          .setParamBandFreqHz(index, _tToHz(t))
+                    : null,
+              ),
             ),
             const SizedBox(height: AppConstants.spacingSm),
             _LabeledSlider(

@@ -41,7 +41,8 @@ class EqualizerState {
   final List<double> graphicGainsDb; // length = 10
 
   /// Parametric bands (UI only).
-  final List<ParametricBand> parametricBands; // length = 5
+  /// Starts with 5 bands but can grow up to a configurable maximum.
+  final List<ParametricBand> parametricBands;
 
   /// Active preset name (optional display).
   final String? activePresetName;
@@ -125,6 +126,7 @@ final eqGraphRepaintControllerProvider = Provider<EqGraphRepaintController>((
 class EqualizerNotifier extends Notifier<EqualizerState> {
   static const double gainMinDb = -12.0;
   static const double gainMaxDb = 12.0;
+  static const int maxParametricBands = 8;
 
   @override
   EqualizerState build() => EqualizerState.initial();
@@ -197,6 +199,22 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
       ),
       clearActivePresetName: true,
     );
+    ref.read(eqGraphRepaintControllerProvider).bump();
+  }
+
+  void addParametricBand() {
+    if (state.parametricBands.length >= maxParametricBands) {
+      return;
+    }
+
+    final current = state.parametricBands;
+    final lastFreq = current.isNotEmpty ? current.last.frequencyHz : 1000.0;
+    final suggested = (lastFreq * 2).clamp(20.0, 20000.0).toDouble();
+
+    final next = List<ParametricBand>.of(current)
+      ..add(ParametricBand(frequencyHz: suggested));
+
+    state = state.copyWith(parametricBands: next, clearActivePresetName: true);
     ref.read(eqGraphRepaintControllerProvider).bump();
   }
 

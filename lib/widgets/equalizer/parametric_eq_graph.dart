@@ -20,8 +20,9 @@ class ParametricEqGraph extends ConsumerWidget {
         animation: repaint,
         builder: (context, _) {
           final enabled = ref.read(eqEnabledProvider);
+          final bandCount = ref.read(equalizerProvider).parametricBands.length;
           final bands = List<ParametricBand>.generate(
-            EqualizerState.defaultParametricFrequenciesHz.length,
+            bandCount,
             (i) => ref.read(eqParamBandProvider(i)),
             growable: false,
           );
