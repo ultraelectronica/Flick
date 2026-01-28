@@ -8,21 +8,24 @@ import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/providers/equalizer_provider.dart';
 
-class ParametricEqGraph extends ConsumerWidget {
-  const ParametricEqGraph({super.key});
+class GraphicEqGraph extends ConsumerWidget {
+  const GraphicEqGraph({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repaint = ref.watch(eqGraphRepaintControllerProvider);
 
+    // Avoid wide rebuilds: we don't watch EQ state here.
+    // Instead we rebuild the chart only when the repaint controller bumps.
     return RepaintBoundary(
       child: AnimatedBuilder(
         animation: repaint,
         builder: (context, _) {
           final enabled = ref.read(eqEnabledProvider);
-          final bands = List<ParametricBand>.generate(
-            EqualizerState.defaultParametricFrequenciesHz.length,
-            (i) => ref.read(eqParamBandProvider(i)),
+          final freqs = EqualizerState.defaultGraphicFrequenciesHz;
+          final gains = List<double>.generate(
+            freqs.length,
+            (i) => ref.read(eqGraphicGainDbProvider(i)),
             growable: false,
           );
 
@@ -32,7 +35,6 @@ class ParametricEqGraph extends ConsumerWidget {
                   ? constraints.maxWidth
                   : 300.0;
               final sampleCount = math.max(96, width.floor());
-              final contentWidth = math.max(width * 2, 640.0);
 
               final lineColor = enabled
                   ? AdaptiveColorProvider.textPrimary(
@@ -42,17 +44,26 @@ class ParametricEqGraph extends ConsumerWidget {
                       context,
                     ).withValues(alpha: 0.70);
 
-              final spots = _buildParametricSpots(
+              final spots = _buildGraphicSpots(
                 enabled: enabled,
-                bands: bands,
+                freqs: freqs,
+                gains: gains,
                 sampleCount: sampleCount,
               );
 
-              final dotSpots = <FlSpot>[
-                for (final b in bands)
-                  if (b.enabled)
-                    FlSpot(_hzToX(b.frequencyHz), enabled ? b.gainDb : 0.0),
-              ];
+              final dotSpots = enabled
+                  ? List<FlSpot>.generate(
+                      freqs.length,
+                      (i) => FlSpot(_hzToX(freqs[i]), gains[i]),
+                      growable: false,
+                    )
+                  : List<FlSpot>.generate(
+                      freqs.length,
+                      (i) => FlSpot(_hzToX(freqs[i]), 0.0),
+                      growable: false,
+                    );
+
+              final contentWidth = math.max(width * 2, 640.0);
 
               return ClipRRect(
                 borderRadius: BorderRadius.circular(AppConstants.radiusMd),
@@ -97,6 +108,7 @@ class ParametricEqGraph extends ConsumerWidget {
                                 showTitles: true,
                                 reservedSize: 20,
                                 getTitlesWidget: (value, meta) {
+                                  // Map log10(x) back to labelled frequencies.
                                   const freqs = <double>[
                                     20,
                                     50,
@@ -167,6 +179,9 @@ class ParametricEqGraph extends ConsumerWidget {
                               );
                             },
                             getDrawingVerticalLine: (value) {
+                              // We draw only a handful of guide lines at key freqs.
+                              // fl_chart calls this for each 'value' step, so we
+                              // return transparent for non-guide values.
                               final alpha = _isGuideLogX(value) ? 0.25 : 0.0;
                               return FlLine(
                                 color: AppColors.glassBorder.withValues(
@@ -178,7 +193,7 @@ class ParametricEqGraph extends ConsumerWidget {
                             checkToShowVerticalLine: _isGuideLogX,
                           ),
                           lineBarsData: [
-                            // Glow + fill (Squiglink-ish)
+                            // Glow (thicker, blurred via shadow)
                             LineChartBarData(
                               spots: spots,
                               isCurved: false,
@@ -267,38 +282,44 @@ double _tToHz(double t) {
   return math.exp(v);
 }
 
-List<FlSpot> _buildParametricSpots({
+List<FlSpot> _buildGraphicSpots({
   required bool enabled,
-  required List<ParametricBand> bands,
+  required List<double> freqs,
+  required List<double> gains,
   required int sampleCount,
 }) {
   final spots = <FlSpot>[];
   for (var i = 0; i <= sampleCount; i++) {
     final t = i / sampleCount;
     final hz = _tToHz(t);
-    final db = enabled ? _approxResponseDb(hz, bands) : 0.0;
+    final db = enabled ? _interpDbAtHz(hz, freqs, gains) : 0.0;
     spots.add(FlSpot(_hzToX(hz), db));
   }
   return spots;
 }
 
-/// UI-only smooth approximation:
-/// Sum of gaussian bumps in log-frequency space, scaled by gain.
-/// Q controls width (higher Q => narrower).
-double _approxResponseDb(double hz, List<ParametricBand> bands) {
-  final logHz = math.log(hz);
-  double sum = 0.0;
+// Linear interpolation in log-frequency space between the nearest bands.
+double _interpDbAtHz(double hz, List<double> freqs, List<double> gains) {
+  final clampedHz = hz.clamp(freqs.first, freqs.last).toDouble();
+  final logHz = math.log(clampedHz);
 
-  for (final b in bands) {
-    if (!b.enabled) continue;
-    // Width in log-space: map Q roughly into sigma.
-    final sigma = (0.55 / b.q.clamp(0.2, 10.0)).clamp(0.04, 1.2);
-    final d = (logHz - math.log(b.frequencyHz)).abs();
-    final w = math.exp(-(d * d) / (2 * sigma * sigma));
-    sum += b.gainDb * w;
+  // Find the segment [i, i+1] that contains hz.
+  var i = 0;
+  while (i < freqs.length - 2 && clampedHz > freqs[i + 1]) {
+    i++;
   }
 
-  return sum.clamp(_minDb, _maxDb).toDouble();
+  final f0 = freqs[i];
+  final f1 = freqs[i + 1];
+  final g0 = gains[i];
+  final g1 = gains[i + 1];
+
+  final t = ((logHz - math.log(f0)) / (math.log(f1) - math.log(f0))).clamp(
+    0.0,
+    1.0,
+  );
+  final db = g0 + (g1 - g0) * t;
+  return db.clamp(_minDb, _maxDb).toDouble();
 }
 
 bool _isGuideLogX(double x) {

@@ -29,6 +29,7 @@ environment:
 # versions available, run `flutter pub outdated`.
 dependencies:
   cupertino_icons: ^1.0.8
+  fl_chart: ^1.1.1
   flutter:
     sdk: flutter
   flutter_cache_manager: ^3.4.1

@@ -144,6 +144,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     final next = List<double>.of(state.graphicGainsDb);
     next[index] = clamped;
     state = state.copyWith(graphicGainsDb: next, clearActivePresetName: true);
+    ref.read(eqGraphRepaintControllerProvider).bump();
   }
 
   void resetGraphic() {
@@ -151,6 +152,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
       graphicGainsDb: List<double>.filled(10, 0.0, growable: false),
       clearActivePresetName: true,
     );
+    ref.read(eqGraphRepaintControllerProvider).bump();
   }
 
   void setParamBandEnabled(int index, bool enabled) {

@@ -14,6 +14,7 @@ import 'package:flick/services/eq_preset_service.dart';
 import 'package:flick/widgets/common/glass_bottom_sheet.dart';
 
 import 'package:flick/widgets/equalizer/parametric_eq_graph.dart';
+import 'package:flick/widgets/equalizer/graphic_eq_graph.dart';
 
 class EqualizerScreen extends ConsumerWidget {
   const EqualizerScreen({super.key});
@@ -736,6 +737,18 @@ class _GraphicEqView extends ConsumerWidget {
       children: [
         _SectionHeader(title: 'Graphic EQ'),
         const SizedBox(height: AppConstants.spacingSm),
+        _GlassCard(
+          child: Padding(
+            padding: const EdgeInsets.all(AppConstants.spacingMd),
+            child: RepaintBoundary(
+              child: Opacity(
+                opacity: enabled ? 1.0 : 0.5,
+                child: const SizedBox(height: 160, child: GraphicEqGraph()),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppConstants.spacingMd),
         _GlassCard(
           child: SizedBox(
             height: 260,
