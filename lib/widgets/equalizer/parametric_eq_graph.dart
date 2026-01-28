@@ -75,7 +75,74 @@ class ParametricEqGraph extends ConsumerWidget {
                       lineTouchData: const LineTouchData(enabled: false),
                       clipData: const FlClipData.all(),
                       borderData: FlBorderData(show: false),
-                      titlesData: const FlTitlesData(show: false),
+                      titlesData: FlTitlesData(
+                        show: true,
+                        topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        leftTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 20,
+                            getTitlesWidget: (value, meta) {
+                              const freqs = <double>[
+                                20,
+                                50,
+                                100,
+                                200,
+                                500,
+                                1000,
+                                2000,
+                                5000,
+                                10000,
+                                20000,
+                              ];
+                              const tol = 0.03; // in log10 units
+                              double? matched;
+                              for (final hz in freqs) {
+                                final gx = _hzToX(hz);
+                                if ((value - gx).abs() <= tol) {
+                                  matched = hz;
+                                  break;
+                                }
+                              }
+                              if (matched == null) {
+                                return const SizedBox.shrink();
+                              }
+
+                              String label;
+                              if (matched >= 1000) {
+                                final k = matched / 1000.0;
+                                label =
+                                    '${k.toStringAsFixed(k >= 10 ? 0 : 1)}k';
+                              } else {
+                                label = matched.toStringAsFixed(0);
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.only(
+                                  top: 2.0,
+                                  right: 2.0,
+                                ),
+                                child: Text(
+                                  label,
+                                  style: const TextStyle(
+                                    fontFamily: 'ProductSans',
+                                    fontSize: 9,
+                                    color: AppColors.textTertiary,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
                       gridData: FlGridData(
                         show: true,
                         drawVerticalLine: true,
