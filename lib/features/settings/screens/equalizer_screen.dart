@@ -743,7 +743,7 @@ class _GraphicEqView extends ConsumerWidget {
             child: RepaintBoundary(
               child: Opacity(
                 opacity: enabled ? 1.0 : 0.5,
-                child: const SizedBox(height: 160, child: GraphicEqGraph()),
+                child: const SizedBox(height: 220, child: GraphicEqGraph()),
               ),
             ),
           ),
@@ -751,7 +751,7 @@ class _GraphicEqView extends ConsumerWidget {
         const SizedBox(height: AppConstants.spacingMd),
         _GlassCard(
           child: SizedBox(
-            height: 260,
+            height: 320,
             child: RepaintBoundary(
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
@@ -884,7 +884,7 @@ class _ParametricEqView extends ConsumerWidget {
             child: RepaintBoundary(
               child: Opacity(
                 opacity: enabled ? 1.0 : 0.5,
-                child: const SizedBox(height: 180, child: ParametricEqGraph()),
+                child: const SizedBox(height: 220, child: ParametricEqGraph()),
               ),
             ),
           ),
