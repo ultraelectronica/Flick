@@ -199,6 +199,27 @@ pub fn audio_set_volume(volume: f32) -> Result<(), String> {
     }
 }
 
+/// Set graphic EQ: enabled and 10 band gains in dB (order = 32,64,125,250,500,1k,2k,4k,8k,16k Hz).
+pub fn audio_set_equalizer(enabled: bool, gains_db: Vec<f32>) -> Result<(), String> {
+    #[cfg(not(target_os = "android"))]
+    {
+        if gains_db.len() != 10 {
+            return Err("Equalizer requires exactly 10 band gains".to_string());
+        }
+        let mut arr = [0.0f32; 10];
+        arr.copy_from_slice(&gains_db[..10]);
+        AUDIO_ENGINE
+            .get()
+            .ok_or("Audio engine not initialized")?
+            .set_equalizer(enabled, arr)
+    }
+    #[cfg(target_os = "android")]
+    {
+        let _ = (enabled, gains_db);
+        Err("Native audio not available on Android".to_string())
+    }
+}
+
 /// Configure crossfade settings.
 pub fn audio_set_crossfade(enabled: bool, duration_secs: f32) -> Result<(), String> {
     #[cfg(not(target_os = "android"))]

@@ -10,6 +10,8 @@ crate-type = ["cdylib", "staticlib"]
 default = []
 # Enable native audio engine (disabled on Android due to C++ linking issues)
 native_audio = ["cpal", "symphonia", "rubato", "ringbuf", "crossbeam-channel"]
+# Custom UAC 2.0 USB Audio (host-side DAC/AMP support)
+uac2 = ["rusb", "tokio"]
 
 [dependencies]
 flutter_rust_bridge = "=2.11.1"
@@ -20,6 +22,20 @@ anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] } # Often useful particularly with bridge
 parking_lot = "0.12"             # Faster mutexes
 once_cell = "1.19"               # Lazy static initialization
+
+# Error handling (UAC2 + general)
+thiserror = "1.0"
+
+# Logging (UAC2 + general)
+log = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# UAC 2.0 USB host (optional, for DAC/AMP detection and bit-perfect playback)
+rusb = { version = "0.9", optional = true }
+
+# Async runtime for UAC2 (hot-plug, streaming)
+tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread", "sync", "macros", "io-util"] }
 
 # Audio Engine Dependencies (optional, not available on Android)
 cpal = { version = "0.15", optional = true }

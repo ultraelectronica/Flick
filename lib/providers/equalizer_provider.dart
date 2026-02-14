@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flick/services/equalizer_service.dart';
 
 enum EqMode { graphic, parametric }
 
@@ -131,14 +132,18 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
   @override
   EqualizerState build() => EqualizerState.initial();
 
+  void _syncToAudio() => applyEqualizer(state);
+
   void setEnabled(bool value) {
     state = state.copyWith(enabled: value);
     ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
   }
 
   void setMode(EqMode mode) {
     if (state.mode == mode) return;
     state = state.copyWith(mode: mode);
+    _syncToAudio();
   }
 
   void setGraphicGainDb(int index, double gainDb) {
@@ -147,6 +152,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     next[index] = clamped;
     state = state.copyWith(graphicGainsDb: next, clearActivePresetName: true);
     ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
   }
 
   void resetGraphic() {
@@ -155,6 +161,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
       clearActivePresetName: true,
     );
     ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
   }
 
   void setParamBandEnabled(int index, bool enabled) {
@@ -162,6 +169,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     next[index] = next[index].copyWith(enabled: enabled);
     state = state.copyWith(parametricBands: next, clearActivePresetName: true);
     ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
   }
 
   void setParamBandFreqHz(int index, double hz) {
@@ -170,6 +178,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     next[index] = next[index].copyWith(frequencyHz: clamped);
     state = state.copyWith(parametricBands: next, clearActivePresetName: true);
     ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
   }
 
   void setParamBandGainDb(int index, double gainDb) {
@@ -178,6 +187,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     next[index] = next[index].copyWith(gainDb: clamped);
     state = state.copyWith(parametricBands: next, clearActivePresetName: true);
     ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
   }
 
   void setParamBandQ(int index, double q) {
@@ -186,6 +196,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     next[index] = next[index].copyWith(q: clamped);
     state = state.copyWith(parametricBands: next, clearActivePresetName: true);
     ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
   }
 
   void resetParametric() {
@@ -200,6 +211,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
       clearActivePresetName: true,
     );
     ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
   }
 
   void addParametricBand() {
@@ -216,6 +228,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
 
     state = state.copyWith(parametricBands: next, clearActivePresetName: true);
     ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
   }
 
   void applyPreset({
@@ -236,6 +249,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
       activePresetName: presetName,
     );
     ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
   }
 }
 

@@ -1,6 +1,13 @@
 package com.ultraelectronica.flick
 
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.hardware.usb.UsbConstants
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -18,9 +25,13 @@ import kotlinx.coroutines.withContext
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.ultraelectronica.flick/storage"
     private val PLAYER_CHANNEL = "com.ultraelectronica.flick/player"
+    private val UAC2_CHANNEL = "com.ultraelectronica.flick/uac2"
     private val REQUEST_OPEN_DOCUMENT_TREE = 1001
+    private val REQUEST_USB_PERMISSION = 1002
 
     private var pendingResult: MethodChannel.Result? = null
+    private var pendingUac2PermissionResult: MethodChannel.Result? = null
+    private var usbPermissionReceiver: BroadcastReceiver? = null
     // Coroutine scope for background tasks
     private val mainScope = CoroutineScope(Dispatchers.Main)
 
@@ -201,6 +212,34 @@ class MainActivity: FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // UAC 2.0 USB Host API (Android): list devices and request permission
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UAC2_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "listDevices" -> {
+                    val devices = listUac2Devices()
+                    result.success(devices)
+                }
+                "requestPermission" -> {
+                    val deviceName = call.argument<String>("deviceName")
+                    if (deviceName != null) {
+                        requestUac2Permission(deviceName, result)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "deviceName is required", null)
+                    }
+                }
+                "hasPermission" -> {
+                    val deviceName = call.argument<String>("deviceName")
+                    if (deviceName != null) {
+                        val has = hasUac2Permission(deviceName)
+                        result.success(has)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "deviceName is required", null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private fun openDocumentTree() {
@@ -357,6 +396,91 @@ class MainActivity: FlutterActivity() {
         }
 
         return result
+    }
+
+    // ========== UAC 2.0 USB Host (Android) ==========
+
+    private fun listUac2Devices(): List<Map<String, Any?>> {
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return emptyList()
+        val deviceList = usbManager.deviceList ?: return emptyList()
+        val result = mutableListOf<Map<String, Any?>>()
+        for (device in deviceList.values) {
+            if (!isUac2Device(device)) continue
+            val hasPermission = usbManager.hasPermission(device)
+            result.add(mapOf(
+                "deviceName" to device.deviceName,
+                "vendorId" to device.vendorId,
+                "productId" to device.productId,
+                "productName" to null,
+                "manufacturer" to null,
+                "serial" to null,
+                "hasPermission" to hasPermission,
+            ))
+        }
+        return result
+    }
+
+    private fun isUac2Device(device: UsbDevice): Boolean {
+        for (i in 0 until device.interfaceCount) {
+            val iface = device.getInterface(i)
+            if (iface.interfaceClass == UsbConstants.USB_CLASS_AUDIO &&
+                iface.interfaceSubclass == 2
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun hasUac2Permission(deviceName: String): Boolean {
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return false
+        val device = usbManager.deviceList?.get(deviceName) ?: return false
+        return usbManager.hasPermission(device)
+    }
+
+    private fun requestUac2Permission(deviceName: String, result: MethodChannel.Result) {
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager
+        if (usbManager == null) {
+            result.error("UAC2_ERROR", "USB service unavailable", null)
+            return
+        }
+        val device = usbManager.deviceList?.get(deviceName)
+        if (device == null) {
+            result.error("NOT_FOUND", "USB device not found: $deviceName", null)
+            return
+        }
+        if (usbManager.hasPermission(device)) {
+            result.success(true)
+            return
+        }
+        pendingUac2PermissionResult = result
+        val permissionIntent = PendingIntent.getBroadcast(
+            this,
+            REQUEST_USB_PERMISSION,
+            Intent(ACTION_USB_PERMISSION),
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        usbPermissionReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == ACTION_USB_PERMISSION) {
+                    val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+                    unregisterReceiver(usbPermissionReceiver)
+                    usbPermissionReceiver = null
+                    pendingUac2PermissionResult?.success(granted)
+                    pendingUac2PermissionResult = null
+                }
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION), Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION))
+        }
+        usbManager.requestPermission(device, permissionIntent)
+    }
+
+    companion object {
+        private const val ACTION_USB_PERMISSION = "com.ultraelectronica.flick.USB_PERMISSION"
     }
 }
 

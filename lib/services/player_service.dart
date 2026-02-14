@@ -64,6 +64,9 @@ class PlayerService {
   final List<Song> _originalPlaylist = []; // For shuffle restore
   int _currentIndex = -1;
 
+  // Track previous position to detect repeat wrap-around for notification progress
+  Duration _lastPosition = Duration.zero;
+
   void _init() {
     // Initialize notification service with callbacks
     _notificationService.init(
@@ -104,7 +107,17 @@ class PlayerService {
     });
 
     _justAudioPlayer.positionStream.listen((pos) {
+      // When repeat-one loops, just_audio may not fire completed; detect
+      // position wrapping back to start so the notification progress bar resets.
+      final prev = _lastPosition;
+      _lastPosition = pos;
       positionNotifier.value = pos;
+      if (currentSongNotifier.value != null &&
+          durationNotifier.value.inSeconds > 0 &&
+          prev.inSeconds > 5 &&
+          pos.inSeconds < 2) {
+        _updateNotificationState();
+      }
     });
 
     _justAudioPlayer.bufferedPositionStream.listen((pos) {

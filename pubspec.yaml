@@ -65,6 +65,12 @@ dev_dependencies:
   riverpod_generator: ^3.0.3
   riverpod_lint: ^3.0.3
 
+# Resolve conflict between riverpod_generator and isar_community_generator
+# (analyzer/test/source_gen chain with flutter_test). See e.g.:
+# https://github.com/rrousselGit/riverpod/issues/4393
+dependency_overrides:
+  analyzer: ">=7.4.5 <8.3.0"
+
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true

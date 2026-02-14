@@ -4,4 +4,8 @@ pub mod api;
 #[cfg(not(target_os = "android"))]
 pub mod audio;
 
+/// Custom UAC 2.0 USB Audio (DAC/AMP detection and bit-perfect playback).
+/// Real implementation is gated by the `uac2` feature.
+pub mod uac2;
+
 mod frb_generated;

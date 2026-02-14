@@ -39,6 +39,11 @@ pub enum AudioCommand {
     SetPlaybackSpeed {
         speed: f32,
     },
+    /// Set graphic EQ: enabled and 10 band gains in dB.
+    SetEqualizer {
+        enabled: bool,
+        gains_db: [f32; 10],
+    },
     /// Trigger crossfade to next track immediately
     CrossfadeToNext,
     /// Skip to the next track (with crossfade if enabled)

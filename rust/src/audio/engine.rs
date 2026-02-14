@@ -6,6 +6,7 @@
 use crate::audio::commands::{AudioCommand, AudioEvent, PlaybackProgress, PlaybackState};
 use crate::audio::crossfader::Crossfader;
 use crate::audio::decoder::DecoderThread;
+use crate::audio::equalizer::Equalizer;
 use crate::audio::resampler::DEFAULT_OUTPUT_SAMPLE_RATE;
 use crate::audio::source::{AudioSource, SourceProvider};
 
@@ -42,6 +43,8 @@ pub struct AudioCallbackData {
     speed_buffer: Mutex<Vec<f32>>,
     /// Fractional sample position for speed interpolation
     speed_frac_pos: Mutex<f64>,
+    /// Graphic EQ (10 bands). try_lock in callback to avoid blocking.
+    equalizer: Mutex<Equalizer>,
     /// Channel for sending finished tracks to command thread
     finished_tracks: Sender<AudioSource>,
 }
@@ -64,6 +67,7 @@ impl AudioCallbackData {
             mix_buffer_b: Mutex::new(vec![0.0; buffer_size]),
             speed_buffer: Mutex::new(vec![0.0; speed_buffer_size]),
             speed_frac_pos: Mutex::new(0.0),
+            equalizer: Mutex::new(Equalizer::new()),
             finished_tracks,
         }
     }
@@ -190,6 +194,11 @@ impl AudioEngineHandle {
     /// Set playback speed (0.5 to 2.0).
     pub fn set_playback_speed(&self, speed: f32) -> Result<(), String> {
         self.send_command(AudioCommand::SetPlaybackSpeed { speed })
+    }
+
+    /// Set graphic EQ: enabled and 10 band gains in dB (order matches EqualizerState.defaultGraphicFrequenciesHz).
+    pub fn set_equalizer(&self, enabled: bool, gains_db: [f32; 10]) -> Result<(), String> {
+        self.send_command(AudioCommand::SetEqualizer { enabled, gains_db })
     }
 
     /// Get the current playback speed.
@@ -413,6 +422,9 @@ fn audio_callback(
             for sample in output.iter_mut() {
                 *sample *= volume;
             }
+            if let Some(mut eq) = data.equalizer.try_lock() {
+                eq.process(output, channels);
+            }
             return;
         }
     };
@@ -547,6 +559,9 @@ fn audio_callback(
     for sample in output.iter_mut() {
         *sample *= volume;
     }
+    if let Some(mut eq) = data.equalizer.try_lock() {
+        eq.process(output, channels);
+    }
 }
 
 /// Command processing loop running in the audio thread.
@@ -626,8 +641,12 @@ fn command_processing_loop(
                     }
                     AudioCommand::SetPlaybackSpeed { speed } => {
                         callback_data.set_playback_speed(speed);
-                        // Reset fractional position when speed changes
                         *callback_data.speed_frac_pos.lock() = 0.0;
+                    }
+                    AudioCommand::SetEqualizer { enabled, gains_db } => {
+                        if let Some(mut eq) = callback_data.equalizer.try_lock() {
+                            eq.set(enabled, &gains_db, sample_rate);
+                        }
                     }
                     AudioCommand::CrossfadeToNext | AudioCommand::SkipToNext => {
                         handle_skip_to_next(&callback_data, &state, &event_tx);

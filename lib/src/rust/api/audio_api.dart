@@ -47,6 +47,15 @@ Future<void> audioSeek({required double positionSecs}) =>
 Future<void> audioSetVolume({required double volume}) =>
     RustLib.instance.api.crateApiAudioApiAudioSetVolume(volume: volume);
 
+/// Set graphic EQ: enabled and 10 band gains in dB (order = 32,64,125,250,500,1k,2k,4k,8k,16k Hz).
+Future<void> audioSetEqualizer({
+  required bool enabled,
+  required List<double> gainsDb,
+}) => RustLib.instance.api.crateApiAudioApiAudioSetEqualizer(
+  enabled: enabled,
+  gainsDb: gainsDb,
+);
+
 /// Configure crossfade settings.
 Future<void> audioSetCrossfade({
   required bool enabled,
