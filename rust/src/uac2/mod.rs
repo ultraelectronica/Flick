@@ -5,3 +5,9 @@
 
 // Placeholder for Phase 2+ implementation.
 // When the `uac2` feature is enabled, rusb and tokio are available for device access.
+
+#[cfg(feature = "uac2")]
+mod device_enumeration;
+
+#[cfg(feature = "uac2")]
+pub use device_enumeration::enumerate_uac2_devices;

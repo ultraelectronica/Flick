@@ -8,6 +8,8 @@
 // SHARED TYPES (available on all platforms, with or without `uac2` feature)
 // ============================================================================
 
+use crate::uac2;
+
 /// Information about a detected UAC 2.0 device (DAC/AMP).
 #[derive(Debug, Clone)]
 pub struct Uac2DeviceInfo {
@@ -41,15 +43,14 @@ pub fn uac2_is_available() -> bool {
     }
 }
 
-/// Enumerates connected UAC 2.0 devices.
-/// Returns an empty list when the `uac2` feature is disabled or when no devices are found.
 #[flutter_rust_bridge::frb(sync)]
 pub fn uac2_list_devices() -> Result<Vec<Uac2DeviceInfo>, String> {
     #[cfg(feature = "uac2")]
     {
-        // Phase 2 will implement real enumeration via rusb.
-        // For Phase 1.2 bridge setup, return empty list.
-        Ok(Vec::new())
+        match uac2::enumerate_uac2_devices() {
+            Ok(devices) => Ok(devices),
+            Err(err) => Err(format!("UAC2 enumeration failed: {}", err)),
+        }
     }
     #[cfg(not(feature = "uac2"))]
     {
