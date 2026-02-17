@@ -138,9 +138,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
   }
 
   void _syncToAudio() {
-    applyEqualizer(state).catchError((e) {
-      debugPrint('Failed to sync equalizer to audio: $e');
-    });
+    applyEqualizer(state).ignore();
   }
 
   void setEnabled(bool value) {

@@ -298,7 +298,6 @@ class MainActivity: FlutterActivity() {
             equalizer = try {
                 Equalizer(0, sessionId)
             } catch (e: Exception) {
-                android.util.Log.e("Equalizer", "Failed to create Equalizer: ${e.message}")
                 result.error("EQUALIZER_ERROR", "Equalizer not available: ${e.message}", null)
                 return
             }
@@ -336,7 +335,6 @@ class MainActivity: FlutterActivity() {
 
             result.success(null)
         } catch (e: Exception) {
-            android.util.Log.e("Equalizer", "Error setting equalizer: ${e.message}")
             result.error("EQUALIZER_ERROR", "Failed to set equalizer: ${e.message}", null)
         }
     }
