@@ -80,6 +80,10 @@ class PlayerService {
     );
   }
 
+  /// Android: current audio session ID from just_audio (for Equalizer attachment).
+  /// Null when not set or on non-Android platforms.
+  int? get androidAudioSessionId => _justAudioPlayer.androidAudioSessionId;
+
   /// Initialize the audio engine.
   /// Sets up just_audio with gapless playback support.
   Future<void> initAudio() async {

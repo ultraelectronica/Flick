@@ -130,9 +130,16 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
   static const int maxParametricBands = 8;
 
   @override
-  EqualizerState build() => EqualizerState.initial();
+  EqualizerState build() {
+    final initialState = EqualizerState.initial();
+    // Sync to audio once after build (e.g. on desktop; on Android needs playback started first)
+    Future.microtask(() => applyEqualizer(initialState));
+    return initialState;
+  }
 
-  void _syncToAudio() => applyEqualizer(state);
+  void _syncToAudio() {
+    applyEqualizer(state).ignore();
+  }
 
   void setEnabled(bool value) {
     state = state.copyWith(enabled: value);

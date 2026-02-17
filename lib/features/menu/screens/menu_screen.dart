@@ -24,24 +24,35 @@ class MenuScreen extends StatelessWidget {
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => screen,
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          // Use SlideTransition instead of FadeTransition for better performance
-          // SlideTransition is lighter than FadeTransition
-          const begin = Offset(0.0, 0.05);
-          const end = Offset.zero;
-          const curve = Curves.easeOutCubic;
-
+          // Swift premium swipe animation (slide from right)
+          // Uses Curves.fastOutSlowIn for a natural "physical" feel
           final tween = Tween(
-            begin: begin,
-            end: end,
-          ).chain(CurveTween(curve: curve));
+            begin: const Offset(1.0, 0.0),
+            end: Offset.zero,
+          ).chain(CurveTween(curve: Curves.fastOutSlowIn));
 
           return SlideTransition(
             position: animation.drive(tween),
-            child: child,
+            child: DecoratedBox(
+              // Add a shadow to the incoming screen for depth separation
+              decoration: BoxDecoration(
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    blurRadius: 20,
+                    spreadRadius: -2,
+                    offset: const Offset(-8, 0),
+                  ),
+                ],
+              ),
+              child: child,
+            ),
           );
         },
-        transitionDuration: const Duration(milliseconds: 200),
-        // Use opaque: true for better performance
+        transitionDuration: const Duration(milliseconds: 350),
+        reverseTransitionDuration: const Duration(milliseconds: 350),
+        // Opaque true optimizes performance by allowing the framework to
+        // stop painting the route below once the transition completes
         opaque: true,
       ),
     );
@@ -161,73 +172,66 @@ class MenuScreen extends StatelessWidget {
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: AppConstants.spacingSm),
-      child: RepaintBoundary(
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-            child: Container(
-              padding: const EdgeInsets.all(AppConstants.spacingMd),
-              decoration: BoxDecoration(
-                // Removed BackdropFilter - use solid background for better performance
-                color: AppColors.glassBackground,
-                borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                border: Border.all(color: AppColors.glassBorder, width: 1),
-              ),
-              child: Row(
-                children: [
-                  // Icon container
-                  Container(
-                    width: context.scaleSize(AppConstants.containerSizeMd),
-                    height: context.scaleSize(AppConstants.containerSizeMd),
-                    decoration: BoxDecoration(
-                      color: AppColors.glassBackgroundStrong,
-                      borderRadius: BorderRadius.circular(
-                        AppConstants.radiusMd,
-                      ),
-                      border: Border.all(
-                        color: AppColors.glassBorder,
-                        width: 1,
-                      ),
-                    ),
-                    child: Icon(
-                      icon,
-                      color: context.adaptiveTextPrimary,
-                      size: context.responsiveIcon(AppConstants.iconSizeMd),
-                    ),
+      child: Material(
+        color: AppColors.surface.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+          side: const BorderSide(color: AppColors.glassBorder, width: 1),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+          child: Padding(
+            padding: const EdgeInsets.all(AppConstants.spacingMd),
+            child: Row(
+              children: [
+                // Icon container
+                Container(
+                  width: context.scaleSize(AppConstants.containerSizeMd),
+                  height: context.scaleSize(AppConstants.containerSizeMd),
+                  decoration: BoxDecoration(
+                    color: AppColors.glassBackgroundStrong,
+                    borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                    border: Border.all(color: AppColors.glassBorder, width: 1),
                   ),
-
-                  const SizedBox(width: AppConstants.spacingMd),
-
-                  // Text content
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(color: context.adaptiveTextPrimary),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: context.adaptiveTextTertiary),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Arrow
-                  Icon(
-                    LucideIcons.chevronRight,
-                    color: context.adaptiveTextTertiary,
+                  child: Icon(
+                    icon,
+                    color: context.adaptiveTextPrimary,
                     size: context.responsiveIcon(AppConstants.iconSizeMd),
                   ),
-                ],
-              ),
+                ),
+
+                const SizedBox(width: AppConstants.spacingMd),
+
+                // Text content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(color: context.adaptiveTextPrimary),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: context.adaptiveTextTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Arrow
+                Icon(
+                  LucideIcons.chevronRight,
+                  color: context.adaptiveTextTertiary,
+                  size: context.responsiveIcon(AppConstants.iconSizeMd),
+                ),
+              ],
             ),
           ),
         ),

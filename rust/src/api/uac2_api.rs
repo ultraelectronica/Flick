@@ -49,7 +49,10 @@ pub fn uac2_list_devices() -> Result<Vec<Uac2DeviceInfo>, String> {
     {
         match uac2::enumerate_uac2_devices() {
             Ok(devices) => Ok(devices),
-            Err(err) => Err(format!("UAC2 enumeration failed: {}", err)),
+            Err(err) => {
+                log::error!("UAC2 enumeration failed: {}", err);
+                Err(err.user_message())
+            }
         }
     }
     #[cfg(not(feature = "uac2"))]

@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/app_colors.dart';
@@ -769,69 +767,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildLibraryCard(BuildContext context) {
-    return RepaintBoundary(
-      child: ClipRRect(
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: AppConstants.glassBlurSigmaLight,
-            sigmaY: AppConstants.glassBlurSigmaLight,
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppColors.glassBackground,
-              borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-              border: Border.all(color: AppColors.glassBorder, width: 1),
-            ),
-            child: Column(
+        border: Border.all(color: AppColors.glassBorder, width: 1),
+      ),
+      child: Column(
+        children: [
+          // Song count info
+          _buildLibraryInfo(context),
+          _buildDivider(),
+
+          // Scanning indicator (progress shown in bottom sheet)
+          if (_isScanning) ...[
+            _buildScanningIndicator(context),
+            _buildDivider(),
+          ],
+
+          // Music folders list
+          ..._folders.map(
+            (folder) => Column(
               children: [
-                // Song count info
-                _buildLibraryInfo(context),
-                _buildDivider(),
-
-                // Scanning indicator (progress shown in bottom sheet)
-                if (_isScanning) ...[
-                  _buildScanningIndicator(context),
-                  _buildDivider(),
-                ],
-
-                // Music folders list
-                ..._folders.map(
-                  (folder) => RepaintBoundary(
-                    child: Column(
-                      children: [
-                        _buildFolderItem(context, folder),
-                        if (_folders.last != folder) _buildDivider(),
-                      ],
-                    ),
-                  ),
-                ),
-
-                if (_folders.isNotEmpty) _buildDivider(),
-
-                // Add folder button
-                _buildActionButton(
-                  context,
-                  icon: LucideIcons.folderPlus,
-                  title: 'Add Music Folder',
-                  subtitle: 'Select a folder to scan',
-                  onTap: _isScanning ? null : _addFolder,
-                ),
-
-                if (_folders.isNotEmpty) ...[
-                  _buildDivider(),
-                  _buildActionButton(
-                    context,
-                    icon: LucideIcons.refreshCw,
-                    title: 'Rescan Library',
-                    subtitle: 'Re-index all folders',
-                    onTap: _isScanning ? null : _rescanAllFolders,
-                  ),
-                ],
+                _buildFolderItem(context, folder),
+                if (_folders.last != folder) _buildDivider(),
               ],
             ),
           ),
-        ),
+          if (_folders.isNotEmpty) _buildDivider(),
+
+          // Add folder button
+          _buildActionButton(
+            context,
+            icon: LucideIcons.folderPlus,
+            title: 'Add Music Folder',
+            subtitle: 'Select a folder to scan',
+            onTap: _isScanning ? null : _addFolder,
+          ),
+
+          if (_folders.isNotEmpty) ...[
+            _buildDivider(),
+            _buildActionButton(
+              context,
+              icon: LucideIcons.refreshCw,
+              title: 'Rescan Library',
+              subtitle: 'Re-index all folders',
+              onTap: _isScanning ? null : _rescanAllFolders,
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -906,6 +890,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildFolderItem(BuildContext context, MusicFolder folder) {
+    // RepaintBoundary removed as it's not needed for simple list items in a scrolling list
     return Material(
       color: Colors.transparent,
       child: Padding(
@@ -1044,34 +1029,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     BuildContext context, {
     required List<Widget> children,
   }) {
-    return RepaintBoundary(
-      child: ClipRRect(
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: AppConstants.glassBlurSigmaLight,
-            sigmaY: AppConstants.glassBlurSigmaLight,
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppColors.glassBackground,
-              borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-              border: Border.all(color: AppColors.glassBorder, width: 1),
-            ),
-            child: Column(children: children),
-          ),
-        ),
+        border: Border.all(color: AppColors.glassBorder, width: 1),
       ),
+      child: Column(children: children),
     );
   }
 
   Widget _buildDivider() {
-    return RepaintBoundary(
-      child: Container(
-        height: 1,
-        margin: EdgeInsets.only(left: 56 + AppConstants.spacingMd),
-        color: AppColors.glassBorder,
-      ),
+    return Container(
+      height: 1,
+      margin: EdgeInsets.only(left: 56 + AppConstants.spacingMd),
+      color: AppColors.glassBorder,
     );
   }
 
@@ -1083,58 +1055,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    return RepaintBoundary(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => onChanged(!value),
-          child: Padding(
-            padding: const EdgeInsets.all(AppConstants.spacingMd),
-            child: Row(
-              children: [
-                // Icon
-                Container(
-                  width: context.scaleSize(AppConstants.containerSizeSm),
-                  height: context.scaleSize(AppConstants.containerSizeSm),
-                  decoration: BoxDecoration(
-                    color: AppColors.glassBackgroundStrong,
-                    borderRadius: BorderRadius.circular(AppConstants.radiusSm),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: context.adaptiveTextSecondary,
-                    size: context.responsiveIcon(AppConstants.iconSizeMd),
-                  ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onChanged(!value),
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.spacingMd),
+          child: Row(
+            children: [
+              // Icon
+              Container(
+                width: context.scaleSize(AppConstants.containerSizeSm),
+                height: context.scaleSize(AppConstants.containerSizeSm),
+                decoration: BoxDecoration(
+                  color: AppColors.glassBackgroundStrong,
+                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
                 ),
-
-                const SizedBox(width: AppConstants.spacingMd),
-
-                // Text
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: context.adaptiveTextPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: context.adaptiveTextTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
+                child: Icon(
+                  icon,
+                  color: context.adaptiveTextSecondary,
+                  size: context.responsiveIcon(AppConstants.iconSizeMd),
                 ),
+              ),
 
-                // Toggle switch
-                _buildCustomSwitch(value, onChanged),
-              ],
-            ),
+              const SizedBox(width: AppConstants.spacingMd),
+
+              // Text
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: context.adaptiveTextPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: context.adaptiveTextTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Toggle switch
+              _buildCustomSwitch(value, onChanged),
+            ],
           ),
         ),
       ),
@@ -1189,62 +1159,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    return RepaintBoundary(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(AppConstants.spacingMd),
-            child: Row(
-              children: [
-                // Icon
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.glassBackgroundStrong,
-                    borderRadius: BorderRadius.circular(AppConstants.radiusSm),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: context.adaptiveTextSecondary,
-                    size: 20,
-                  ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.spacingMd),
+          child: Row(
+            children: [
+              // Icon
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.glassBackgroundStrong,
+                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
                 ),
-
-                const SizedBox(width: AppConstants.spacingMd),
-
-                // Text
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: context.adaptiveTextPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: context.adaptiveTextTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Chevron
-                Icon(
-                  LucideIcons.chevronRight,
-                  color: context.adaptiveTextTertiary,
+                child: Icon(
+                  icon,
+                  color: context.adaptiveTextSecondary,
                   size: 20,
                 ),
-              ],
-            ),
+              ),
+
+              const SizedBox(width: AppConstants.spacingMd),
+
+              // Text
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: context.adaptiveTextPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: context.adaptiveTextTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Chevron
+              Icon(
+                LucideIcons.chevronRight,
+                color: context.adaptiveTextTertiary,
+                size: 20,
+              ),
+            ],
           ),
         ),
       ),

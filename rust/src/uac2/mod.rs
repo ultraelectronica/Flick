@@ -1,13 +1,19 @@
 //! Custom USB Audio Class 2.0 (UAC 2.0) support for DAC/AMP detection and bit-perfect playback.
-//!
-//! This module will host device enumeration, descriptor parsing, and audio streaming
-//! in later phases. Phase 1.2 only establishes the module structure.
-
-// Placeholder for Phase 2+ implementation.
-// When the `uac2` feature is enabled, rusb and tokio are available for device access.
 
 #[cfg(feature = "uac2")]
 mod device_enumeration;
+#[cfg(feature = "uac2")]
+mod device;
+#[cfg(feature = "uac2")]
+mod registry;
+#[cfg(feature = "uac2")]
+mod error;
 
 #[cfg(feature = "uac2")]
 pub use device_enumeration::enumerate_uac2_devices;
+#[cfg(feature = "uac2")]
+pub use error::Uac2Error;
+#[cfg(feature = "uac2")]
+pub use device::{Uac2Device, DeviceInfo, DeviceIdentification, DeviceMetadata};
+#[cfg(feature = "uac2")]
+pub use registry::{DeviceRegistry, DeviceKey};

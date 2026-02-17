@@ -6,6 +6,7 @@ import 'package:flick/app/app.dart';
 import 'package:flick/data/database.dart';
 import 'package:flick/services/permission_service.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/services/rust_audio_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,8 +17,8 @@ Future<void> main() async {
   // Initialize database FIRST (required by PlayerService)
   await Database.init();
 
-  // Initialize audio engine with just_audio (requires database)
-  await _initAudioEngine();
+  // Initialize audio engines
+  await _initAudioEngines();
 
   // Set high refresh rate mode for smoother animations
   await _setOptimalDisplayMode();
@@ -31,15 +32,30 @@ Future<void> main() async {
   runApp(const ProviderScope(child: FlickPlayerApp()));
 }
 
-/// Initialize the audio engine with just_audio for gapless playback.
-Future<void> _initAudioEngine() async {
+/// Initialize both audio engines (just_audio for Android, Rust engine for desktop).
+Future<void> _initAudioEngines() async {
+  // Initialize just_audio (used on Android)
   try {
     final playerService = PlayerService();
     await playerService.initAudio();
-    debugPrint('Audio engine initialized successfully');
+    debugPrint('just_audio engine initialized successfully');
   } catch (e) {
-    debugPrint('Failed to initialize audio engine: $e');
+    debugPrint('Failed to initialize just_audio engine: $e');
     // Continue anyway - the app can still function with degraded audio
+  }
+
+  // Initialize Rust audio engine (used on desktop, required for equalizer)
+  try {
+    final rustAudioService = RustAudioService();
+    final initialized = await rustAudioService.init();
+    if (initialized) {
+      debugPrint('Rust audio engine initialized successfully');
+    } else {
+      debugPrint('Rust audio engine not available on this platform');
+    }
+  } catch (e) {
+    debugPrint('Failed to initialize Rust audio engine: $e');
+    // Continue anyway - Rust engine is only for desktop platforms
   }
 }
 

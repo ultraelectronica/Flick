@@ -12,8 +12,6 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// True when built with the `uac2` feature; false otherwise.
 bool uac2IsAvailable() => RustLib.instance.api.crateApiUac2ApiUac2IsAvailable();
 
-/// Enumerates connected UAC 2.0 devices.
-/// Returns an empty list when the `uac2` feature is disabled or when no devices are found.
 List<Uac2DeviceInfo> uac2ListDevices() =>
     RustLib.instance.api.crateApiUac2ApiUac2ListDevices();
 

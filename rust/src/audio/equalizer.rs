@@ -61,9 +61,11 @@ type BandState = [f32; 4];
 type ChannelState = [BandState; NUM_BANDS];
 
 /// Double-buffered params for lock-free updates from command thread.
+/// State is per-channel (not double-buffered) for stereo processing.
 pub struct Equalizer {
     params: [EqParams; 2],
     index: AtomicU8,
+    /// Per-channel filter state. Indexed by channel (0=left, 1=right).
     state: [ChannelState; 2],
 }
 
@@ -86,6 +88,14 @@ impl Equalizer {
         let idx = self.index.load(Ordering::Relaxed);
         self.params[1 - idx as usize] = next;
         self.index.store(1 - idx, Ordering::Release);
+        // Reset state when disabling to avoid artifacts when re-enabling
+        if !enabled {
+            for ch_state in &mut self.state {
+                for band_state in ch_state.iter_mut() {
+                    band_state.fill(0.0);
+                }
+            }
+        }
     }
 
     #[inline]
@@ -99,9 +109,11 @@ impl Equalizer {
         if !p.enabled {
             return;
         }
+        // Clamp channels to available state buffers (typically 2 for stereo)
+        let max_channels = self.state.len().min(channels);
         let frames = buf.len() / channels;
         for f in 0..frames {
-            for ch in 0..channels {
+            for ch in 0..max_channels {
                 let idx = f * channels + ch;
                 let x0 = buf[idx];
                 buf[idx] = process_sample_chain(x0, &p.coeffs, &mut self.state[ch]);
