@@ -1,22 +1,19 @@
 #[cfg(feature = "uac2")]
 mod inner {
-    use create::api::uac2_api::Uac2DeviceInfo;
+    use crate::api::uac2_api::Uac2DeviceInfo;
     use rusb::{Context, Device, UsbContext};
-    use std::time::Duration;
 
     const USB_CLASS_AUDIO: u8 = 0x01;
     const USB_SUBCLASS_UAC2: u8 = 0x02;
     const USB_PROTOCOL_UAC2: u8 = 0x20;
 
-    const STRING_TIMEOUT: Duration = Duration::from_millis(100);
-
     pub fn enumerate_uac2_devices() -> Result<Vec<Uac2DeviceInfo>, rusb::Error> {
         let context = Context::new()?;
-        let devices = context::devices()?;
+        let devices = context.devices()?;
         let mut out = Vec::new();
 
         for device in devices.iter() {
-            if !is_uac2_audio_devices(&device)? {
+            if !is_uac2_audio_device(&device)? {
                 continue;
             }
 
@@ -30,15 +27,15 @@ mod inner {
             };
 
             let manufacturer = handle
-                .read_manufacturer_string_ascii(&device_desc, STRING_TIMEOUT)
+                .read_manufacturer_string_ascii(&device_desc)
                 .unwrap_or_else(|_| String::new());
 
             let product_name = handle
-                .read_product_string_ascii(&device_desc, STRING_TIMEOUT)
+                .read_product_string_ascii(&device_desc)
                 .unwrap_or_else(|_| "USB Audio Device".to_string());
 
             let serial = handle
-                .read_serial_number_string_ascii(&device_desc, STRING_TIMEOUT)
+                .read_serial_number_string_ascii(&device_desc)
                 .ok();
 
             out.push(Uac2DeviceInfo {
@@ -58,7 +55,7 @@ mod inner {
         for interface in config.interfaces() {
             for descriptor in interface.descriptors() {
                 if descriptor.class_code() == USB_CLASS_AUDIO
-                    && descriptor.subclass_code() == USB_SUBCLASS_UAC2
+                    && descriptor.sub_class_code() == USB_SUBCLASS_UAC2
                     && descriptor.protocol_code() == USB_PROTOCOL_UAC2
                 {
                     return Ok(true);

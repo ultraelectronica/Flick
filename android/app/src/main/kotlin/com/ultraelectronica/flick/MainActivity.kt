@@ -32,6 +32,9 @@ class MainActivity: FlutterActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private var pendingUac2PermissionResult: MethodChannel.Result? = null
     private var usbPermissionReceiver: BroadcastReceiver? = null
+    private var usbHotplugReceiver: BroadcastReceiver? = null
+    private var uac2DeviceCache: List<Map<String, Any?>>? = null
+    private var uac2Channel: MethodChannel? = null
     // Coroutine scope for background tasks
     private val mainScope = CoroutineScope(Dispatchers.Main)
 
@@ -214,10 +217,12 @@ class MainActivity: FlutterActivity() {
         }
 
         // UAC 2.0 USB Host API (Android): list devices and request permission
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UAC2_CHANNEL).setMethodCallHandler { call, result ->
+        uac2Channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UAC2_CHANNEL)
+        uac2Channel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "listDevices" -> {
-                    val devices = listUac2Devices()
+                    val refresh = call.argument<Boolean>("refresh") ?: false
+                    val devices = listUac2Devices(refresh)
                     result.success(devices)
                 }
                 "requestPermission" -> {
@@ -240,6 +245,9 @@ class MainActivity: FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        
+        // Register USB hot-plug receiver
+        registerUsbHotplugReceiver()
     }
 
     private fun openDocumentTree() {
@@ -400,31 +408,45 @@ class MainActivity: FlutterActivity() {
 
     // ========== UAC 2.0 USB Host (Android) ==========
 
-    private fun listUac2Devices(): List<Map<String, Any?>> {
+    private fun listUac2Devices(refresh: Boolean = false): List<Map<String, Any?>> {
+        if (!refresh && uac2DeviceCache != null) {
+            return uac2DeviceCache!!
+        }
+        
         val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return emptyList()
         val deviceList = usbManager.deviceList ?: return emptyList()
         val result = mutableListOf<Map<String, Any?>>()
+        
         for (device in deviceList.values) {
             if (!isUac2Device(device)) continue
             val hasPermission = usbManager.hasPermission(device)
+            
+            // Extract strings (available without opening device on API 21+)
+            val productName = device.productName ?: "USB Audio Device"
+            val manufacturer = device.manufacturerName ?: ""
+            val serial = device.serialNumber ?: device.deviceName
+            
             result.add(mapOf(
                 "deviceName" to device.deviceName,
                 "vendorId" to device.vendorId,
                 "productId" to device.productId,
-                "productName" to null,
-                "manufacturer" to null,
-                "serial" to null,
-                "hasPermission" to hasPermission,
+                "productName" to (productName ?: "USB Audio Device"),
+                "manufacturer" to (manufacturer ?: ""),
+                "serial" to (serial ?: device.deviceName),
             ))
         }
+        
+        uac2DeviceCache = result
         return result
     }
 
     private fun isUac2Device(device: UsbDevice): Boolean {
         for (i in 0 until device.interfaceCount) {
             val iface = device.getInterface(i)
+            // UAC 2.0: Class 0x01 (Audio), Subclass 0x02 (UAC2), Protocol 0x20 (UAC2)
             if (iface.interfaceClass == UsbConstants.USB_CLASS_AUDIO &&
-                iface.interfaceSubclass == 2
+                iface.interfaceSubclass == 0x02 &&
+                iface.interfaceProtocol == 0x20
             ) {
                 return true
             }
@@ -477,6 +499,44 @@ class MainActivity: FlutterActivity() {
             registerReceiver(usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION))
         }
         usbManager.requestPermission(device, permissionIntent)
+    }
+
+    private fun registerUsbHotplugReceiver() {
+        usbHotplugReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                        // Invalidate cache on device attach
+                        uac2DeviceCache = null
+                        // Notify Flutter if channel is available
+                        uac2Channel?.invokeMethod("onDeviceAttached", null)
+                    }
+                    UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                        // Invalidate cache on device detach
+                        uac2DeviceCache = null
+                        // Notify Flutter if channel is available
+                        uac2Channel?.invokeMethod("onDeviceDetached", null)
+                    }
+                }
+            }
+        }
+        
+        val filter = IntentFilter().apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(usbHotplugReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(usbHotplugReceiver, filter)
+        }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        usbHotplugReceiver?.let { unregisterReceiver(it) }
+        usbPermissionReceiver?.let { unregisterReceiver(it) }
     }
 
     companion object {
