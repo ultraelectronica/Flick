@@ -8,6 +8,7 @@ import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/features/songs/widgets/orbit_scroll.dart';
 import 'package:flick/providers/providers.dart';
+import 'package:flick/widgets/common/glass_search_bar.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Main songs screen with orbital scrolling.
@@ -23,11 +24,19 @@ class SongsScreen extends ConsumerStatefulWidget {
 
 class _SongsScreenState extends ConsumerState<SongsScreen> {
   int _selectedIndex = 0;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     // Listen to player changes to sync selection (handled in build via ref.listen)
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -61,16 +70,47 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
               // Header with sort option
               _buildHeader(songsAsync),
 
+              // Search Bar
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppConstants.spacingLg,
+                ),
+                child: GlassSearchBar(
+                  controller: _searchController,
+                  hintText: 'Search songs, artists...',
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value.toLowerCase();
+                      _selectedIndex = 0; // Reset index on search change
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingMd),
+
               // Content based on async state
               Expanded(
                 child: songsAsync.when(
                   loading: () => _buildLoadingState(),
                   error: (error, stack) => _buildErrorState(error),
                   data: (songsState) {
-                    final songs = songsState.sortedSongs;
+                    var songs = songsState.sortedSongs;
 
-                    if (songs.isEmpty) {
+                    if (_searchQuery.isNotEmpty) {
+                      songs = songs.where((song) {
+                        return song.title.toLowerCase().contains(
+                              _searchQuery,
+                            ) ||
+                            song.artist.toLowerCase().contains(_searchQuery);
+                      }).toList();
+                    }
+
+                    if (songs.isEmpty && _searchQuery.isEmpty) {
                       return _buildEmptyState();
+                    }
+
+                    if (songs.isEmpty && _searchQuery.isNotEmpty) {
+                      return _buildNoSearchResultsState();
                     }
 
                     // Ensure selected index is valid
@@ -192,6 +232,36 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
           const SizedBox(height: AppConstants.spacingSm),
           Text(
             'Add a music folder in Settings',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: context.adaptiveTextTertiary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoSearchResultsState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            LucideIcons.searchX,
+            size: context.responsiveIcon(AppConstants.containerSizeLg),
+            color: context.adaptiveTextTertiary.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: AppConstants.spacingLg),
+          Text(
+            'No matches found',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: context.adaptiveTextSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppConstants.spacingSm),
+          Text(
+            'Try adjusting your search query',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: context.adaptiveTextTertiary,
             ),
