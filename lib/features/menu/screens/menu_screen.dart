@@ -162,11 +162,11 @@ class MenuScreen extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: AppConstants.spacingSm),
       child: Material(
-        color: AppColors.surface,
+        color: AppColors.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(AppConstants.radiusLg),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-          side: const BorderSide(color: AppColors.surfaceDark, width: 1),
+          side: const BorderSide(color: AppColors.glassBorder, width: 1),
         ),
         child: InkWell(
           onTap: onTap,
@@ -180,9 +180,9 @@ class MenuScreen extends StatelessWidget {
                   width: context.scaleSize(AppConstants.containerSizeMd),
                   height: context.scaleSize(AppConstants.containerSizeMd),
                   decoration: BoxDecoration(
-                    color: AppColors.surfaceLight,
+                    color: AppColors.glassBackgroundStrong,
                     borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-                    border: Border.all(color: AppColors.surfaceDark, width: 1),
+                    border: Border.all(color: AppColors.glassBorder, width: 1),
                   ),
                   child: Icon(
                     icon,

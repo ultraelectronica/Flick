@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -89,7 +88,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -272,6 +271,12 @@ class _AlbumCardState extends State<_AlbumCard>
 
   @override
   Widget build(BuildContext context) {
+    final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+    final cardWidth = context.scaleSize(AppConstants.cardWidthMd);
+    final cardHeight = context.scaleSize(AppConstants.cardHeightMd);
+    final artworkTargetWidth = (cardWidth * devicePixelRatio).round();
+    final artworkTargetHeight = (cardHeight * devicePixelRatio).round();
+
     return GestureDetector(
       onTapDown: (_) => _controller.forward(),
       onTapUp: (_) {
@@ -292,73 +297,79 @@ class _AlbumCardState extends State<_AlbumCard>
             child: child,
           );
         },
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: AppConstants.glassBlurSigmaLight,
-              sigmaY: AppConstants.glassBlurSigmaLight,
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                color: AppColors.glassBackground,
+        child: RepaintBoundary(
+          child: Material(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+            child: InkWell(
+              onTap: widget.onTap,
+              borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+              child: ClipRRect(
                 borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                border: Border.all(color: AppColors.glassBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Album art
-                  Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: AppColors.glassBackgroundStrong,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(AppConstants.radiusLg),
+                child: SizedBox(
+                  width: cardWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Album art
+                      Expanded(
+                        child: Container(
+                          width: double.infinity,
+                          decoration: const BoxDecoration(
+                            color: AppColors.surfaceLight,
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(AppConstants.radiusLg),
+                            ),
+                          ),
+                          child: widget.albumArt != null
+                              ? ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(AppConstants.radiusLg),
+                                  ),
+                                  child: Image.file(
+                                    File(widget.albumArt!),
+                                    fit: BoxFit.cover,
+                                    cacheWidth: artworkTargetWidth,
+                                    cacheHeight: artworkTargetHeight,
+                                    filterQuality: FilterQuality.low,
+                                    gaplessPlayback: true,
+                                    errorBuilder: (_, __, ___) =>
+                                        _buildPlaceholder(context),
+                                  ),
+                                )
+                              : _buildPlaceholder(context),
                         ),
                       ),
-                      child: widget.albumArt != null
-                          ? ClipRRect(
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(AppConstants.radiusLg),
-                              ),
-                              child: Image.file(
-                                File(widget.albumArt!),
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) =>
-                                    _buildPlaceholder(context),
-                              ),
-                            )
-                          : _buildPlaceholder(context),
-                    ),
-                  ),
-                  // Album info
-                  Padding(
-                    padding: const EdgeInsets.all(AppConstants.spacingSm),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.albumName,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(
-                                color: context.adaptiveTextPrimary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                      // Album info
+                      Padding(
+                        padding: const EdgeInsets.all(AppConstants.spacingSm),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.albumName,
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(
+                                    color: context.adaptiveTextPrimary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${widget.songs.length} ${widget.songs.length == 1 ? 'song' : 'songs'}',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: context.adaptiveTextTertiary,
+                                  ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${widget.songs.length} ${widget.songs.length == 1 ? 'song' : 'songs'}',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: context.adaptiveTextTertiary),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),

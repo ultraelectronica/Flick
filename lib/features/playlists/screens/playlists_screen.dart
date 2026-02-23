@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/app_colors.dart';
@@ -14,7 +12,7 @@ class PlaylistsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -150,7 +148,7 @@ class PlaylistsScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-        border: Border.all(color: AppColors.glassBorder),
+        border: Border.all(color: AppColors.surfaceDark),
       ),
       child: Center(
         child: Icon(
@@ -163,26 +161,17 @@ class PlaylistsScreen extends StatelessWidget {
   }
 
   Widget _buildCreateButton(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppConstants.radiusRound),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: AppConstants.glassBlurSigmaLight,
-          sigmaY: AppConstants.glassBlurSigmaLight,
-        ),
-        child: FloatingActionButton.extended(
-          onPressed: () {
-            _showCreatePlaylistDialog(context);
-          },
-          backgroundColor: AppColors.glassBackgroundStrong,
-          foregroundColor: context.adaptiveTextPrimary,
-          elevation: 0,
-          icon: const Icon(LucideIcons.plus),
-          label: const Text(
-            'Create Playlist',
-            style: TextStyle(fontFamily: 'ProductSans'),
-          ),
-        ),
+    return FloatingActionButton.extended(
+      onPressed: () {
+        _showCreatePlaylistDialog(context);
+      },
+      backgroundColor: AppColors.surfaceLight,
+      foregroundColor: context.adaptiveTextPrimary,
+      elevation: 4,
+      icon: const Icon(LucideIcons.plus),
+      label: const Text(
+        'Create Playlist',
+        style: TextStyle(fontFamily: 'ProductSans'),
       ),
     );
   }
