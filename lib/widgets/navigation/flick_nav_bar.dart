@@ -127,6 +127,7 @@ class FlickNavBar extends StatelessWidget {
 
   Widget _buildNavigationRow(BuildContext context) {
     final itemPadding = context.scaleSize(AppConstants.spacingMd);
+    const minTapTargetSize = 48.0; // Material minimum for touch targets
 
     return Padding(
       padding: EdgeInsets.symmetric(
@@ -137,10 +138,15 @@ class FlickNavBar extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: List.generate(
           _navItems.length,
-          (index) => _FlickNavItem(
-            item: _navItems[index],
-            isSelected: currentIndex == index,
-            onTap: () => onTap(index),
+          (index) => Expanded(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: minTapTargetSize),
+              child: _FlickNavItem(
+                item: _navItems[index],
+                isSelected: currentIndex == index,
+                onTap: () => onTap(index),
+              ),
+            ),
           ),
         ),
       ),
@@ -243,6 +249,7 @@ class _FlickNavItemState extends State<_FlickNavItem>
     final spacing = context.scaleSize(2.0);
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTapDown: _onTapDown,
       onTapUp: _onTapUp,
       onTapCancel: _onTapCancel,
@@ -258,6 +265,7 @@ class _FlickNavItemState extends State<_FlickNavItem>
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   // Icon with scale animation
                   Transform.scale(
