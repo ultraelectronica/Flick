@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- USB Audio Class 2.0 (UAC 2.0) device filter for DAC/AMP detection.
+     Class 0x01 (Audio), Subclass 0x02 (UAC 2.0), Protocol 0x20 (AF_VERSION_02_00). -->
+<resources>
+    <usb-device class="1" subclass="2" protocol="32" />
+</resources>

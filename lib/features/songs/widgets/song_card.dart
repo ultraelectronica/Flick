@@ -1,9 +1,11 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flick_player/core/theme/app_colors.dart';
-import 'package:flick_player/core/constants/app_constants.dart';
-import 'package:flick_player/models/song.dart';
+import 'package:flick/core/theme/app_colors.dart';
+import 'package:flick/core/constants/app_constants.dart';
+import 'package:flick/models/song.dart';
+import 'package:flick/widgets/common/marquee_widget.dart';
+import 'package:flick/widgets/common/cached_image_widget.dart';
 
 /// Song card widget for displaying in the orbit scroll.
 class SongCard extends StatelessWidget {
@@ -37,53 +39,113 @@ class SongCard extends StatelessWidget {
         ? AppConstants.songCardArtSizeLarge
         : AppConstants.songCardArtSize;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedOpacity(
-        duration: AppConstants.animationNormal,
-        opacity: opacity,
-        child: Transform.scale(
-          scale: scale,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: AppConstants.glassBlurSigmaLight,
-                sigmaY: AppConstants.glassBlurSigmaLight,
-              ),
-              child: Container(
-                padding: const EdgeInsets.all(AppConstants.spacingSm),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? AppColors.glassBackgroundStrong
-                      : AppColors.glassBackground,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                  border: Border.all(
-                    color: isSelected
-                        ? AppColors.glassBorderStrong
-                        : AppColors.glassBorder,
-                    width: isSelected ? 1.5 : 1,
-                  ),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: Colors.white.withValues(alpha: 0.1),
-                            blurRadius: 20,
-                            spreadRadius: 0,
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+    // Width constraint based on design request
+    final cardWidth = MediaQuery.of(context).size.width * 0.75;
+
+    return RepaintBoundary(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedOpacity(
+          duration: AppConstants.animationNormal,
+          opacity: opacity,
+          child: Transform.scale(
+            scale: scale,
+            child: SizedBox(
+              width: cardWidth,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+                child: Stack(
                   children: [
-                    // Album Art
-                    _buildAlbumArt(artSize),
+                    // 1. Blurred Background Layer (only for selected cards)
+                    if (isSelected && song.albumArt != null)
+                      Positioned.fill(
+                        child: ImageFiltered(
+                          // Reduced from 30 to 15 for better performance
+                          imageFilter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                          child: Container(
+                            foregroundDecoration: BoxDecoration(
+                              color: Colors.black.withValues(
+                                alpha: 0.6,
+                              ), // Darken
+                            ),
+                            child: _buildRawImage(
+                              song.albumArt!,
+                              fit: BoxFit.cover,
+                              artSize: artSize,
+                            ),
+                          ),
+                        ),
+                      ),
 
-                    const SizedBox(width: AppConstants.spacingMd),
+                    // 2. Glass / Content Layer
+                    // Only apply BackdropFilter for selected cards to improve performance
+                    if (isSelected)
+                      BackdropFilter(
+                        filter: ImageFilter.blur(
+                          // Reduced from 5.0 to 3.0 for better performance
+                          sigmaX: 3.0,
+                          sigmaY: 3.0,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(AppConstants.spacingSm),
+                          decoration: BoxDecoration(
+                            color: AppColors.glassBackgroundStrong.withValues(
+                              alpha: 0.5,
+                            ), // More transparent for blur to show
+                            borderRadius: BorderRadius.circular(
+                              AppConstants.radiusLg,
+                            ),
+                            border: Border.all(
+                              color: AppColors.glassBorderStrong,
+                              width: 1.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.white.withValues(alpha: 0.05),
+                                blurRadius: 20,
+                                spreadRadius: 0,
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              // Album Art
+                              _buildAlbumArt(artSize),
 
-                    // Song Info
-                    _buildSongInfo(context),
+                              const SizedBox(width: AppConstants.spacingMd),
+
+                              // Song Info
+                              _buildSongInfo(context),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      // Non-selected cards: no blur, just solid background
+                      Container(
+                        padding: const EdgeInsets.all(AppConstants.spacingSm),
+                        decoration: BoxDecoration(
+                          color: AppColors.glassBackground,
+                          borderRadius: BorderRadius.circular(
+                            AppConstants.radiusLg,
+                          ),
+                          border: Border.all(
+                            color: AppColors.glassBorder,
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            // Album Art
+                            _buildAlbumArt(artSize),
+
+                            const SizedBox(width: AppConstants.spacingMd),
+
+                            // Song Info
+                            _buildSongInfo(context),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -95,32 +157,53 @@ class SongCard extends StatelessWidget {
   }
 
   Widget _buildAlbumArt(double size) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-        color: AppColors.surfaceLight,
-        border: Border.all(color: AppColors.glassBorder, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+    return Hero(
+      tag: 'song_art_${song.id}',
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+          color: AppColors.surfaceLight,
+          border: Border.all(color: AppColors.glassBorder, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+          child: song.albumArt != null
+              ? _buildRawImage(song.albumArt!, fit: BoxFit.cover, artSize: size)
+              : _buildPlaceholderArt(),
+        ),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-        child: song.albumArt != null
-            ? Image.network(
-                song.albumArt!,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) =>
-                    _buildPlaceholderArt(),
-              )
-            : _buildPlaceholderArt(),
-      ),
+    );
+  }
+
+  Widget _buildRawImage(
+    String path, {
+    BoxFit fit = BoxFit.cover,
+    required double artSize,
+  }) {
+    // Use thumbnail for smaller album art sizes to improve performance
+    final isThumbnail = artSize <= AppConstants.songCardArtSize;
+
+    return CachedImageWidget(
+      imagePath: path,
+      fit: fit,
+      placeholder: _buildPlaceholderArt(),
+      errorWidget: _buildPlaceholderArt(),
+      useThumbnail: isThumbnail,
+      thumbnailWidth: isThumbnail
+          ? (AppConstants.songCardArtSize * 2).toInt()
+          : null,
+      thumbnailHeight: isThumbnail
+          ? (AppConstants.songCardArtSize * 2).toInt()
+          : null,
     );
   }
 
@@ -144,23 +227,39 @@ class SongCard extends StatelessWidget {
   }
 
   Widget _buildSongInfo(BuildContext context) {
-    return Flexible(
+    return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Title
-          Text(
-            song.title,
-            style: TextStyle(
-              fontSize: isSelected ? 18 : 15,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-              letterSpacing: 0.2,
+          // Title with Marquee
+          if (isSelected)
+            SizedBox(
+              height: 24,
+              child: MarqueeWidget(
+                child: Text(
+                  song.title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            )
+          else
+            Text(
+              song.title,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+                letterSpacing: 0.2,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
 
           const SizedBox(height: AppConstants.spacingXxs),
 
@@ -184,7 +283,7 @@ class SongCard extends StatelessWidget {
               _buildMetadataBadge(song.fileType),
               const SizedBox(width: AppConstants.spacingXs),
               _buildMetadataText(song.formattedDuration),
-              if (song.resolution != null) ...[
+              if (song.resolution != null && song.resolution != 'Unknown') ...[
                 const SizedBox(width: AppConstants.spacingXs),
                 _buildMetadataText('•'),
                 const SizedBox(width: AppConstants.spacingXs),

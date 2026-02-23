@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flick_player/app/app.dart';
+import 'package:flick/app/app.dart';
 
 void main() {
   testWidgets('Flick Player app smoke test', (WidgetTester tester) async {

@@ -1,0 +1,9 @@
+targets:
+  $default:
+    builders:
+      isar_community_generator:
+        generate_for:
+          include:
+            - lib/data/**
+          exclude:
+            - lib/src/**
