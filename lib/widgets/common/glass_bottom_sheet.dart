@@ -95,74 +95,77 @@ class GlassBottomSheet extends StatelessWidget {
         ? mediaQuery.size.height * maxHeightRatio!
         : mediaQuery.size.height * 0.85;
 
-    return Container(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      decoration: BoxDecoration(
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(AppConstants.radiusXl),
-          topRight: Radius.circular(AppConstants.radiusXl),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 24,
-            offset: const Offset(0, -8),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(AppConstants.radiusXl),
-          topRight: Radius.circular(AppConstants.radiusXl),
-        ),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: AppConstants.glassBlurSigma,
-            sigmaY: AppConstants.glassBlurSigma,
-          ),
+    return RepaintBoundary(
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
           child: Container(
             decoration: BoxDecoration(
-              color: AppColors.glassBackground,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(AppConstants.radiusXl),
                 topRight: Radius.circular(AppConstants.radiusXl),
               ),
-              border: Border.all(color: AppColors.glassBorder, width: 1),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Drag Handle
-                if (showDragHandle) _buildDragHandle(),
-
-                // Title
-                if (title != null) _buildTitle(context),
-
-                // Content
-                if (content != null)
-                  Flexible(
-                    child: Padding(
-                      padding:
-                          contentPadding ??
-                          const EdgeInsets.symmetric(
-                            horizontal: AppConstants.spacingLg,
-                          ),
-                      child: DefaultTextStyle(
-                        style: Theme.of(context).textTheme.bodyMedium!,
-                        child: content!,
-                      ),
-                    ),
-                  ),
-
-                // Actions
-                if (actions != null && actions!.isNotEmpty)
-                  _buildActions(context),
-
-                // Bottom safe area padding
-                SizedBox(
-                  height: mediaQuery.padding.bottom + AppConstants.spacingLg,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 20,
+                  offset: const Offset(0, -6),
                 ),
               ],
+            ),
+            child: ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(AppConstants.radiusXl),
+                topRight: Radius.circular(AppConstants.radiusXl),
+              ),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(
+                  sigmaX: AppConstants.glassBlurSigma,
+                  sigmaY: AppConstants.glassBlurSigma,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.glassBackground,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(AppConstants.radiusXl),
+                      topRight: Radius.circular(AppConstants.radiusXl),
+                    ),
+                    border: Border.all(color: AppColors.glassBorder, width: 1),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (showDragHandle) _buildDragHandle(),
+                      if (title != null) _buildTitle(context),
+                      if (content != null)
+                        Flexible(
+                          fit: FlexFit.loose,
+                          child: Padding(
+                            padding:
+                                contentPadding ??
+                                const EdgeInsets.symmetric(
+                                  horizontal: AppConstants.spacingLg,
+                                ),
+                            child: DefaultTextStyle(
+                              style: Theme.of(context).textTheme.bodyMedium!,
+                              child: SingleChildScrollView(
+                                physics: const BouncingScrollPhysics(),
+                                child: content!,
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (actions != null && actions!.isNotEmpty)
+                        _buildActions(context),
+                      SizedBox(
+                        height:
+                            mediaQuery.padding.bottom + AppConstants.spacingLg,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
