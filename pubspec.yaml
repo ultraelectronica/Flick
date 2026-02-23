@@ -52,6 +52,7 @@ dependencies:
     path: rust_builder
   shared_preferences: ^2.2.2
   skeletonizer: ^2.1.2
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   build_runner: ^2.4.13

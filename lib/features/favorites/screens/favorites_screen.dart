@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -77,7 +76,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -268,8 +267,8 @@ class _HeartIllustrationState extends State<_HeartIllustration>
             height: 100,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.glassBackground,
-              border: Border.all(color: AppColors.glassBorder, width: 2),
+              color: AppColors.surfaceLight,
+              border: Border.all(color: AppColors.surfaceDark, width: 2),
               boxShadow: [
                 BoxShadow(
                   color: Colors.red.withValues(alpha: 0.2),
@@ -319,87 +318,73 @@ class _FavoriteSongTile extends StatelessWidget {
           vertical: AppConstants.spacingXs,
         ),
         child: Material(
-          color: Colors.transparent,
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(
-                  sigmaX: AppConstants.glassBlurSigmaLight,
-                  sigmaY: AppConstants.glassBlurSigmaLight,
-                ),
-                child: Container(
-                  padding: const EdgeInsets.all(AppConstants.spacingMd),
-                  decoration: BoxDecoration(
-                    color: AppColors.glassBackground,
-                    borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                    border: Border.all(color: AppColors.glassBorder),
-                  ),
-                  child: Row(
-                    children: [
-                      // Album art
-                      Container(
-                        width: context.scaleSize(52),
-                        height: context.scaleSize(52),
-                        decoration: BoxDecoration(
-                          color: AppColors.glassBackgroundStrong,
-                          borderRadius: BorderRadius.circular(
-                            AppConstants.radiusMd,
-                          ),
-                        ),
-                        child: song.albumArt != null
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(
-                                  AppConstants.radiusMd,
-                                ),
-                                child: Image.file(
-                                  File(song.albumArt!),
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) =>
-                                      _buildPlaceholder(context),
-                                ),
-                              )
-                            : _buildPlaceholder(context),
+            child: Padding(
+              padding: const EdgeInsets.all(AppConstants.spacingMd),
+              child: Row(
+                children: [
+                  // Album art
+                  Container(
+                    width: context.scaleSize(52),
+                    height: context.scaleSize(52),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLight,
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusMd,
                       ),
-                      const SizedBox(width: AppConstants.spacingMd),
-                      // Song info
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              song.title,
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(
-                                    color: context.adaptiveTextPrimary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                    ),
+                    child: song.albumArt != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              AppConstants.radiusMd,
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              song.artist,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: context.adaptiveTextTertiary,
-                                  ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            child: Image.file(
+                              File(song.albumArt!),
+                              fit: BoxFit.cover,
+                              filterQuality: FilterQuality.low,
+                              errorBuilder: (_, __, ___) =>
+                                  _buildPlaceholder(context),
                             ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        LucideIcons.heart,
-                        color: Colors.red.withValues(alpha: 0.8),
-                        size: context.responsiveIcon(AppConstants.iconSizeMd),
-                      ),
-                    ],
+                          )
+                        : _buildPlaceholder(context),
                   ),
-                ),
+                  const SizedBox(width: AppConstants.spacingMd),
+                  // Song info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          song.title,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: context.adaptiveTextPrimary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          song.artist,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: context.adaptiveTextTertiary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    LucideIcons.heart,
+                    color: Colors.red.withValues(alpha: 0.8),
+                    size: context.responsiveIcon(AppConstants.iconSizeMd),
+                  ),
+                ],
               ),
             ),
           ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
@@ -571,9 +572,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildAboutLink('GitHub', LucideIcons.github),
-              const SizedBox(width: AppConstants.spacingLg),
-              _buildAboutLink('Website', LucideIcons.globe),
+              _buildAboutLink(
+                'GitHub',
+                LucideIcons.github,
+                'https://github.com/ultraelectronica/Flick',
+              ),
             ],
           ),
           const SizedBox(height: AppConstants.spacingMd),
@@ -582,13 +585,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildAboutLink(String label, IconData icon) {
+  Widget _buildAboutLink(String label, IconData icon, String url) {
     return TextButton.icon(
-      onPressed: () {},
+      onPressed: () => _launchUrl(url),
       icon: Icon(icon, size: 18),
       label: Text(label, style: const TextStyle(fontFamily: 'ProductSans')),
       style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
     );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override

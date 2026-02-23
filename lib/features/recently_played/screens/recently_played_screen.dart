@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -122,7 +121,9 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      // Opaque background improves compositor performance (no need to blend
+      // everything with what's behind this route during scroll).
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -413,27 +414,25 @@ class _RecentlyPlayedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+    final cardWidth = context.scaleSize(AppConstants.cardWidthMd);
+    final cardHeight = context.scaleSize(AppConstants.cardHeightMd);
+    final artworkTargetWidth = (cardWidth * devicePixelRatio).round();
+    final artworkTargetHeight = (cardHeight * devicePixelRatio).round();
+
     return Padding(
       padding: const EdgeInsets.only(right: AppConstants.spacingSm),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
+      child: RepaintBoundary(
+        child: Material(
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-          child: ClipRRect(
+          child: InkWell(
+            onTap: onTap,
             borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: AppConstants.glassBlurSigmaLight,
-                sigmaY: AppConstants.glassBlurSigmaLight,
-              ),
-              child: Container(
-                width: context.scaleSize(AppConstants.cardWidthMd),
-                decoration: BoxDecoration(
-                  color: AppColors.glassBackground,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                  border: Border.all(color: AppColors.glassBorder),
-                ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+              child: SizedBox(
+                width: cardWidth,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -441,9 +440,9 @@ class _RecentlyPlayedCard extends StatelessWidget {
                     Expanded(
                       child: Container(
                         width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: AppColors.glassBackgroundStrong,
-                          borderRadius: const BorderRadius.vertical(
+                        decoration: const BoxDecoration(
+                          color: AppColors.surfaceLight,
+                          borderRadius: BorderRadius.vertical(
                             top: Radius.circular(AppConstants.radiusLg),
                           ),
                         ),
@@ -455,6 +454,11 @@ class _RecentlyPlayedCard extends StatelessWidget {
                                 child: Image.file(
                                   File(song.albumArt!),
                                   fit: BoxFit.cover,
+                                  // Downscale decode to what we actually render.
+                                  cacheWidth: artworkTargetWidth,
+                                  cacheHeight: artworkTargetHeight,
+                                  filterQuality: FilterQuality.low,
+                                  gaplessPlayback: true,
                                   errorBuilder: (_, _, _) =>
                                       _buildPlaceholder(context),
                                 ),

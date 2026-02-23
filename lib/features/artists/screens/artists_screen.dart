@@ -82,7 +82,7 @@ class _ArtistsScreenState extends State<ArtistsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -233,82 +233,68 @@ class _ArtistCard extends StatelessWidget {
         vertical: AppConstants.spacingXs,
       ),
       child: Material(
-        color: Colors.transparent,
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: AppConstants.glassBlurSigmaLight,
-                sigmaY: AppConstants.glassBlurSigmaLight,
-              ),
-              child: Container(
-                padding: const EdgeInsets.all(AppConstants.spacingMd),
-                decoration: BoxDecoration(
-                  color: AppColors.glassBackground,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                  border: Border.all(color: AppColors.glassBorder),
+          child: Padding(
+            padding: const EdgeInsets.all(AppConstants.spacingMd),
+            child: Row(
+              children: [
+                // Circular avatar
+                Container(
+                  width: context.scaleSize(56),
+                  height: context.scaleSize(56),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.surfaceLight,
+                    border: Border.all(color: AppColors.surfaceDark, width: 2),
+                  ),
+                  child: artistArt != null
+                      ? ClipOval(
+                          child: Image.file(
+                            File(artistArt!),
+                            fit: BoxFit.cover,
+                            filterQuality: FilterQuality.low,
+                            errorBuilder: (_, __, ___) =>
+                                _buildInitials(context),
+                          ),
+                        )
+                      : _buildInitials(context),
                 ),
-                child: Row(
-                  children: [
-                    // Circular avatar
-                    Container(
-                      width: context.scaleSize(56),
-                      height: context.scaleSize(56),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.glassBackgroundStrong,
-                        border: Border.all(
-                          color: AppColors.glassBorder,
-                          width: 2,
+                const SizedBox(width: AppConstants.spacingMd),
+                // Artist info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        artistName,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: context.adaptiveTextPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${songs.length} songs • $uniqueAlbums albums',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: context.adaptiveTextTertiary,
                         ),
                       ),
-                      child: artistArt != null
-                          ? ClipOval(
-                              child: Image.file(
-                                File(artistArt!),
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) =>
-                                    _buildInitials(context),
-                              ),
-                            )
-                          : _buildInitials(context),
-                    ),
-                    const SizedBox(width: AppConstants.spacingMd),
-                    // Artist info
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            artistName,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  color: context.adaptiveTextPrimary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${songs.length} songs • $uniqueAlbums albums',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: context.adaptiveTextTertiary),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      LucideIcons.chevronRight,
-                      color: context.adaptiveTextTertiary,
-                      size: context.responsiveIcon(AppConstants.iconSizeMd),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
+                Icon(
+                  LucideIcons.chevronRight,
+                  color: context.adaptiveTextTertiary,
+                  size: context.responsiveIcon(AppConstants.iconSizeMd),
+                ),
+              ],
             ),
           ),
         ),
