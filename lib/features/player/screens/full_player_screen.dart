@@ -87,6 +87,24 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
     return '$minutes:$seconds';
   }
 
+  String? _getBitDepth(String? resolution) {
+    if (resolution == null) return null;
+    final match = RegExp(r'(\d+)-bit').firstMatch(resolution);
+    return match != null ? '${match.group(1)}-bit' : null;
+  }
+
+  String? _getSampleRate(String? resolution) {
+    if (resolution == null) return null;
+    final match = RegExp(r'(\d+(?:\.\d+)?)\s*kHz').firstMatch(resolution);
+    return match != null ? '${match.group(1)}kHz' : null;
+  }
+
+  String? _getBitrate(String? resolution) {
+    if (resolution == null) return null;
+    final match = RegExp(r'(\d+)\s*kbps').firstMatch(resolution);
+    return match != null ? '${match.group(1)}kbps' : null;
+  }
+
   void _showSpeedBottomSheet(BuildContext context) {
     const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
@@ -817,10 +835,33 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                   ),
                                 ),
                               ),
-                              if (song.resolution != null) ...[
+                              if (_getBitDepth(song.resolution) != null) ...[
                                 const SizedBox(width: 8),
                                 Text(
-                                  song.resolution!,
+                                  _getBitDepth(song.resolution)!,
+                                  style: TextStyle(
+                                    fontFamily: 'ProductSans',
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: context.adaptiveTextSecondary,
+                                  ),
+                                ),
+                              ],
+                              if (_getSampleRate(song.resolution) != null) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  _getSampleRate(song.resolution)!,
+                                  style: TextStyle(
+                                    fontFamily: 'ProductSans',
+                                    fontSize: 11,
+                                    color: context.adaptiveTextTertiary,
+                                  ),
+                                ),
+                              ],
+                              if (_getBitrate(song.resolution) != null) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  _getBitrate(song.resolution)!,
                                   style: TextStyle(
                                     fontFamily: 'ProductSans',
                                     fontSize: 11,

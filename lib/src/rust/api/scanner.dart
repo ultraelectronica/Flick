@@ -24,6 +24,9 @@ class AudioFileMetadata {
   final BigInt? durationSecs;
   final String format;
   final PlatformInt64 lastModified;
+  final int? bitDepth;
+  final int? sampleRate;
+  final int? bitrate;
 
   const AudioFileMetadata({
     required this.path,
@@ -33,6 +36,9 @@ class AudioFileMetadata {
     this.durationSecs,
     required this.format,
     required this.lastModified,
+    this.bitDepth,
+    this.sampleRate,
+    this.bitrate,
   });
 
   @override
@@ -43,7 +49,10 @@ class AudioFileMetadata {
       album.hashCode ^
       durationSecs.hashCode ^
       format.hashCode ^
-      lastModified.hashCode;
+      lastModified.hashCode ^
+      bitDepth.hashCode ^
+      sampleRate.hashCode ^
+      bitrate.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -56,7 +65,10 @@ class AudioFileMetadata {
           album == other.album &&
           durationSecs == other.durationSecs &&
           format == other.format &&
-          lastModified == other.lastModified;
+          lastModified == other.lastModified &&
+          bitDepth == other.bitDepth &&
+          sampleRate == other.sampleRate &&
+          bitrate == other.bitrate;
 }
 
 class ScanResult {

@@ -190,7 +190,9 @@ class LibraryScannerService {
           ..folderUri = folderUri
           ..fileSize = basic.size
           ..albumArtPath = meta.albumArtPath
-          ..bitrate = meta.bitrate != null ? int.tryParse(meta.bitrate!) : null;
+          ..bitrate = meta.bitrate != null ? int.tryParse(meta.bitrate!) : null
+          ..bitDepth = meta.bitDepth
+          ..sampleRate = meta.sampleRate;
 
         // Restore ID if updating
         if (existingMap.containsKey(basic.uri)) {
