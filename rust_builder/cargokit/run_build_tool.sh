@@ -3,6 +3,9 @@
 set -e
 
 BASEDIR=$(dirname "$0")
+# Resolve to absolute path so the build_tool path dependency still resolves after we cd to temp dir
+CARGOKIT_DIR=$(cd "$BASEDIR" && pwd)
+BUILD_TOOL_PKG_DIR="$CARGOKIT_DIR/build_tool"
 
 mkdir -p "$CARGOKIT_TOOL_TEMP_DIR"
 
@@ -11,8 +14,6 @@ cd "$CARGOKIT_TOOL_TEMP_DIR"
 # Write a very simple bin package in temp folder that depends on build_tool package
 # from Cargokit. This is done to ensure that we don't pollute Cargokit folder
 # with .dart_tool contents.
-
-BUILD_TOOL_PKG_DIR="$BASEDIR/build_tool"
 
 if [[ -z $FLUTTER_ROOT ]]; then # not defined
   DART=dart

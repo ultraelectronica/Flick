@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -12,6 +11,7 @@ import 'package:flick/models/song.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/services/music_folder_service.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/widgets/common/display_mode_wrapper.dart';
 
 /// Folders screen with directory browser.
 class FoldersScreen extends StatefulWidget {
@@ -80,22 +80,24 @@ class _FoldersScreenState extends State<FoldersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(context),
-            Expanded(
-              child: _isLoading
-                  ? _buildLoadingState()
-                  : _folders.isEmpty
-                  ? _buildEmptyState()
-                  : _buildFoldersList(),
-            ),
-          ],
+    return DisplayModeWrapper(
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(context),
+              Expanded(
+                child: _isLoading
+                    ? _buildLoadingState()
+                    : _folders.isEmpty
+                    ? _buildEmptyState()
+                    : _buildFoldersList(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -212,76 +214,62 @@ class _FolderCard extends StatelessWidget {
         vertical: AppConstants.spacingXs,
       ),
       child: Material(
-        color: Colors.transparent,
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: AppConstants.glassBlurSigmaLight,
-                sigmaY: AppConstants.glassBlurSigmaLight,
-              ),
-              child: Container(
-                padding: const EdgeInsets.all(AppConstants.spacingMd),
-                decoration: BoxDecoration(
-                  color: AppColors.glassBackground,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                  border: Border.all(color: AppColors.glassBorder),
+          child: Padding(
+            padding: const EdgeInsets.all(AppConstants.spacingMd),
+            child: Row(
+              children: [
+                // Folder icon
+                Container(
+                  width: context.scaleSize(56),
+                  height: context.scaleSize(56),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceLight,
+                    borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                    border: Border.all(color: AppColors.surfaceDark),
+                  ),
+                  child: Icon(
+                    LucideIcons.folder,
+                    color: context.adaptiveTextSecondary,
+                    size: context.responsiveIcon(AppConstants.iconSizeLg),
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    // Folder icon
-                    Container(
-                      width: context.scaleSize(56),
-                      height: context.scaleSize(56),
-                      decoration: BoxDecoration(
-                        color: AppColors.glassBackgroundStrong,
-                        borderRadius: BorderRadius.circular(
-                          AppConstants.radiusMd,
+                const SizedBox(width: AppConstants.spacingMd),
+                // Folder info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        folder.displayName,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: context.adaptiveTextPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Added ${_formatDate(folder.dateAdded)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: context.adaptiveTextTertiary,
                         ),
-                        border: Border.all(color: AppColors.glassBorder),
                       ),
-                      child: Icon(
-                        LucideIcons.folder,
-                        color: context.adaptiveTextSecondary,
-                        size: context.responsiveIcon(AppConstants.iconSizeLg),
-                      ),
-                    ),
-                    const SizedBox(width: AppConstants.spacingMd),
-                    // Folder info
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            folder.displayName,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  color: context.adaptiveTextPrimary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Added ${_formatDate(folder.dateAdded)}',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: context.adaptiveTextTertiary),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      LucideIcons.chevronRight,
-                      color: context.adaptiveTextTertiary,
-                      size: context.responsiveIcon(AppConstants.iconSizeMd),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
+                Icon(
+                  LucideIcons.chevronRight,
+                  color: context.adaptiveTextTertiary,
+                  size: context.responsiveIcon(AppConstants.iconSizeMd),
+                ),
+              ],
             ),
           ),
         ),

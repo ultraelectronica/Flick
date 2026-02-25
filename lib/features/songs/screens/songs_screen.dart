@@ -8,6 +8,8 @@ import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/features/songs/widgets/orbit_scroll.dart';
 import 'package:flick/providers/providers.dart';
+import 'package:flick/widgets/common/glass_search_bar.dart';
+import 'package:flick/widgets/common/display_mode_wrapper.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Main songs screen with orbital scrolling.
@@ -23,23 +25,16 @@ class SongsScreen extends ConsumerStatefulWidget {
 
 class _SongsScreenState extends ConsumerState<SongsScreen> {
   int _selectedIndex = 0;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  List<Song> _cachedSongs = [];
 
   @override
   void initState() {
     super.initState();
-    // Listen to player changes to sync selection (handled in build via ref.listen)
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Watch the songs provider for reactive updates
-    final songsAsync = ref.watch(songsProvider);
-
-    // Sync selection with currently playing song
     ref.listen<Song?>(currentSongProvider, (previous, next) {
-      if (next != null) {
-        final songs = ref.read(songsProvider).value?.sortedSongs ?? [];
-        final index = songs.indexWhere((s) => s.id == next.id);
+      if (next != null && mounted) {
+        final index = _cachedSongs.indexWhere((s) => s.id == next.id);
         if (index != -1 && index != _selectedIndex) {
           setState(() {
             _selectedIndex = index;
@@ -47,85 +42,159 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
         }
       }
     });
+  }
 
-    return Stack(
-      children: [
-        // Background ambient effects
-        _buildAmbientBackground(),
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
-        // Main content
-        SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              // Header with sort option
-              _buildHeader(songsAsync),
+  @override
+  Widget build(BuildContext context) {
+    final songsAsync = ref.watch(songsProvider);
 
-              // Content based on async state
-              Expanded(
-                child: songsAsync.when(
-                  loading: () => _buildLoadingState(),
-                  error: (error, stack) => _buildErrorState(error),
-                  data: (songsState) {
-                    final songs = songsState.sortedSongs;
+    return DisplayModeWrapper(
+      child: Stack(
+        children: [
+          // Background ambient effects
+          _buildAmbientBackground(),
 
-                    if (songs.isEmpty) {
-                      return _buildEmptyState();
-                    }
+          // Main content
+          SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                // Header with sort option
+                _buildHeader(songsAsync),
 
-                    // Ensure selected index is valid
-                    if (_selectedIndex >= songs.length) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) {
-                          setState(() => _selectedIndex = 0);
-                        }
-                      });
-                    }
-
-                    return OrbitScroll(
-                      songs: songs,
-                      selectedIndex: _selectedIndex
-                          .clamp(0, songs.length - 1)
-                          .toInt(),
-                      onSelectedIndexChanged: (index) {
+                // Search Bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppConstants.spacingLg,
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.surfaceLight.withValues(alpha: 0.75),
+                          AppColors.surface.withValues(alpha: 0.85),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusXl,
+                      ),
+                      border: Border.all(
+                        color: AppColors.glassBorder,
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          blurRadius: 16,
+                          spreadRadius: 1,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: GlassSearchBar(
+                      controller: _searchController,
+                      hintText: 'Search songs, artists...',
+                      showBackground: false,
+                      onChanged: (value) {
                         setState(() {
-                          _selectedIndex = index;
+                          _searchQuery = value.toLowerCase();
+                          _selectedIndex = 0;
                         });
                       },
-                      onSongSelected: (index) async {
-                        // Play the song with the full playlist context
-                        await ref
-                            .read(playerProvider.notifier)
-                            .play(songs[index], playlist: songs);
-
-                        if (!context.mounted) return;
-
-                        // Navigate to full player screen using helper to prevent duplicates
-                        final result =
-                            await NavigationHelper.navigateToFullPlayer(
-                              context,
-                              heroTag: 'song_art_${songs[index].id}',
-                            );
-
-                        // If a navigation index was returned and it's not Songs (1),
-                        // notify the parent to switch tabs
-                        if (result != null &&
-                            result != 1 &&
-                            widget.onNavigationRequested != null) {
-                          widget.onNavigationRequested!(result);
-                        }
-                      },
-                    );
-                  },
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(height: AppConstants.spacingMd),
 
-              // Space for nav bar & mini player
-              const SizedBox(height: AppConstants.navBarHeight + 90),
-            ],
+                // Content based on async state
+                Expanded(
+                  child: songsAsync.when(
+                    loading: () => _buildLoadingState(),
+                    error: (error, stack) => _buildErrorState(error),
+                    data: (songsState) {
+                      var songs = songsState.sortedSongs;
+                      _cachedSongs = songs;
+
+                      if (_searchQuery.isNotEmpty) {
+                        songs = songs.where((song) {
+                          return song.title.toLowerCase().contains(
+                                _searchQuery,
+                              ) ||
+                              song.artist.toLowerCase().contains(_searchQuery);
+                        }).toList();
+                        _cachedSongs = songs;
+                      }
+
+                      if (songs.isEmpty && _searchQuery.isEmpty) {
+                        return _buildEmptyState();
+                      }
+
+                      if (songs.isEmpty && _searchQuery.isNotEmpty) {
+                        return _buildNoSearchResultsState();
+                      }
+
+                      // Ensure selected index is valid
+                      if (_selectedIndex >= songs.length) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            setState(() => _selectedIndex = 0);
+                          }
+                        });
+                      }
+
+                      return OrbitScroll(
+                        songs: songs,
+                        selectedIndex: _selectedIndex
+                            .clamp(0, songs.length - 1)
+                            .toInt(),
+                        onSelectedIndexChanged: (index) {
+                          setState(() {
+                            _selectedIndex = index;
+                          });
+                        },
+                        onSongSelected: (index) async {
+                          // Play the song with the full playlist context
+                          await ref
+                              .read(playerProvider.notifier)
+                              .play(songs[index], playlist: songs);
+
+                          if (!context.mounted) return;
+
+                          // Navigate to full player screen using helper to prevent duplicates
+                          final result =
+                              await NavigationHelper.navigateToFullPlayer(
+                                context,
+                                heroTag: 'song_art_${songs[index].id}',
+                              );
+
+                          // If a navigation index was returned and it's not Songs (1),
+                          // notify the parent to switch tabs
+                          if (result != null &&
+                              result != 1 &&
+                              widget.onNavigationRequested != null) {
+                            widget.onNavigationRequested!(result);
+                          }
+                        },
+                      );
+                    },
+                  ),
+                ),
+
+                // Space for nav bar & mini player
+                const SizedBox(height: AppConstants.navBarHeight + 90),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -136,68 +205,30 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   }
 
   Widget _buildErrorState(Object error) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            LucideIcons.circleX,
-            size: context.responsiveIcon(AppConstants.containerSizeLg),
-            color: context.adaptiveTextTertiary.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: AppConstants.spacingLg),
-          Text(
-            'Error loading songs',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: context.adaptiveTextSecondary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: AppConstants.spacingSm),
-          Text(
-            error.toString(),
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: context.adaptiveTextTertiary,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppConstants.spacingLg),
-          TextButton(
-            onPressed: () => ref.invalidate(songsProvider),
-            child: const Text('Retry'),
-          ),
-        ],
+    return _ContentStateWidget(
+      icon: LucideIcons.circleX,
+      title: 'Error loading songs',
+      subtitle: error.toString(),
+      action: TextButton(
+        onPressed: () => ref.invalidate(songsProvider),
+        child: const Text('Retry'),
       ),
     );
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            LucideIcons.music4,
-            size: context.responsiveIcon(AppConstants.containerSizeLg),
-            color: context.adaptiveTextTertiary.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: AppConstants.spacingLg),
-          Text(
-            'No Music Yet',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: context.adaptiveTextSecondary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: AppConstants.spacingSm),
-          Text(
-            'Add a music folder in Settings',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: context.adaptiveTextTertiary,
-            ),
-          ),
-        ],
-      ),
+    return const _ContentStateWidget(
+      icon: LucideIcons.music4,
+      title: 'No Music Yet',
+      subtitle: 'Add a music folder in Settings',
+    );
+  }
+
+  Widget _buildNoSearchResultsState() {
+    return const _ContentStateWidget(
+      icon: LucideIcons.searchX,
+      title: 'No matches found',
+      subtitle: 'Try adjusting your search query',
     );
   }
 
@@ -280,9 +311,24 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
           // Sort Button
           Container(
             decoration: BoxDecoration(
-              color: AppColors.glassBackground,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.surfaceLight.withValues(alpha: 0.75),
+                  AppColors.surface.withValues(alpha: 0.85),
+                ],
+              ),
               borderRadius: BorderRadius.circular(AppConstants.radiusMd),
               border: Border.all(color: AppColors.glassBorder, width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 12,
+                  spreadRadius: 1,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: PopupMenuButton<SongSortOption>(
               icon: Icon(
@@ -358,6 +404,56 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                   ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContentStateWidget extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? action;
+
+  const _ContentStateWidget({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            icon,
+            size: context.responsiveIcon(AppConstants.containerSizeLg),
+            color: context.adaptiveTextTertiary.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: AppConstants.spacingLg),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: context.adaptiveTextSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppConstants.spacingSm),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: context.adaptiveTextTertiary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (action != null) ...[
+            const SizedBox(height: AppConstants.spacingLg),
+            action!,
+          ],
         ],
       ),
     );

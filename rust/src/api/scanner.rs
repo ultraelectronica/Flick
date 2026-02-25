@@ -1,4 +1,3 @@
-
 use lofty::prelude::*;
 use lofty::probe::Probe;
 use rayon::prelude::*;
@@ -14,6 +13,9 @@ pub struct AudioFileMetadata {
     pub duration_secs: Option<u64>,
     pub format: String,
     pub last_modified: i64,
+    pub bit_depth: Option<u8>,
+    pub sample_rate: Option<u32>,
+    pub bitrate: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +89,10 @@ pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> Sc
             let album = tag.and_then(|t: &lofty::tag::Tag| t.album().map(|s| s.to_string()));
             let duration_secs = Some(properties.duration().as_secs());
 
+            let bit_depth = properties.bit_depth();
+            let sample_rate = properties.sample_rate();
+            let bitrate = properties.audio_bitrate();
+
             let modified = entry
                 .metadata()
                 .ok()
@@ -103,6 +109,9 @@ pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> Sc
                 duration_secs,
                 format: ext,
                 last_modified: modified,
+                bit_depth,
+                sample_rate,
+                bitrate,
             })
         })
         .collect();

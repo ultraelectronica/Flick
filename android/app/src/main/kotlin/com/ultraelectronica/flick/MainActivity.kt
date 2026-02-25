@@ -454,6 +454,18 @@ class MainActivity: FlutterActivity() {
                 metadata["bitrate"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
                 metadata["mimeType"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
                 
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val sampleRateStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)
+                    if (sampleRateStr != null) {
+                        metadata["sampleRate"] = sampleRateStr.toIntOrNull()
+                    }
+                    
+                    val bitDepthStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITS_PER_SAMPLE)
+                    if (bitDepthStr != null) {
+                        metadata["bitDepth"] = bitDepthStr.toIntOrNull()
+                    }
+                }
+                
                 val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 if (durationStr != null) {
                     metadata["duration"] = durationStr.toLongOrNull()

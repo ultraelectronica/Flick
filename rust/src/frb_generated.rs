@@ -1005,6 +1005,9 @@ impl SseDecode for crate::api::scanner::AudioFileMetadata {
         let mut var_durationSecs = <Option<u64>>::sse_decode(deserializer);
         let mut var_format = <String>::sse_decode(deserializer);
         let mut var_lastModified = <i64>::sse_decode(deserializer);
+        let mut var_bitDepth = <Option<u8>>::sse_decode(deserializer);
+        let mut var_sampleRate = <Option<u32>>::sse_decode(deserializer);
+        let mut var_bitrate = <Option<u32>>::sse_decode(deserializer);
         return crate::api::scanner::AudioFileMetadata {
             path: var_path,
             title: var_title,
@@ -1013,6 +1016,9 @@ impl SseDecode for crate::api::scanner::AudioFileMetadata {
             duration_secs: var_durationSecs,
             format: var_format,
             last_modified: var_lastModified,
+            bit_depth: var_bitDepth,
+            sample_rate: var_sampleRate,
+            bitrate: var_bitrate,
         };
     }
 }
@@ -1209,6 +1215,17 @@ impl SseDecode for Option<f64> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<f64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<u8> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u8>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -1464,6 +1481,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::scanner::AudioFileMetadata {
             self.duration_secs.into_into_dart().into_dart(),
             self.format.into_into_dart().into_dart(),
             self.last_modified.into_into_dart().into_dart(),
+            self.bit_depth.into_into_dart().into_dart(),
+            self.sample_rate.into_into_dart().into_dart(),
+            self.bitrate.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1636,6 +1656,9 @@ impl SseEncode for crate::api::scanner::AudioFileMetadata {
         <Option<u64>>::sse_encode(self.duration_secs, serializer);
         <String>::sse_encode(self.format, serializer);
         <i64>::sse_encode(self.last_modified, serializer);
+        <Option<u8>>::sse_encode(self.bit_depth, serializer);
+        <Option<u32>>::sse_encode(self.sample_rate, serializer);
+        <Option<u32>>::sse_encode(self.bitrate, serializer);
     }
 }
 
@@ -1807,6 +1830,16 @@ impl SseEncode for Option<f64> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <f64>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<u8> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u8>::sse_encode(value, serializer);
         }
     }
 }

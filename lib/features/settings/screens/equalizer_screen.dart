@@ -26,7 +26,7 @@ class EqualizerScreen extends ConsumerWidget {
     final activePresetName = ref.watch(eqActivePresetNameProvider);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: Column(

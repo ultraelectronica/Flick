@@ -187,16 +187,16 @@ class SongRepository {
   /// Build a resolution string from entity properties.
   String _buildResolutionString(SongEntity entity) {
     final parts = <String>[];
-    if (entity.bitrate != null) {
-      // Convert from bits per second to kilobits per second
-      final bitrateKbps = (entity.bitrate! / 1000).round();
-      parts.add('${bitrateKbps}kbps');
+    if (entity.bitDepth != null) {
+      parts.add('${entity.bitDepth}-bit');
     }
     if (entity.sampleRate != null) {
-      parts.add('${entity.sampleRate}Hz');
+      final sampleRateKhz = (entity.sampleRate! / 1000).round();
+      parts.add('${sampleRateKhz}kHz');
     }
-    if (entity.bitDepth != null) {
-      parts.add('${entity.bitDepth}bit');
+    if (entity.bitrate != null) {
+      final bitrateKbps = (entity.bitrate! / 1000).round();
+      parts.add('${bitrateKbps}kbps');
     }
     return parts.isEmpty ? 'Unknown' : parts.join(' / ');
   }

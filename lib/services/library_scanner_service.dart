@@ -112,14 +112,18 @@ class LibraryScannerService {
 
         final existingTime = existing.lastModified?.millisecondsSinceEpoch ?? 0;
 
-        // Check for modification OR missing new metadata (Album Art / Bitrate)
+        // Check for modification OR missing new metadata (Album Art / Bitrate / Sample Rate / Bit Depth)
         // This forces a rescan for files that haven't changed but need new fields.
         // Also check if album art file actually exists on disk (cache may have been cleared)
         final albumArtMissing =
             existing.albumArtPath == null ||
             (existing.albumArtPath != null &&
                 !File(existing.albumArtPath!).existsSync());
-        final missingMetadata = albumArtMissing && existing.bitrate == null;
+        final missingMetadata =
+            albumArtMissing ||
+            existing.bitrate == null ||
+            existing.sampleRate == null ||
+            existing.bitDepth == null;
 
         if (file.lastModified != existingTime || missingMetadata) {
           urisToProcess.add(file.uri);
@@ -190,7 +194,9 @@ class LibraryScannerService {
           ..folderUri = folderUri
           ..fileSize = basic.size
           ..albumArtPath = meta.albumArtPath
-          ..bitrate = meta.bitrate != null ? int.tryParse(meta.bitrate!) : null;
+          ..bitrate = meta.bitrate != null ? int.tryParse(meta.bitrate!) : null
+          ..bitDepth = meta.bitDepth
+          ..sampleRate = meta.sampleRate;
 
         // Restore ID if updating
         if (existingMap.containsKey(basic.uri)) {
@@ -254,7 +260,11 @@ class LibraryScannerService {
       existingMap[song.filePath] = song;
       // Only consider file "known" (up to date) if it has new metadata fields.
       // Otherwise, exclude it so Rust scanner treats it as new and extracts metadata.
-      final hasMetadata = song.albumArtPath != null || song.bitrate != null;
+      final hasMetadata =
+          song.albumArtPath != null &&
+          song.bitrate != null &&
+          song.sampleRate != null &&
+          song.bitDepth != null;
 
       if (song.lastModified != null && hasMetadata) {
         // Rust expects seconds for comparison usually, or matches implementation
@@ -305,7 +315,10 @@ class LibraryScannerService {
         ..lastModified = DateTime.fromMillisecondsSinceEpoch(
           metadata.lastModified * 1000,
         )
-        ..folderUri = folderUri;
+        ..folderUri = folderUri
+        ..bitrate = metadata.bitrate
+        ..bitDepth = metadata.bitDepth
+        ..sampleRate = metadata.sampleRate;
 
       if (existing != null) {
         song.id = existing.id;

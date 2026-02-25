@@ -24,35 +24,24 @@ class MenuScreen extends StatelessWidget {
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => screen,
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          // Swift premium swipe animation (slide from right)
-          // Uses Curves.fastOutSlowIn for a natural "physical" feel
-          final tween = Tween(
-            begin: const Offset(1.0, 0.0),
-            end: Offset.zero,
-          ).chain(CurveTween(curve: Curves.fastOutSlowIn));
+          final curvedAnimation = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
 
-          return SlideTransition(
-            position: animation.drive(tween),
-            child: DecoratedBox(
-              // Add a shadow to the incoming screen for depth separation
-              decoration: BoxDecoration(
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.25),
-                    blurRadius: 20,
-                    spreadRadius: -2,
-                    offset: const Offset(-8, 0),
-                  ),
-                ],
-              ),
-              child: child,
-            ),
+          final slideAnimation = Tween<Offset>(
+            begin: const Offset(0.06, 0.0),
+            end: Offset.zero,
+          ).animate(curvedAnimation);
+
+          return FadeTransition(
+            opacity: curvedAnimation,
+            child: SlideTransition(position: slideAnimation, child: child),
           );
         },
-        transitionDuration: const Duration(milliseconds: 350),
-        reverseTransitionDuration: const Duration(milliseconds: 350),
-        // Opaque true optimizes performance by allowing the framework to
-        // stop painting the route below once the transition completes
+        transitionDuration: AppConstants.animationNormal,
+        reverseTransitionDuration: AppConstants.animationFast,
         opaque: true,
       ),
     );

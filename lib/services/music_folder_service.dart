@@ -16,6 +16,8 @@ class AudioFileInfo {
   final int? duration;
   final String? albumArtPath;
   final String? bitrate;
+  final int? bitDepth;
+  final int? sampleRate;
 
   AudioFileInfo({
     required this.uri,
@@ -30,6 +32,8 @@ class AudioFileInfo {
     this.duration,
     this.albumArtPath,
     this.bitrate,
+    this.bitDepth,
+    this.sampleRate,
   });
 
   factory AudioFileInfo.fromMap(Map<String, dynamic> map) {
@@ -50,6 +54,8 @@ class AudioFileInfo {
           : null,
       albumArtPath: map['albumArtPath'] as String?,
       bitrate: map['bitrate'] as String?,
+      bitDepth: (map['bitDepth'] as num?)?.toInt(),
+      sampleRate: (map['sampleRate'] as num?)?.toInt(),
     );
   }
 }
