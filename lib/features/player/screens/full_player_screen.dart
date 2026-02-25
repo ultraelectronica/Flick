@@ -684,9 +684,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                             child: Builder(
                               builder: (context) {
                                 final mediaSize = MediaQuery.sizeOf(context);
-                                final isCompactHeight =
-                                    mediaSize.height <= 1080 &&
-                                    mediaSize.width <= 720;
+                                final isCompactHeight = mediaSize.height <= 600;
 
                                 if (isCompactHeight) {
                                   return CompactPlayerInfoLayout(
