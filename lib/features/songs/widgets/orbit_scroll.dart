@@ -40,14 +40,14 @@ class _OrbitScrollState extends State<OrbitScroll>
 
   // The physics state
   double _scrollOffset = 0.0;
-  
+
   // Track if we're actively scrolling to reduce visible range when idle
   bool _isScrolling = false;
   DateTime _lastScrollTime = DateTime.now();
-  
+
   // Cache for transform calculations
-  final Map<String, _Position> _positionCache = {};
-  final Map<String, _ItemTransform> _transformCache = {};
+  final Map<int, _Position> _positionCache = {};
+  final Map<int, _ItemTransform> _transformCache = {};
 
   @override
   void initState() {
@@ -78,30 +78,18 @@ class _OrbitScrollState extends State<OrbitScroll>
   }
 
   void _onPhysicsTick() {
-    // The controller value IS the scroll offset during an animation
     if (_controller.isAnimating) {
-      setState(() {
-        _scrollOffset = _controller.value;
-        _isScrolling = true;
-        _lastScrollTime = DateTime.now();
-        // Clear cache when scrolling as positions change
-        _positionCache.clear();
-        _transformCache.clear();
-      });
-
-      // Report index changes while scrolling
-      final currentIndex = _scrollOffset.round();
-      if (currentIndex >= 0 &&
-          currentIndex < widget.songs.length &&
-          widget.onSelectedIndexChanged != null) {
-        // Debounce or check duplicates is handled by listener usually,
-        // but we'll leave it to the parent to handle strictness.
-        // For purely visual updates, this is fine.
+      final newOffset = _controller.value;
+      if ((newOffset - _scrollOffset).abs() > 0.001) {
+        setState(() {
+          _scrollOffset = newOffset;
+          _isScrolling = true;
+          _lastScrollTime = DateTime.now();
+        });
       }
-    } else {
-      // Check if we've stopped scrolling (idle for 100ms)
+    } else if (_isScrolling) {
       final now = DateTime.now();
-      if (_isScrolling && now.difference(_lastScrollTime).inMilliseconds > 100) {
+      if (now.difference(_lastScrollTime).inMilliseconds > 100) {
         setState(() {
           _isScrolling = false;
         });
@@ -116,57 +104,42 @@ class _OrbitScrollState extends State<OrbitScroll>
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
-    // 1. Calculate delta in pixels
     final delta = details.primaryDelta ?? 0.0;
+    if (delta == 0) return;
 
-    // Dispatch scroll notification
-    // We send a ScrollUpdateNotification kind of event, but simple UserScrollNotification is easier for direction
-    if (delta != 0) {
-      final direction = delta > 0
-          ? ScrollDirection.reverse
-          : ScrollDirection.forward;
-      // Reverse = Down (dragging down, list moves down, showing top items -> scrolling UP effectively?)
-      // Wait, standard flutter:
-      // Dragging Up (negative delta) = Scrolling Down (index increases)
-      // Dragging Down (positive delta) = Scrolling Up (index decreases)
+    final direction = delta > 0
+        ? ScrollDirection.reverse
+        : ScrollDirection.forward;
 
-      UserScrollNotification(
-        metrics: FixedScrollMetrics(
-          minScrollExtent: 0,
-          maxScrollExtent: widget.songs.length.toDouble(),
-          pixels: _scrollOffset,
-          viewportDimension: 100,
-          axisDirection: AxisDirection.down,
-          devicePixelRatio: 1.0,
-        ),
-        context: context,
-        direction: direction,
-      ).dispatch(context);
-    }
+    UserScrollNotification(
+      metrics: FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: widget.songs.length.toDouble(),
+        pixels: _scrollOffset,
+        viewportDimension: 100,
+        axisDirection: AxisDirection.down,
+        devicePixelRatio: 1.0,
+      ),
+      context: context,
+      direction: direction,
+    ).dispatch(context);
 
-    // 2. Convert to 'item' units.
-    // Making this dynamic gives a better feel.
-    // 1 item = ~80-100 pixels feels right for a wheel.
     const itemHeight = 90.0;
-    final itemDelta = -(delta / itemHeight);
+    var itemDelta = -(delta / itemHeight);
 
-    // 3. Apply resistance if out of bounds (Overscroll)
     double newOffset = _scrollOffset + itemDelta;
     if (newOffset < -0.5 || newOffset > widget.songs.length - 0.5) {
-      // Apply square root damping for boundaries
-      // Standard flutter overscroll logic usually applies friction
-      itemDelta / 2; // Simple resistance
-      newOffset = _scrollOffset + (itemDelta * 0.4); // Stiff resistance
+      itemDelta = itemDelta * 0.4;
+      newOffset = _scrollOffset + itemDelta;
     }
 
-    setState(() {
-      _scrollOffset = newOffset;
-      _isScrolling = true;
-      _lastScrollTime = DateTime.now();
-      // Clear cache when scrolling as positions change
-      _positionCache.clear();
-      _transformCache.clear();
-    });
+    if ((newOffset - _scrollOffset).abs() > 0.001) {
+      setState(() {
+        _scrollOffset = newOffset;
+        _isScrolling = true;
+        _lastScrollTime = DateTime.now();
+      });
+    }
   }
 
   void _onVerticalDragEnd(DragEndDetails details) {
@@ -318,52 +291,57 @@ class _OrbitScrollState extends State<OrbitScroll>
 
   List<Widget> _buildSongItems(double centerX, double centerY, double radius) {
     final List<Widget> items = [];
-    
-    // Dynamic visible range: larger when scrolling, smaller when idle
-    final baseRange = AppConstants.orbitVisibleItems ~/ 2;
-    final visibleRange = _isScrolling ? baseRange + 3 : baseRange + 1;
 
-    final orderedIndices = <int>[];
-    for (var i = -visibleRange; i <= visibleRange; i++) {
-      orderedIndices.add(i);
-    }
-    // Sort by distance (render far items first)
-    orderedIndices.sort((a, b) => b.abs().compareTo(a.abs()));
+    final visibleRange = AppConstants.orbitVisibleItems ~/ 2;
+
+    final orderedIndices = List.generate(
+      visibleRange * 2 + 1,
+      (i) => i - visibleRange,
+    )..sort((a, b) => b.abs().compareTo(a.abs()));
+
+    final centerIndex = _scrollOffset.round();
+    final useCache = !_isScrolling;
 
     for (final relativeIndex in orderedIndices) {
-      // Determine which song index this slot corresponds to
-      final centerIndex = _scrollOffset.round();
       final actualIndex = centerIndex + relativeIndex;
 
       if (actualIndex < 0 || actualIndex >= widget.songs.length) continue;
 
-      // Calculate the visual offset angle based on exact scroll position
       final diff = actualIndex.toDouble() - _scrollOffset;
 
-      // Use cached transform if available
-      final cacheKey = '${diff.toStringAsFixed(2)}_${centerX.toStringAsFixed(1)}_${centerY.toStringAsFixed(1)}_${radius.toStringAsFixed(1)}';
-      _ItemTransform? transform = _transformCache[cacheKey];
-      
+      _ItemTransform? transform;
+      if (useCache) {
+        final cacheKey = (diff * 100).toInt();
+        transform = _transformCache[cacheKey];
+      }
+
       if (transform == null) {
         final position = _calculateItemPosition(diff, centerX, centerY, radius);
         final distanceFromCenter = diff.abs();
 
-        // Dynamic scaling based on distance
         double scale;
-        if (distanceFromCenter < 0.5) {
-          scale = AppConstants.orbitSelectedScale;
-        } else if (distanceFromCenter < 1.5) {
-          scale = AppConstants.orbitAdjacentScale;
+        if (distanceFromCenter < 1.0) {
+          scale =
+              AppConstants.orbitSelectedScale -
+              (AppConstants.orbitSelectedScale -
+                      AppConstants.orbitAdjacentScale) *
+                  distanceFromCenter;
+        } else if (distanceFromCenter < 2.0) {
+          scale =
+              AppConstants.orbitAdjacentScale -
+              (AppConstants.orbitAdjacentScale -
+                      AppConstants.orbitDistantScale) *
+                  (distanceFromCenter - 1.0);
         } else {
-          scale = AppConstants.orbitDistantScale - (distanceFromCenter - 1.5) * 0.12;
+          scale =
+              AppConstants.orbitDistantScale -
+              (distanceFromCenter - 2.0) * 0.12;
         }
         scale = scale.clamp(0.0, 1.25);
 
         if (scale < 0.1) continue;
 
-        double opacity = 1.0 - (distanceFromCenter * 0.25);
-        opacity = opacity.clamp(0.0, 1.0);
-
+        final opacity = (1.0 - (distanceFromCenter * 0.25)).clamp(0.0, 1.0);
         final isSelected = distanceFromCenter < 0.4;
 
         transform = _ItemTransform(
@@ -372,9 +350,9 @@ class _OrbitScrollState extends State<OrbitScroll>
           opacity: opacity,
           isSelected: isSelected,
         );
-        
-        // Cache the transform (only when not scrolling to avoid cache churn)
-        if (!_isScrolling) {
+
+        if (useCache) {
+          final cacheKey = (diff * 100).toInt();
           _transformCache[cacheKey] = transform;
         }
       }
@@ -411,26 +389,30 @@ class _OrbitScrollState extends State<OrbitScroll>
     double centerY,
     double radius,
   ) {
-    // Cache key for position calculation
-    final cacheKey = '${relativeIndex.toStringAsFixed(3)}_${centerX.toStringAsFixed(1)}_${centerY.toStringAsFixed(1)}_${radius.toStringAsFixed(1)}';
-    
-    // Return cached position if available
-    if (_positionCache.containsKey(cacheKey)) {
-      return _positionCache[cacheKey]!;
+    final cacheKey = (relativeIndex * 100).toInt();
+
+    final existing = _positionCache[cacheKey];
+    if (existing != null) {
+      return existing;
     }
 
-    // Calculate position
-    final angle = relativeIndex * AppConstants.orbitItemSpacing;
+    // Split effect: push adjacent items away from the center highlighted item
+    double adjustedIndex = relativeIndex;
+    final double splitAmount =
+        0.55; // Determines how much the items split apart
+    adjustedIndex +=
+        relativeIndex.sign * splitAmount * math.min(relativeIndex.abs(), 1.0);
+
+    final angle = adjustedIndex * AppConstants.orbitItemSpacing;
     final x = centerX + radius * math.cos(angle);
     final y = centerY + radius * math.sin(angle);
 
     final position = _Position(x, y);
-    
-    // Cache the position (only when not scrolling to avoid cache churn)
+
     if (!_isScrolling) {
       _positionCache[cacheKey] = position;
     }
-    
+
     return position;
   }
 }

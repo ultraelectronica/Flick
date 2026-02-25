@@ -26,11 +26,21 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  List<Song> _cachedSongs = [];
 
   @override
   void initState() {
     super.initState();
-    // Listen to player changes to sync selection (handled in build via ref.listen)
+    ref.listen<Song?>(currentSongProvider, (previous, next) {
+      if (next != null && mounted) {
+        final index = _cachedSongs.indexWhere((s) => s.id == next.id);
+        if (index != -1 && index != _selectedIndex) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        }
+      }
+    });
   }
 
   @override
@@ -41,21 +51,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Watch the songs provider for reactive updates
     final songsAsync = ref.watch(songsProvider);
-
-    // Sync selection with currently playing song
-    ref.listen<Song?>(currentSongProvider, (previous, next) {
-      if (next != null) {
-        final songs = ref.read(songsProvider).value?.sortedSongs ?? [];
-        final index = songs.indexWhere((s) => s.id == next.id);
-        if (index != -1 && index != _selectedIndex) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        }
-      }
-    });
 
     return Stack(
       children: [
@@ -75,15 +71,38 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppConstants.spacingLg,
                 ),
-                child: GlassSearchBar(
-                  controller: _searchController,
-                  hintText: 'Search songs, artists...',
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value.toLowerCase();
-                      _selectedIndex = 0; // Reset index on search change
-                    });
-                  },
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.surfaceLight.withValues(alpha: 0.75),
+                        AppColors.surface.withValues(alpha: 0.85),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(AppConstants.radiusXl),
+                    border: Border.all(color: AppColors.glassBorder, width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 16,
+                        spreadRadius: 1,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: GlassSearchBar(
+                    controller: _searchController,
+                    hintText: 'Search songs, artists...',
+                    showBackground: false,
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value.toLowerCase();
+                        _selectedIndex = 0;
+                      });
+                    },
+                  ),
                 ),
               ),
               const SizedBox(height: AppConstants.spacingMd),
@@ -95,6 +114,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                   error: (error, stack) => _buildErrorState(error),
                   data: (songsState) {
                     var songs = songsState.sortedSongs;
+                    _cachedSongs = songs;
 
                     if (_searchQuery.isNotEmpty) {
                       songs = songs.where((song) {
@@ -103,6 +123,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                             ) ||
                             song.artist.toLowerCase().contains(_searchQuery);
                       }).toList();
+                      _cachedSongs = songs;
                     }
 
                     if (songs.isEmpty && _searchQuery.isEmpty) {
@@ -176,98 +197,30 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   }
 
   Widget _buildErrorState(Object error) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            LucideIcons.circleX,
-            size: context.responsiveIcon(AppConstants.containerSizeLg),
-            color: context.adaptiveTextTertiary.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: AppConstants.spacingLg),
-          Text(
-            'Error loading songs',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: context.adaptiveTextSecondary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: AppConstants.spacingSm),
-          Text(
-            error.toString(),
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: context.adaptiveTextTertiary,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppConstants.spacingLg),
-          TextButton(
-            onPressed: () => ref.invalidate(songsProvider),
-            child: const Text('Retry'),
-          ),
-        ],
+    return _ContentStateWidget(
+      icon: LucideIcons.circleX,
+      title: 'Error loading songs',
+      subtitle: error.toString(),
+      action: TextButton(
+        onPressed: () => ref.invalidate(songsProvider),
+        child: const Text('Retry'),
       ),
     );
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            LucideIcons.music4,
-            size: context.responsiveIcon(AppConstants.containerSizeLg),
-            color: context.adaptiveTextTertiary.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: AppConstants.spacingLg),
-          Text(
-            'No Music Yet',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: context.adaptiveTextSecondary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: AppConstants.spacingSm),
-          Text(
-            'Add a music folder in Settings',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: context.adaptiveTextTertiary,
-            ),
-          ),
-        ],
-      ),
+    return const _ContentStateWidget(
+      icon: LucideIcons.music4,
+      title: 'No Music Yet',
+      subtitle: 'Add a music folder in Settings',
     );
   }
 
   Widget _buildNoSearchResultsState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            LucideIcons.searchX,
-            size: context.responsiveIcon(AppConstants.containerSizeLg),
-            color: context.adaptiveTextTertiary.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: AppConstants.spacingLg),
-          Text(
-            'No matches found',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: context.adaptiveTextSecondary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: AppConstants.spacingSm),
-          Text(
-            'Try adjusting your search query',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: context.adaptiveTextTertiary,
-            ),
-          ),
-        ],
-      ),
+    return const _ContentStateWidget(
+      icon: LucideIcons.searchX,
+      title: 'No matches found',
+      subtitle: 'Try adjusting your search query',
     );
   }
 
@@ -350,9 +303,24 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
           // Sort Button
           Container(
             decoration: BoxDecoration(
-              color: AppColors.glassBackground,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.surfaceLight.withValues(alpha: 0.75),
+                  AppColors.surface.withValues(alpha: 0.85),
+                ],
+              ),
               borderRadius: BorderRadius.circular(AppConstants.radiusMd),
               border: Border.all(color: AppColors.glassBorder, width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 12,
+                  spreadRadius: 1,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: PopupMenuButton<SongSortOption>(
               icon: Icon(
@@ -428,6 +396,56 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                   ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContentStateWidget extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? action;
+
+  const _ContentStateWidget({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            icon,
+            size: context.responsiveIcon(AppConstants.containerSizeLg),
+            color: context.adaptiveTextTertiary.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: AppConstants.spacingLg),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: context.adaptiveTextSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppConstants.spacingSm),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: context.adaptiveTextTertiary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (action != null) ...[
+            const SizedBox(height: AppConstants.spacingLg),
+            action!,
+          ],
         ],
       ),
     );

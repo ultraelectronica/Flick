@@ -19,12 +19,16 @@ class GlassSearchBar extends StatefulWidget {
   /// Callback when the search bar is cleared via the clear button
   final VoidCallback? onClear;
 
+  /// Whether to show the glass background (default: true)
+  final bool showBackground;
+
   const GlassSearchBar({
     super.key,
     required this.controller,
     this.onChanged,
     this.hintText = 'Search...',
     this.onClear,
+    this.showBackground = true,
   });
 
   @override
@@ -60,12 +64,11 @@ class _GlassSearchBarState extends State<GlassSearchBar> {
 
   @override
   Widget build(BuildContext context) {
-    return GlassmorphismContainer(
+    final content = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppConstants.spacingMd,
         vertical: AppConstants.spacingSm,
       ),
-      borderRadius: BorderRadius.circular(AppConstants.radiusXl),
       child: Row(
         children: [
           Icon(
@@ -112,5 +115,15 @@ class _GlassSearchBarState extends State<GlassSearchBar> {
         ],
       ),
     );
+
+    if (widget.showBackground) {
+      return GlassmorphismContainer(
+        padding: EdgeInsets.zero,
+        borderRadius: BorderRadius.circular(AppConstants.radiusXl),
+        child: content,
+      );
+    }
+
+    return content;
   }
 }
