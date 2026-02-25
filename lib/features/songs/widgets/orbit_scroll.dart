@@ -292,8 +292,7 @@ class _OrbitScrollState extends State<OrbitScroll>
   List<Widget> _buildSongItems(double centerX, double centerY, double radius) {
     final List<Widget> items = [];
 
-    final baseRange = AppConstants.orbitVisibleItems ~/ 2;
-    final visibleRange = _isScrolling ? baseRange + 3 : baseRange + 1;
+    final visibleRange = _isScrolling ? 4 : 2;
 
     final orderedIndices = List.generate(
       visibleRange * 2 + 1,

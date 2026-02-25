@@ -33,7 +33,7 @@ class AppConstants {
   // Orbit scroll settings
   static const double orbitRadiusRatio = 1.0; // Large radius for gentle arc
   static const double orbitCenterOffsetRatio = -0.5; // Center off-screen left
-  static const int orbitVisibleItems = 9; // More items visible
+  static const int orbitVisibleItems = 5; // Fewer items for more spacing
   static const double orbitItemSpacing = 0.25; // Closer spacing for large arc
   static const double orbitSelectedScale = 1.1;
   static const double orbitAdjacentScale = 0.85;
