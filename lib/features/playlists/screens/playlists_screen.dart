@@ -6,6 +6,7 @@ import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/utils/responsive.dart';
 import 'package:flick/providers/playlist_provider.dart';
+import 'package:flick/features/playlists/screens/playlist_detail_screen.dart';
 
 class PlaylistsScreen extends ConsumerWidget {
   const PlaylistsScreen({super.key});
@@ -222,7 +223,13 @@ class PlaylistsScreen extends ConsumerWidget {
         final playlist = playlists[index];
         return _PlaylistCard(
           playlist: playlist,
-          onTap: () {},
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => PlaylistDetailScreen(playlist: playlist),
+              ),
+            );
+          },
           onDelete: () async {
             final confirm = await _showDeleteDialog(context, ref);
             if (confirm == true) {
