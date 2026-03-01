@@ -72,3 +72,26 @@ pub struct FormatTypeIII {
     pub b_subslot_size: u8,
     pub b_bit_resolution: u8,
 }
+
+#[derive(Debug, Clone)]
+pub enum AudioControlDescriptor {
+    Header(AcInterfaceHeader),
+    InputTerminal(InputTerminal),
+    OutputTerminal(OutputTerminal),
+    FeatureUnit(FeatureUnit),
+}
+
+#[derive(Debug, Clone)]
+pub enum AudioStreamingDescriptor {
+    General(AsInterfaceGeneral),
+    FormatTypeI(FormatTypeI),
+    FormatTypeII(FormatTypeII),
+    FormatTypeIII(FormatTypeIII),
+}
+
+#[derive(Debug, Clone)]
+pub enum DescriptorKind {
+    Iad(Iad),
+    AudioControl(AudioControlDescriptor),
+    AudioStreaming(AudioStreamingDescriptor),
+}
