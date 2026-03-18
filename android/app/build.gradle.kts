@@ -66,4 +66,6 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("androidx.media:media:1.7.0")
     implementation("androidx.lifecycle:lifecycle-service:2.7.0")
+    implementation("com.arthenica:ffmpeg-kit-full:6.0-2")
+    implementation("com.arthenica:ffmpeg-kit-full-gpl:6.0-2")
 }
