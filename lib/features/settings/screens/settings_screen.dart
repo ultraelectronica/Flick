@@ -576,7 +576,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _buildAboutLink(
                 'GitHub',
                 LucideIcons.github,
-                'https://github.com/ultraelectronica/Flick',
+                'https://github.com/ultraelectronica/flick_player',
               ),
             ],
           ),
