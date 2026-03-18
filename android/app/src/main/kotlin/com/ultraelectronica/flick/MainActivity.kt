@@ -29,7 +29,7 @@ class MainActivity: FlutterActivity() {
     private val PLAYER_CHANNEL = "com.ultraelectronica.flick/player"
     private val UAC2_CHANNEL = "com.ultraelectronica.flick/uac2"
     private val EQUALIZER_CHANNEL = "com.ultraelectronica.flick/equalizer"
-    private val CONVERTER_CHANNEL = "com.ultraelectronica.flick/converter"
+    // private val CONVERTER_CHANNEL = "com.ultraelectronica.flick/converter"
     private val REQUEST_OPEN_DOCUMENT_TREE = 1001
     private val REQUEST_USB_PERMISSION = 1002
 
@@ -40,7 +40,7 @@ class MainActivity: FlutterActivity() {
     private var uac2DeviceCache: List<Map<String, Any?>>? = null
     private var uac2Channel: MethodChannel? = null
     private var equalizer: Equalizer? = null
-    private var audioConverter: AudioConverter? = null
+    // private var audioConverter: AudioConverter? = null
     // Coroutine scope for background tasks
     private val mainScope = CoroutineScope(Dispatchers.Main)
 
@@ -276,6 +276,8 @@ class MainActivity: FlutterActivity() {
         }
 
         // Audio converter channel
+        // NOTE: FLAC to ALAC and M4A to MP3 conversion features are disabled for now
+        /*
         audioConverter = AudioConverterFactory.create()
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CONVERTER_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -316,22 +318,23 @@ class MainActivity: FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        */
         
         // Register USB hot-plug receiver
         registerUsbHotplugReceiver()
     }
 
-    private fun handleConversionResult(conversionResult: ConversionResult?, result: MethodChannel.Result) {
-        when (conversionResult) {
-            is ConversionResult.Success -> result.success(mapOf(
-                "success" to true,
-                "outputUri" to conversionResult.outputUri,
-                "outputPath" to conversionResult.outputPath
-            ))
-            is ConversionResult.Error -> result.error("CONVERSION_ERROR", conversionResult.message, null)
-            else -> result.error("CONVERSION_ERROR", "Unknown error", null)
-        }
-    }
+    // private fun handleConversionResult(conversionResult: ConversionResult?, result: MethodChannel.Result) {
+//         when (conversionResult) {
+//             is ConversionResult.Success -> result.success(mapOf(
+//                 "success" to true,
+//                 "outputUri" to conversionResult.outputUri,
+//                 "outputPath" to conversionResult.outputPath
+//             ))
+//             is ConversionResult.Error -> result.error("CONVERSION_ERROR", conversionResult.message, null)
+//             else -> result.error("CONVERSION_ERROR", "Unknown error", null)
+//         }
+//     }
 
     private fun setEqualizer(enabled: Boolean, gainsDb: List<Double>, audioSessionId: Int?, result: MethodChannel.Result) {
         try {
