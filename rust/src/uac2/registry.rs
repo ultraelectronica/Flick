@@ -47,7 +47,7 @@ impl DeviceRegistry {
     pub fn refresh(&mut self) -> Result<(), Uac2Error> {
         self.devices.clear();
         let devices = self.context.devices()?;
-        
+
         for device in devices.iter() {
             if crate::uac2::device_enumeration::is_uac2_audio_device(&device)? {
                 match Uac2Device::from_usb_device(&device) {
@@ -65,7 +65,7 @@ impl DeviceRegistry {
                 }
             }
         }
-        
+
         Ok(())
     }
 

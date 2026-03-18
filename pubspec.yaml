@@ -44,10 +44,11 @@ dependencies:
   isar_community_flutter_libs: ^3.3.0
   just_audio: ^0.10.5
   lucide_icons_flutter: ^3.1.8
+  native_toolchain_rust: ^1.0.3
   path_provider: ^2.1.1
   permission_handler: ^12.0.1
   rive: ^0.14.0
-  riverpod_annotation: ^3.0.3
+  riverpod_annotation: ^4.0.0
   rust_lib_flick_player:
     path: rust_builder
   shared_preferences: ^2.2.2
@@ -63,7 +64,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   isar_community_generator: ^3.3.0
-  riverpod_generator: ^3.0.3
+  riverpod_generator: ^4.0.0+1
   riverpod_lint: ^3.0.3
 
 # Resolve conflict between riverpod_generator and isar_community_generator

@@ -28,7 +28,7 @@ pub fn enumerate_uac2_devices() -> Result<Vec<Uac2DeviceInfo>, Uac2Error> {
             }
         }
     }
-    
+
     Ok(out)
 }
 

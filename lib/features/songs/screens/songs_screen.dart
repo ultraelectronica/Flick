@@ -279,6 +279,8 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   Widget _buildHeader(AsyncValue<SongsState> songsAsync) {
     final songCount = songsAsync.value?.songs.length ?? 0;
     final currentSort = songsAsync.value?.sortOption ?? SongSortOption.title;
+    final currentFilter =
+        songsAsync.value?.fileTypeFilter ?? SongFileTypeFilter.all;
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -308,7 +310,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
             ],
           ),
 
-          // Sort Button
+          // Sort/Filter Button
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -330,7 +332,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                 ),
               ],
             ),
-            child: PopupMenuButton<SongSortOption>(
+            child: PopupMenuButton<void>(
               icon: Icon(
                 Icons.sort_rounded,
                 color: context.adaptiveTextSecondary,
@@ -341,67 +343,208 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                 borderRadius: BorderRadius.circular(AppConstants.radiusMd),
                 side: const BorderSide(color: AppColors.glassBorder, width: 1),
               ),
-              onSelected: (SongSortOption result) {
-                ref.read(songsProvider.notifier).setSortOption(result);
-                // Reset selection to top
+              onSelected: (dynamic result) {
+                if (result is SongSortOption) {
+                  ref.read(songsProvider.notifier).setSortOption(result);
+                } else if (result is SongFileTypeFilter) {
+                  ref.read(songsProvider.notifier).setFileTypeFilter(result);
+                }
                 setState(() {
                   _selectedIndex = 0;
                 });
               },
-              itemBuilder: (BuildContext context) =>
-                  <PopupMenuEntry<SongSortOption>>[
-                    PopupMenuItem<SongSortOption>(
-                      value: SongSortOption.title,
-                      child: Row(
-                        children: [
-                          if (currentSort == SongSortOption.title)
-                            const Icon(Icons.check, size: 18),
-                          if (currentSort == SongSortOption.title)
-                            const SizedBox(width: 8),
-                          Text(
-                            'Sort by Title',
-                            style: TextStyle(
-                              color: context.adaptiveTextPrimary,
-                            ),
-                          ),
-                        ],
-                      ),
+              itemBuilder: (BuildContext context) => [
+                PopupMenuItem<void>(
+                  enabled: false,
+                  child: Text(
+                    'SORT',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: context.adaptiveTextTertiary,
+                      letterSpacing: 1.2,
                     ),
-                    PopupMenuItem<SongSortOption>(
-                      value: SongSortOption.artist,
-                      child: Row(
-                        children: [
-                          if (currentSort == SongSortOption.artist)
-                            const Icon(Icons.check, size: 18),
-                          if (currentSort == SongSortOption.artist)
-                            const SizedBox(width: 8),
-                          Text(
-                            'Sort by Artist',
-                            style: TextStyle(
-                              color: context.adaptiveTextPrimary,
-                            ),
-                          ),
-                        ],
+                  ),
+                ),
+                PopupMenuItem<SongSortOption>(
+                  value: SongSortOption.title,
+                  child: Row(
+                    children: [
+                      if (currentSort == SongSortOption.title)
+                        const Icon(Icons.check, size: 18),
+                      if (currentSort == SongSortOption.title)
+                        const SizedBox(width: 8),
+                      Text(
+                        'Title',
+                        style: TextStyle(color: context.adaptiveTextPrimary),
                       ),
-                    ),
-                    PopupMenuItem<SongSortOption>(
-                      value: SongSortOption.dateAdded,
-                      child: Row(
-                        children: [
-                          if (currentSort == SongSortOption.dateAdded)
-                            const Icon(Icons.check, size: 18),
-                          if (currentSort == SongSortOption.dateAdded)
-                            const SizedBox(width: 8),
-                          Text(
-                            'Sort by Date Added',
-                            style: TextStyle(
-                              color: context.adaptiveTextPrimary,
-                            ),
-                          ),
-                        ],
+                    ],
+                  ),
+                ),
+                PopupMenuItem<SongSortOption>(
+                  value: SongSortOption.artist,
+                  child: Row(
+                    children: [
+                      if (currentSort == SongSortOption.artist)
+                        const Icon(Icons.check, size: 18),
+                      if (currentSort == SongSortOption.artist)
+                        const SizedBox(width: 8),
+                      Text(
+                        'Artist',
+                        style: TextStyle(color: context.adaptiveTextPrimary),
                       ),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<SongSortOption>(
+                  value: SongSortOption.dateAdded,
+                  child: Row(
+                    children: [
+                      if (currentSort == SongSortOption.dateAdded)
+                        const Icon(Icons.check, size: 18),
+                      if (currentSort == SongSortOption.dateAdded)
+                        const SizedBox(width: 8),
+                      Text(
+                        'Date Added',
+                        style: TextStyle(color: context.adaptiveTextPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<SongSortOption>(
+                  value: SongSortOption.fileType,
+                  child: Row(
+                    children: [
+                      if (currentSort == SongSortOption.fileType)
+                        const Icon(Icons.check, size: 18),
+                      if (currentSort == SongSortOption.fileType)
+                        const SizedBox(width: 8),
+                      Text(
+                        'Format',
+                        style: TextStyle(color: context.adaptiveTextPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                PopupMenuItem<void>(
+                  enabled: false,
+                  child: Text(
+                    'FILTER BY FORMAT',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: context.adaptiveTextTertiary,
+                      letterSpacing: 1.2,
                     ),
-                  ],
+                  ),
+                ),
+                PopupMenuItem<SongFileTypeFilter>(
+                  value: SongFileTypeFilter.all,
+                  child: Row(
+                    children: [
+                      if (currentFilter == SongFileTypeFilter.all)
+                        const Icon(Icons.check, size: 18),
+                      if (currentFilter == SongFileTypeFilter.all)
+                        const SizedBox(width: 8),
+                      Text(
+                        'All Formats',
+                        style: TextStyle(color: context.adaptiveTextPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<SongFileTypeFilter>(
+                  value: SongFileTypeFilter.flac,
+                  child: Row(
+                    children: [
+                      if (currentFilter == SongFileTypeFilter.flac)
+                        const Icon(Icons.check, size: 18),
+                      if (currentFilter == SongFileTypeFilter.flac)
+                        const SizedBox(width: 8),
+                      Text(
+                        'FLAC',
+                        style: TextStyle(color: context.adaptiveTextPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<SongFileTypeFilter>(
+                  value: SongFileTypeFilter.mp3,
+                  child: Row(
+                    children: [
+                      if (currentFilter == SongFileTypeFilter.mp3)
+                        const Icon(Icons.check, size: 18),
+                      if (currentFilter == SongFileTypeFilter.mp3)
+                        const SizedBox(width: 8),
+                      Text(
+                        'MP3',
+                        style: TextStyle(color: context.adaptiveTextPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<SongFileTypeFilter>(
+                  value: SongFileTypeFilter.wav,
+                  child: Row(
+                    children: [
+                      if (currentFilter == SongFileTypeFilter.wav)
+                        const Icon(Icons.check, size: 18),
+                      if (currentFilter == SongFileTypeFilter.wav)
+                        const SizedBox(width: 8),
+                      Text(
+                        'WAV',
+                        style: TextStyle(color: context.adaptiveTextPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<SongFileTypeFilter>(
+                  value: SongFileTypeFilter.aac,
+                  child: Row(
+                    children: [
+                      if (currentFilter == SongFileTypeFilter.aac)
+                        const Icon(Icons.check, size: 18),
+                      if (currentFilter == SongFileTypeFilter.aac)
+                        const SizedBox(width: 8),
+                      Text(
+                        'AAC',
+                        style: TextStyle(color: context.adaptiveTextPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<SongFileTypeFilter>(
+                  value: SongFileTypeFilter.ogg,
+                  child: Row(
+                    children: [
+                      if (currentFilter == SongFileTypeFilter.ogg)
+                        const Icon(Icons.check, size: 18),
+                      if (currentFilter == SongFileTypeFilter.ogg)
+                        const SizedBox(width: 8),
+                      Text(
+                        'OGG',
+                        style: TextStyle(color: context.adaptiveTextPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<SongFileTypeFilter>(
+                  value: SongFileTypeFilter.alac,
+                  child: Row(
+                    children: [
+                      if (currentFilter == SongFileTypeFilter.alac)
+                        const Icon(Icons.check, size: 18),
+                      if (currentFilter == SongFileTypeFilter.alac)
+                        const SizedBox(width: 8),
+                      Text(
+                        'ALAC',
+                        style: TextStyle(color: context.adaptiveTextPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],

@@ -53,20 +53,17 @@ impl<T: UsbContext> Uac2Device<T> {
 
         // Try to open device to read strings
         let handle = device.open().ok();
-        
+
         let (manufacturer, product_name, serial) = if let Some(ref h) = handle {
             (
-                h.read_manufacturer_string_ascii(&device_desc).unwrap_or_default(),
+                h.read_manufacturer_string_ascii(&device_desc)
+                    .unwrap_or_default(),
                 h.read_product_string_ascii(&device_desc)
                     .unwrap_or_else(|_| "USB Audio Device".to_string()),
                 h.read_serial_number_string_ascii(&device_desc).ok(),
             )
         } else {
-            (
-                String::new(),
-                "USB Audio Device".to_string(),
-                None,
-            )
+            (String::new(), "USB Audio Device".to_string(), None)
         };
 
         Ok(Self {
@@ -118,10 +115,10 @@ impl<T: UsbContext> Hash for Uac2Device<T> {
 pub trait DeviceInfo {
     /// Gets device identification.
     fn identification(&self) -> &DeviceIdentification;
-    
+
     /// Gets device metadata.
     fn metadata(&self) -> &DeviceMetadata;
-    
+
     /// Checks if device handle is available.
     fn has_handle(&self) -> bool;
 }

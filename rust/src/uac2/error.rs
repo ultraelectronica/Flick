@@ -8,27 +8,27 @@ pub enum Uac2Error {
     /// USB device access error
     #[error("USB error: {0}")]
     Usb(#[from] rusb::Error),
-    
+
     /// Device not found
     #[error("Device not found")]
     DeviceNotFound,
-    
+
     /// Permission denied for USB device access
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
-    
+
     /// Device is busy or unavailable
     #[error("Device busy or unavailable: {0}")]
     DeviceBusy(String),
-    
+
     /// Device handle not available
     #[error("Device handle not available")]
     NoHandle,
-    
+
     /// Invalid device descriptor
     #[error("Invalid device descriptor: {0}")]
     InvalidDescriptor(String),
-    
+
     /// Operation not supported
     #[error("Operation not supported: {0}")]
     NotSupported(String),

@@ -29,6 +29,7 @@ class MainActivity: FlutterActivity() {
     private val PLAYER_CHANNEL = "com.ultraelectronica.flick/player"
     private val UAC2_CHANNEL = "com.ultraelectronica.flick/uac2"
     private val EQUALIZER_CHANNEL = "com.ultraelectronica.flick/equalizer"
+    // private val CONVERTER_CHANNEL = "com.ultraelectronica.flick/converter"
     private val REQUEST_OPEN_DOCUMENT_TREE = 1001
     private val REQUEST_USB_PERMISSION = 1002
 
@@ -39,6 +40,7 @@ class MainActivity: FlutterActivity() {
     private var uac2DeviceCache: List<Map<String, Any?>>? = null
     private var uac2Channel: MethodChannel? = null
     private var equalizer: Equalizer? = null
+    // private var audioConverter: AudioConverter? = null
     // Coroutine scope for background tasks
     private val mainScope = CoroutineScope(Dispatchers.Main)
 
@@ -272,10 +274,67 @@ class MainActivity: FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // Audio converter channel
+        // NOTE: FLAC to ALAC and M4A to MP3 conversion features are disabled for now
+        /*
+        audioConverter = AudioConverterFactory.create()
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CONVERTER_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "convertToFlac" -> {
+                    val uri = call.argument<String>("uri")
+                    if (uri != null) {
+                        mainScope.launch {
+                            val conversionResult = audioConverter?.convertToFlac(Uri.parse(uri), context) as? ConversionResult
+                            handleConversionResult(conversionResult, result)
+                        }
+                    } else {
+                        result.error("INVALID_ARGUMENT", "URI is required", null)
+                    }
+                }
+                "convertToMp3" -> {
+                    val uri = call.argument<String>("uri")
+                    if (uri != null) {
+                        mainScope.launch {
+                            val conversionResult = audioConverter?.convertToMp3(Uri.parse(uri), context) as? ConversionResult
+                            handleConversionResult(conversionResult, result)
+                        }
+                    } else {
+                        result.error("INVALID_ARGUMENT", "URI is required", null)
+                    }
+                }
+                "isSupported" -> {
+                    val extension = call.argument<String>("extension")
+                    if (extension != null) {
+                        result.success(audioConverter?.isSupported(extension) ?: false)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "extension is required", null)
+                    }
+                }
+                "cancel" -> {
+                    audioConverter?.cancel()
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        */
         
         // Register USB hot-plug receiver
         registerUsbHotplugReceiver()
     }
+
+    // private fun handleConversionResult(conversionResult: ConversionResult?, result: MethodChannel.Result) {
+//         when (conversionResult) {
+//             is ConversionResult.Success -> result.success(mapOf(
+//                 "success" to true,
+//                 "outputUri" to conversionResult.outputUri,
+//                 "outputPath" to conversionResult.outputPath
+//             ))
+//             is ConversionResult.Error -> result.error("CONVERSION_ERROR", conversionResult.message, null)
+//             else -> result.error("CONVERSION_ERROR", "Unknown error", null)
+//         }
+//     }
 
     private fun setEqualizer(enabled: Boolean, gainsDb: List<Double>, audioSessionId: Int?, result: MethodChannel.Result) {
         try {

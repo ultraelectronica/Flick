@@ -21,7 +21,9 @@ impl DescriptorFactory {
 
     pub fn create(&self, data: &[u8]) -> Result<DescriptorKind, Uac2Error> {
         if data.len() < 2 {
-            return Err(Uac2Error::InvalidDescriptor("descriptor too short".to_string()));
+            return Err(Uac2Error::InvalidDescriptor(
+                "descriptor too short".to_string(),
+            ));
         }
         match data[1] {
             USB_DT_INTERFACE_ASSOCIATION => parse_iad_internal(data).map(DescriptorKind::Iad),
@@ -36,12 +38,20 @@ impl DescriptorFactory {
                 } else if subtype == super::constants::UAC2_AS_GENERAL
                     || subtype == super::constants::UAC2_FORMAT_TYPE
                 {
-                    self.as_parser.parse(data).map(DescriptorKind::AudioStreaming)
+                    self.as_parser
+                        .parse(data)
+                        .map(DescriptorKind::AudioStreaming)
                 } else {
-                    Err(Uac2Error::InvalidDescriptor(format!("unknown CS descriptor subtype {}", subtype)))
+                    Err(Uac2Error::InvalidDescriptor(format!(
+                        "unknown CS descriptor subtype {}",
+                        subtype
+                    )))
                 }
             }
-            _ => Err(Uac2Error::InvalidDescriptor(format!("unknown descriptor type {}", data[1]))),
+            _ => Err(Uac2Error::InvalidDescriptor(format!(
+                "unknown descriptor type {}",
+                data[1]
+            ))),
         }
     }
 }

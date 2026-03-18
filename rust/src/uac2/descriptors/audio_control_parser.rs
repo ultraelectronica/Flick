@@ -2,7 +2,10 @@ use super::constants::*;
 use super::helpers::{read_u16_le, read_u32_le, require_len};
 use super::parser_trait::DescriptorParser;
 use super::types::*;
-use super::validation::{validate_ac_interface_header, validate_feature_unit, validate_input_terminal, validate_output_terminal};
+use super::validation::{
+    validate_ac_interface_header, validate_feature_unit, validate_input_terminal,
+    validate_output_terminal,
+};
 use crate::uac2::error::Uac2Error;
 
 pub struct AudioControlParser;
@@ -28,7 +31,9 @@ impl AudioControlParser {
         const LEN: usize = 15;
         require_len(data, LEN)?;
         if data[1] != USB_DT_CS_INTERFACE || data[2] != UAC2_INPUT_TERMINAL {
-            return Err(Uac2Error::InvalidDescriptor("not input terminal".to_string()));
+            return Err(Uac2Error::InvalidDescriptor(
+                "not input terminal".to_string(),
+            ));
         }
         let t = InputTerminal {
             b_terminal_id: data[3],
@@ -47,7 +52,9 @@ impl AudioControlParser {
         const LEN: usize = 9;
         require_len(data, LEN)?;
         if data[1] != USB_DT_CS_INTERFACE || data[2] != UAC2_OUTPUT_TERMINAL {
-            return Err(Uac2Error::InvalidDescriptor("not output terminal".to_string()));
+            return Err(Uac2Error::InvalidDescriptor(
+                "not output terminal".to_string(),
+            ));
         }
         let t = OutputTerminal {
             b_terminal_id: data[3],
@@ -91,17 +98,30 @@ impl DescriptorParser for AudioControlParser {
 
     fn parse(&self, data: &[u8]) -> Result<Self::Output, Uac2Error> {
         if data.len() < 3 {
-            return Err(Uac2Error::InvalidDescriptor("descriptor too short".to_string()));
+            return Err(Uac2Error::InvalidDescriptor(
+                "descriptor too short".to_string(),
+            ));
         }
         if data[1] != USB_DT_CS_INTERFACE {
             return Err(Uac2Error::InvalidDescriptor("not CS interface".to_string()));
         }
         match data[2] {
-            UAC2_AC_HEADER => self.parse_ac_header(data).map(AudioControlDescriptor::Header),
-            UAC2_INPUT_TERMINAL => self.parse_input_terminal(data).map(AudioControlDescriptor::InputTerminal),
-            UAC2_OUTPUT_TERMINAL => self.parse_output_terminal(data).map(AudioControlDescriptor::OutputTerminal),
-            UAC2_FEATURE_UNIT => self.parse_feature_unit(data).map(AudioControlDescriptor::FeatureUnit),
-            _ => Err(Uac2Error::InvalidDescriptor(format!("unknown AC descriptor subtype {}", data[2]))),
+            UAC2_AC_HEADER => self
+                .parse_ac_header(data)
+                .map(AudioControlDescriptor::Header),
+            UAC2_INPUT_TERMINAL => self
+                .parse_input_terminal(data)
+                .map(AudioControlDescriptor::InputTerminal),
+            UAC2_OUTPUT_TERMINAL => self
+                .parse_output_terminal(data)
+                .map(AudioControlDescriptor::OutputTerminal),
+            UAC2_FEATURE_UNIT => self
+                .parse_feature_unit(data)
+                .map(AudioControlDescriptor::FeatureUnit),
+            _ => Err(Uac2Error::InvalidDescriptor(format!(
+                "unknown AC descriptor subtype {}",
+                data[2]
+            ))),
         }
     }
 }

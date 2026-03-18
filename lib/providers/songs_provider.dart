@@ -11,41 +11,86 @@ final songRepositoryProvider = Provider<SongRepository>((ref) {
 });
 
 /// Sort options for the song list.
-enum SongSortOption { title, artist, dateAdded }
+enum SongSortOption { title, artist, dateAdded, fileType }
+
+/// Filter options for file types.
+enum SongFileTypeFilter { all, flac, mp3, wav, aac, ogg, alac }
+
+extension SongFileTypeFilterExtension on SongFileTypeFilter {
+  String get displayName {
+    switch (this) {
+      case SongFileTypeFilter.all:
+        return 'All Formats';
+      case SongFileTypeFilter.flac:
+        return 'FLAC';
+      case SongFileTypeFilter.mp3:
+        return 'MP3';
+      case SongFileTypeFilter.wav:
+        return 'WAV';
+      case SongFileTypeFilter.aac:
+        return 'AAC';
+      case SongFileTypeFilter.ogg:
+        return 'OGG';
+      case SongFileTypeFilter.alac:
+        return 'ALAC';
+    }
+  }
+
+  bool matches(String fileType) {
+    if (this == SongFileTypeFilter.all) return true;
+    return fileType.toUpperCase() == displayName;
+  }
+}
 
 /// State for the songs list with sorting.
 class SongsState {
   final List<Song> songs;
   final SongSortOption sortOption;
+  final SongFileTypeFilter fileTypeFilter;
 
   const SongsState({
     this.songs = const [],
     this.sortOption = SongSortOption.title,
+    this.fileTypeFilter = SongFileTypeFilter.all,
   });
 
-  SongsState copyWith({List<Song>? songs, SongSortOption? sortOption}) {
+  SongsState copyWith({
+    List<Song>? songs,
+    SongSortOption? sortOption,
+    SongFileTypeFilter? fileTypeFilter,
+  }) {
     return SongsState(
       songs: songs ?? this.songs,
       sortOption: sortOption ?? this.sortOption,
+      fileTypeFilter: fileTypeFilter ?? this.fileTypeFilter,
     );
   }
 
-  /// Get sorted songs based on current sort option.
+  /// Get sorted and filtered songs based on current options.
   List<Song> get sortedSongs {
-    final sorted = List<Song>.from(songs);
+    var result = List<Song>.from(songs);
+
+    if (fileTypeFilter != SongFileTypeFilter.all) {
+      result = result
+          .where((song) => fileTypeFilter.matches(song.fileType))
+          .toList();
+    }
+
     switch (sortOption) {
       case SongSortOption.title:
-        sorted.sort((a, b) => a.title.compareTo(b.title));
+        result.sort((a, b) => a.title.compareTo(b.title));
       case SongSortOption.artist:
-        sorted.sort((a, b) => a.artist.compareTo(b.artist));
+        result.sort((a, b) => a.artist.compareTo(b.artist));
       case SongSortOption.dateAdded:
-        sorted.sort((a, b) {
+        result.sort((a, b) {
           final dateA = a.dateAdded ?? DateTime.fromMillisecondsSinceEpoch(0);
           final dateB = b.dateAdded ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return dateB.compareTo(dateA); // Newest first
+          return dateB.compareTo(dateA);
         });
+      case SongSortOption.fileType:
+        result.sort((a, b) => a.fileType.compareTo(b.fileType));
     }
-    return sorted;
+    return result;
   }
 }
 
@@ -54,6 +99,7 @@ class SongsState {
 class SongsNotifier extends AsyncNotifier<SongsState> {
   StreamSubscription<void>? _watchSubscription;
   SongSortOption _sortOption = SongSortOption.title;
+  SongFileTypeFilter _fileTypeFilter = SongFileTypeFilter.all;
 
   @override
   Future<SongsState> build() async {
@@ -72,7 +118,11 @@ class SongsNotifier extends AsyncNotifier<SongsState> {
     });
 
     final songs = await repository.getAllSongs();
-    return SongsState(songs: songs, sortOption: _sortOption);
+    return SongsState(
+      songs: songs,
+      sortOption: _sortOption,
+      fileTypeFilter: _fileTypeFilter,
+    );
   }
 
   /// Change the sort option.
@@ -81,6 +131,15 @@ class SongsNotifier extends AsyncNotifier<SongsState> {
     final currentState = state.value;
     if (currentState != null) {
       state = AsyncData(currentState.copyWith(sortOption: option));
+    }
+  }
+
+  /// Change the file type filter.
+  void setFileTypeFilter(SongFileTypeFilter filter) {
+    _fileTypeFilter = filter;
+    final currentState = state.value;
+    if (currentState != null) {
+      state = AsyncData(currentState.copyWith(fileTypeFilter: filter));
     }
   }
 
