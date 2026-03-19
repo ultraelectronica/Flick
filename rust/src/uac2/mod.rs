@@ -3,18 +3,41 @@
 #[cfg(feature = "uac2")]
 mod audio_format;
 #[cfg(feature = "uac2")]
+mod capabilities;
+#[cfg(feature = "uac2")]
+pub mod constants;
+#[cfg(feature = "uac2")]
 mod control_requests;
 #[cfg(feature = "uac2")]
 mod descriptors;
 #[cfg(feature = "uac2")]
 mod device;
 #[cfg(feature = "uac2")]
+mod device_classifier;
+#[cfg(feature = "uac2")]
 mod device_enumeration;
+#[cfg(feature = "uac2")]
+mod device_info_extractor;
 #[cfg(feature = "uac2")]
 mod error;
 #[cfg(feature = "uac2")]
 mod registry;
 
+#[cfg(feature = "uac2")]
+pub use audio_format::{
+    AudioFormat, BitDepth, ChannelConfig, FormatNegotiator, FormatType, SampleRate,
+};
+#[cfg(feature = "uac2")]
+pub use capabilities::{
+    CapabilityDetector, ControlCapabilities, DeviceCapabilities, DeviceType, FormatMatcher,
+    PowerCapabilities,
+};
+#[cfg(feature = "uac2")]
+pub use device_classifier::{
+    AudioRequirements, DeviceClassifier, DeviceMatchingLogic, FormatClass, PowerClass,
+};
+#[cfg(feature = "uac2")]
+pub use device_info_extractor::{DeviceInfoExtractor, StringDescriptorCache};
 #[cfg(feature = "uac2")]
 pub use control_requests::{
     ControlRequest, ControlRequestBuilder, ControlRequestType, ControlSelector, MuteControl,
@@ -31,15 +54,9 @@ pub use descriptors::{
     OutputTerminal,
 };
 #[cfg(feature = "uac2")]
-pub use device::{
-    DeviceCapabilities, DeviceIdentification, DeviceInfo, DeviceMetadata, Uac2Device,
-};
+pub use device::{DeviceIdentification, DeviceInfo, DeviceMetadata, Uac2Device};
 #[cfg(feature = "uac2")]
 pub use device_enumeration::enumerate_uac2_devices;
-#[cfg(feature = "uac2")]
-pub use audio_format::{
-    AudioFormat, BitDepth, ChannelConfig, FormatNegotiator, FormatType, SampleRate,
-};
 #[cfg(feature = "uac2")]
 pub use error::Uac2Error;
 #[cfg(feature = "uac2")]

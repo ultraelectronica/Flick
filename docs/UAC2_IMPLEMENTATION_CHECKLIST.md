@@ -119,28 +119,28 @@ This checklist outlines the implementation of a custom USB Audio Class 2.0 (UAC 
 
 ### 4.1 Device Capability Detection
 
-- [ ] Detect DAC capabilities (supported formats, sample rates)
-- [ ] Detect AMP capabilities (power output, impedance)
-- [ ] Read device-specific feature units
-- [ ] Parse device-specific extension units (if present)
-- [ ] Extract device-specific control capabilities
+- [X] Detect DAC capabilities (supported formats, sample rates)
+- [X] Detect AMP capabilities (power output, impedance)
+- [X] Read device-specific feature units
+- [X] Parse device-specific extension units (if present)
+- [X] Extract device-specific control capabilities
 
 ### 4.2 Device Information Extraction
 
-- [ ] Read device manufacturer string descriptor
-- [ ] Read device product string descriptor
-- [ ] Read device serial number string descriptor
-- [ ] Extract device-specific capabilities from descriptors
-- [ ] Parse device-specific control ranges (volume, gain, etc.)
-- [ ] Create `DeviceCapabilities` struct
+- [X] Read device manufacturer string descriptor
+- [X] Read device product string descriptor
+- [X] Read device serial number string descriptor
+- [X] Extract device-specific capabilities from descriptors
+- [X] Parse device-specific control ranges (volume, gain, etc.)
+- [X] Create `DeviceCapabilities` struct
 
 ### 4.3 Device Classification
 
-- [ ] Implement device type detection (DAC-only, AMP-only, DAC/AMP combo)
-- [ ] Classify device by supported formats
-- [ ] Classify device by power capabilities
-- [ ] Create `DeviceType` enum for classification
-- [ ] Implement device matching logic for optimal format selection
+- [X] Implement device type detection (DAC-only, AMP-only, DAC/AMP combo)
+- [X] Classify device by supported formats
+- [X] Classify device by power capabilities
+- [X] Create `DeviceType` enum for classification
+- [X] Implement device matching logic for optimal format selection
 
 ---
 

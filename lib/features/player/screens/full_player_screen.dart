@@ -1023,10 +1023,10 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                 return Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    const Icon(
+                                    Icon(
                                       LucideIcons.folder,
                                       size: 14,
-                                      color: AppColors.textTertiary,
+                                      color: context.adaptiveTextPrimary,
                                     ),
                                     const SizedBox(width: 6),
                                     Flexible(
@@ -1034,10 +1034,10 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                         dirText,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontFamily: 'ProductSans',
                                           fontSize: 12,
-                                          color: AppColors.textTertiary,
+                                          color: context.adaptiveTextPrimary,
                                         ),
                                       ),
                                     ),

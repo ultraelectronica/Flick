@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib"]
 
 [features]
-default = []
+default = ["native_audio"]
 # Enable native audio engine (disabled on Android due to C++ linking issues)
 native_audio = ["cpal", "symphonia", "rubato", "ringbuf", "crossbeam-channel"]
 # Custom UAC 2.0 USB Audio (host-side DAC/AMP support)

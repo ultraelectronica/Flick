@@ -1,6 +1,7 @@
 //! UAC 2.0 device structure and management.
 
 use crate::api::uac2_api::Uac2DeviceInfo;
+use crate::uac2::capabilities::{CapabilityDetector, DeviceCapabilities};
 use crate::uac2::error::Uac2Error;
 use rusb::{Device, DeviceHandle, UsbContext};
 use std::hash::{Hash, Hasher};
@@ -38,11 +39,7 @@ pub struct DeviceMetadata {
     pub manufacturer: String,
 }
 
-/// Device capabilities (placeholder, will be expanded in Phase 4).
-#[derive(Debug, Clone, Default)]
-pub struct DeviceCapabilities {
-    // Placeholder for future capabilities
-}
+
 
 impl<T: UsbContext> Uac2Device<T> {
     /// Creates a new UAC2 device from USB device.
@@ -51,7 +48,6 @@ impl<T: UsbContext> Uac2Device<T> {
         let vendor_id = device_desc.vendor_id();
         let product_id = device_desc.product_id();
 
-        // Try to open device to read strings
         let handle = device.open().ok();
 
         let (manufacturer, product_name, serial) = if let Some(ref h) = handle {
@@ -66,6 +62,12 @@ impl<T: UsbContext> Uac2Device<T> {
             (String::new(), "USB Audio Device".to_string(), None)
         };
 
+        let capabilities = if let Some(ref h) = handle {
+            CapabilityDetector::detect(device, h).unwrap_or_default()
+        } else {
+            DeviceCapabilities::default()
+        };
+
         Ok(Self {
             identification: DeviceIdentification {
                 vendor_id,
@@ -77,7 +79,7 @@ impl<T: UsbContext> Uac2Device<T> {
                 manufacturer,
             },
             handle,
-            capabilities: DeviceCapabilities::default(),
+            capabilities,
         })
     }
 
@@ -90,6 +92,17 @@ impl<T: UsbContext> Uac2Device<T> {
             product_name: self.metadata.product_name.clone(),
             manufacturer: self.metadata.manufacturer.clone(),
         }
+    }
+
+    pub fn capabilities(&self) -> &DeviceCapabilities {
+        &self.capabilities
+    }
+
+    pub fn refresh_capabilities(&mut self, device: &Device<T>) -> Result<(), Uac2Error> {
+        if let Some(ref handle) = self.handle {
+            self.capabilities = CapabilityDetector::detect(device, handle)?;
+        }
+        Ok(())
     }
 }
 
