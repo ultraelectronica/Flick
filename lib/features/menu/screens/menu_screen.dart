@@ -163,7 +163,6 @@ class MenuScreen extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: AppConstants.spacingSm),
       child: Material(
         color: AppColors.surface.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppConstants.radiusLg),
           side: const BorderSide(color: AppColors.glassBorder, width: 1),

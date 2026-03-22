@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/color_extraction_service.dart';
 import '../core/theme/app_colors.dart';
@@ -37,6 +38,48 @@ class NavBarVisibleNotifier extends Notifier<bool> {
 final navBarVisibleProvider = NotifierProvider<NavBarVisibleNotifier, bool>(
   NavBarVisibleNotifier.new,
 );
+
+class NavBarAlwaysVisibleNotifier extends Notifier<bool> {
+  static const _prefKey = 'nav_bar_always_visible';
+  bool _initialized = false;
+
+  @override
+  bool build() {
+    if (!_initialized) {
+      _initialized = true;
+      Future<void>.microtask(_loadPreference);
+    }
+    return false;
+  }
+
+  Future<void> _loadPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getBool(_prefKey) ?? false;
+    if (!ref.mounted) return;
+    state = value;
+
+    if (value) {
+      ref.read(navBarVisibleProvider.notifier).setVisible(true);
+    }
+  }
+
+  Future<void> setAlwaysVisible(bool value) async {
+    if (state == value) return;
+    state = value;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefKey, value);
+
+    if (value) {
+      ref.read(navBarVisibleProvider.notifier).setVisible(true);
+    }
+  }
+}
+
+final navBarAlwaysVisibleProvider =
+    NotifierProvider<NavBarAlwaysVisibleNotifier, bool>(
+      NavBarAlwaysVisibleNotifier.new,
+    );
 
 // ============================================================================
 // Background color extraction

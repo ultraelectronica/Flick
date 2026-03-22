@@ -8,6 +8,22 @@ import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/features/songs/widgets/song_card.dart';
 
+class OrbitScrollController {
+  void Function(int index, bool animate)? _jumpToIndex;
+
+  void _attach(void Function(int index, bool animate) jumpToIndex) {
+    _jumpToIndex = jumpToIndex;
+  }
+
+  void _detach() {
+    _jumpToIndex = null;
+  }
+
+  void jumpToIndex(int index, {bool animate = true}) {
+    _jumpToIndex?.call(index, animate);
+  }
+}
+
 /// Orbital scrolling widget that displays songs in a curved arc.
 class OrbitScroll extends StatefulWidget {
   /// List of songs to display
@@ -22,12 +38,16 @@ class OrbitScroll extends StatefulWidget {
   /// Callback when the selected song changes via scrolling
   final ValueChanged<int>? onSelectedIndexChanged;
 
+  /// Controller for external jump-to-index actions.
+  final OrbitScrollController? controller;
+
   const OrbitScroll({
     super.key,
     required this.songs,
     this.selectedIndex = 0,
     this.onSongSelected,
     this.onSelectedIndexChanged,
+    this.controller,
   });
 
   @override
@@ -58,11 +78,16 @@ class _OrbitScrollState extends State<OrbitScroll>
       duration: const Duration(milliseconds: 500),
     );
     _controller.addListener(_onPhysicsTick);
+    widget.controller?._attach(_jumpToIndex);
   }
 
   @override
   void didUpdateWidget(OrbitScroll oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?._detach();
+      widget.controller?._attach(_jumpToIndex);
+    }
     if (widget.selectedIndex != oldWidget.selectedIndex) {
       // If the index changed externally, snap/spring to it
       if ((widget.selectedIndex.toDouble() - _scrollOffset).abs() > 0.05) {
@@ -73,8 +98,27 @@ class _OrbitScrollState extends State<OrbitScroll>
 
   @override
   void dispose() {
+    widget.controller?._detach();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _jumpToIndex(int index, bool animate) {
+    if (widget.songs.isEmpty) return;
+
+    final clampedIndex = index.clamp(0, widget.songs.length - 1);
+    if (animate) {
+      _animateTo(clampedIndex.toDouble());
+      return;
+    }
+
+    _controller.stop();
+    setState(() {
+      _scrollOffset = clampedIndex.toDouble();
+      _isScrolling = false;
+      _lastScrollTime = DateTime.now();
+    });
+    widget.onSelectedIndexChanged?.call(clampedIndex);
   }
 
   void _onPhysicsTick() {
