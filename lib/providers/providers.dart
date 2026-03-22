@@ -9,3 +9,4 @@ export 'favorites_provider.dart';
 export 'library_scanner_provider.dart';
 export 'navigation_provider.dart';
 export 'playlist_provider.dart';
+export 'uac2_provider.dart';

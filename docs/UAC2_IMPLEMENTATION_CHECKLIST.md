@@ -193,21 +193,21 @@ This checklist outlines the implementation of a custom USB Audio Class 2.0 (UAC 
 
 ### 6.2 Flutter Service Integration
 
-- [ ] Create `Uac2Service` in `lib/services/uac2_service.dart`
-- [ ] Implement device discovery methods
-- [ ] Implement device selection methods
-- [ ] Add device capability queries
-- [ ] Integrate with `PlayerService` for audio routing
-- [ ] Add Riverpod providers for UAC2 state management
-- [ ] Create UI for device selection and status
+- [X] Create `Uac2Service` in `lib/services/uac2_service.dart`
+- [X] Implement device discovery methods
+- [X] Implement device selection methods
+- [X] Add device capability queries
+- [X] Integrate with `PlayerService` for audio routing
+- [X] Add Riverpod providers for UAC2 state management
+- [X] Create UI for device selection and status
 
 ### 6.3 State Management
 
-- [ ] Create `Uac2State` enum (Idle, Connecting, Connected, Streaming, Error)
-- [ ] Implement state machine for device lifecycle
-- [ ] Add state change notifications to Flutter
-- [ ] Handle state transitions properly
-- [ ] Add state persistence (selected device)
+- [X] Create `Uac2State` enum (Idle, Connecting, Connected, Streaming, Error)
+- [X] Implement state machine for device lifecycle
+- [X] Add state change notifications to Flutter
+- [X] Handle state transitions properly
+- [X] Add state persistence (selected device)
 
 ---
 
