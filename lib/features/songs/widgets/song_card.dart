@@ -168,72 +168,70 @@ class SongCard extends StatelessWidget {
   }
 
   Widget _buildSongInfo(BuildContext context, {bool isSelected = false}) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Title with Marquee
-          if (isSelected)
-            SizedBox(
-              height: 24,
-              child: MarqueeWidget(
-                child: Text(
-                  song.title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                    letterSpacing: 0.2,
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Title with Marquee
+        if (isSelected)
+          SizedBox(
+            height: 24,
+            child: MarqueeWidget(
+              child: Text(
+                song.title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  letterSpacing: 0.2,
                 ),
               ),
-            )
-          else
-            Text(
-              song.title,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-                letterSpacing: 0.2,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
-
-          const SizedBox(height: AppConstants.spacingXxs),
-
-          // Artist - white for visibility
+          )
+        else
           Text(
-            song.artist,
+            song.title,
             style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              color: Colors.white70,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+              letterSpacing: 0.2,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
 
-          const SizedBox(height: AppConstants.spacingXs),
+        const SizedBox(height: AppConstants.spacingXxs),
 
-          // Metadata row: file type, duration, resolution
-          Row(
-            children: [
-              _buildMetadataBadge(song.fileType),
-              const SizedBox(width: AppConstants.spacingXs),
-              _buildMetadataText(song.formattedDuration),
-              if (song.resolution != null && song.resolution != 'Unknown') ...[
-                const SizedBox(width: AppConstants.spacingXs),
-                _buildMetadataText('•'),
-                const SizedBox(width: AppConstants.spacingXs),
-                Flexible(child: _buildMetadataText(song.resolution!)),
-              ],
-            ],
+        // Artist - white for visibility
+        Text(
+          song.artist,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w400,
+            color: Colors.white70,
           ),
-        ],
-      ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+
+        const SizedBox(height: AppConstants.spacingXs),
+
+        // Metadata row: file type, duration, resolution
+        Row(
+          children: [
+            _buildMetadataBadge(song.fileType),
+            const SizedBox(width: AppConstants.spacingXs),
+            _buildMetadataText(song.formattedDuration),
+            if (song.resolution != null && song.resolution != 'Unknown') ...[
+              const SizedBox(width: AppConstants.spacingXs),
+              _buildMetadataText('•'),
+              const SizedBox(width: AppConstants.spacingXs),
+              Flexible(child: _buildMetadataText(song.resolution!)),
+            ],
+          ],
+        ),
+      ],
     );
   }
 

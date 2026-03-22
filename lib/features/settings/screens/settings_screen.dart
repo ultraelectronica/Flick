@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/utils/responsive.dart';
+import 'package:flick/models/song_view_mode.dart';
 import 'package:flick/services/music_folder_service.dart';
 import 'package:flick/services/library_scanner_service.dart';
 import 'package:flick/services/permission_service.dart';
 import 'package:flick/data/repositories/song_repository.dart';
+import 'package:flick/providers/providers.dart';
 import 'package:flick/widgets/common/glass_dialog.dart';
 import 'package:flick/widgets/common/glass_bottom_sheet.dart';
 import 'package:flick/widgets/common/display_mode_wrapper.dart';
@@ -16,17 +19,16 @@ import 'package:flick/features/settings/screens/equalizer_screen.dart';
 import 'package:flick/features/settings/screens/uac2_settings_screen.dart';
 
 /// Settings screen matching the design language.
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // Sample settings state
   bool _gaplessPlayback = true;
-  bool _showAlbumArt = true;
 
   // Library state
   final MusicFolderService _folderService = MusicFolderService();
@@ -320,8 +322,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-
-
   void _showAboutBottomSheet() {
     GlassBottomSheet.show(
       context: context,
@@ -420,6 +420,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final songsViewMode = ref.watch(songsViewModeProvider);
+    final navBarAlwaysVisible = ref.watch(navBarAlwaysVisibleProvider);
+
     return DisplayModeWrapper(
       child: SafeArea(
         bottom: false,
@@ -472,14 +475,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildSettingsCard(
                         context,
                         children: [
+                          _buildSelectionSetting(
+                            context,
+                            icon: LucideIcons.disc,
+                            title: 'Song View: Orbital',
+                            subtitle: 'Use the orbital songs browser',
+                            selected: songsViewMode == SongViewMode.orbit,
+                            onTap: () {
+                              ref
+                                  .read(songsViewModeProvider.notifier)
+                                  .setMode(SongViewMode.orbit);
+                            },
+                          ),
+                          _buildDivider(),
+                          _buildSelectionSetting(
+                            context,
+                            icon: LucideIcons.list,
+                            title: 'Song View: List',
+                            subtitle: 'Use the list songs browser',
+                            selected: songsViewMode == SongViewMode.list,
+                            onTap: () {
+                              ref
+                                  .read(songsViewModeProvider.notifier)
+                                  .setMode(SongViewMode.list);
+                            },
+                          ),
+                          _buildDivider(),
                           _buildToggleSetting(
                             context,
-                            icon: LucideIcons.image,
-                            title: 'Show Album Art',
-                            subtitle: 'Display album artwork in player',
-                            value: _showAlbumArt,
+                            icon: LucideIcons.panelBottom,
+                            title: 'Bottom Bar Always Visible',
+                            subtitle: 'Keep mini player and nav visible',
+                            value: navBarAlwaysVisible,
                             onChanged: (value) {
-                              setState(() => _showAlbumArt = value);
+                              ref
+                                  .read(navBarAlwaysVisibleProvider.notifier)
+                                  .setAlwaysVisible(value);
                             },
                           ),
                         ],
@@ -973,6 +1004,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectionSetting(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.spacingMd),
+          child: Row(
+            children: [
+              Container(
+                width: context.scaleSize(AppConstants.containerSizeSm),
+                height: context.scaleSize(AppConstants.containerSizeSm),
+                decoration: BoxDecoration(
+                  color: AppColors.glassBackgroundStrong,
+                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                ),
+                child: Icon(
+                  icon,
+                  color: context.adaptiveTextSecondary,
+                  size: context.responsiveIcon(AppConstants.iconSizeMd),
+                ),
+              ),
+              const SizedBox(width: AppConstants.spacingMd),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: context.adaptiveTextPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: context.adaptiveTextTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked,
+                color: selected
+                    ? context.adaptiveTextPrimary
+                    : context.adaptiveTextTertiary,
+                size: 20,
+              ),
+            ],
           ),
         ),
       ),

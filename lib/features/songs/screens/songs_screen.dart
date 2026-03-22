@@ -6,10 +6,13 @@ import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/utils/responsive.dart';
 import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
+import 'package:flick/models/song_view_mode.dart';
 import 'package:flick/features/songs/widgets/orbit_scroll.dart';
+import 'package:flick/features/songs/widgets/song_fast_index_overlay.dart';
 import 'package:flick/providers/providers.dart';
 import 'package:flick/widgets/common/glass_search_bar.dart';
 import 'package:flick/widgets/common/display_mode_wrapper.dart';
+import 'package:flick/widgets/common/cached_image_widget.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Main songs screen with orbital scrolling.
@@ -24,15 +27,26 @@ class SongsScreen extends ConsumerStatefulWidget {
 }
 
 class _SongsScreenState extends ConsumerState<SongsScreen> {
+  static const double _listItemExtent = 80;
+  static const List<String> _fastIndexTokens =
+      SongFastIndexOverlay.defaultTokens;
+
   int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _listScrollController = ScrollController();
+  final OrbitScrollController _orbitScrollController = OrbitScrollController();
   String _searchQuery = '';
   List<Song> _cachedSongs = [];
+  String _selectedFastToken = 'A';
+  late final ProviderSubscription<Song?> _currentSongSubscription;
 
   @override
   void initState() {
     super.initState();
-    ref.listen<Song?>(currentSongProvider, (previous, next) {
+    _currentSongSubscription = ref.listenManual<Song?>(currentSongProvider, (
+      previous,
+      next,
+    ) {
       if (next != null && mounted) {
         final index = _cachedSongs.indexWhere((s) => s.id == next.id);
         if (index != -1 && index != _selectedIndex) {
@@ -46,6 +60,8 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
 
   @override
   void dispose() {
+    _currentSongSubscription.close();
+    _listScrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -53,6 +69,11 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   @override
   Widget build(BuildContext context) {
     final songsAsync = ref.watch(songsProvider);
+    final viewMode = ref.watch(songsViewModeProvider);
+    final navBarAlwaysVisible = ref.watch(navBarAlwaysVisibleProvider);
+
+    final shouldReserveBottomSpace =
+        viewMode != SongViewMode.list || navBarAlwaysVisible;
 
     return DisplayModeWrapper(
       child: Stack(
@@ -150,52 +171,359 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                         });
                       }
 
-                      return OrbitScroll(
-                        songs: songs,
-                        selectedIndex: _selectedIndex
-                            .clamp(0, songs.length - 1)
-                            .toInt(),
-                        onSelectedIndexChanged: (index) {
-                          setState(() {
-                            _selectedIndex = index;
-                          });
-                        },
-                        onSongSelected: (index) async {
-                          // Play the song with the full playlist context
-                          await ref
-                              .read(playerProvider.notifier)
-                              .play(songs[index], playlist: songs);
+                      _syncSelectedTokenForIndex(songs, _selectedIndex);
 
-                          if (!context.mounted) return;
+                      final tokenToIndexMap = _buildFastIndexMap(songs);
 
-                          // Navigate to full player screen using helper to prevent duplicates
-                          final result =
-                              await NavigationHelper.navigateToFullPlayer(
-                                context,
-                                heroTag: 'song_art_${songs[index].id}',
-                              );
-
-                          // If a navigation index was returned and it's not Songs (1),
-                          // notify the parent to switch tabs
-                          if (result != null &&
-                              result != 1 &&
-                              widget.onNavigationRequested != null) {
-                            widget.onNavigationRequested!(result);
-                          }
-                        },
+                      return _buildSongsView(
+                        songs,
+                        viewMode,
+                        tokenToIndexMap,
+                        shouldReserveBottomSpace,
                       );
                     },
                   ),
                 ),
 
-                // Space for nav bar & mini player
-                const SizedBox(height: AppConstants.navBarHeight + 90),
+                // Reserve space only when needed so list mode can use full height.
+                SizedBox(
+                  height: shouldReserveBottomSpace
+                      ? AppConstants.navBarHeight + 90
+                      : 0,
+                ),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildSongsView(
+    List<Song> songs,
+    SongViewMode viewMode,
+    Map<String, int> tokenToIndexMap,
+    bool shouldReserveBottomSpace,
+  ) {
+    final content = viewMode == SongViewMode.list
+        ? _buildListView(songs)
+        : _buildOrbitView(songs);
+
+    if (tokenToIndexMap.isEmpty) {
+      return content;
+    }
+
+    final railTopInset = AppConstants.spacingSm;
+    final railBottomInset = shouldReserveBottomSpace
+        ? AppConstants.spacingSm
+        : AppConstants.navBarHeight + 90 + AppConstants.spacingSm;
+
+    return Stack(
+      children: [
+        content,
+        Positioned(
+          right: AppConstants.spacingSm,
+          top: railTopInset,
+          bottom: railBottomInset,
+          child: SongFastIndexOverlay(
+            tokenToIndex: tokenToIndexMap,
+            selectedToken: _selectedFastToken,
+            tokens: _fastIndexTokens,
+            onSelect: (token, animate) {
+              _onFastIndexSelected(
+                songs: songs,
+                tokenToIndexMap: tokenToIndexMap,
+                token: token,
+                animate: animate,
+                viewMode: viewMode,
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOrbitView(List<Song> songs) {
+    return OrbitScroll(
+      controller: _orbitScrollController,
+      songs: songs,
+      selectedIndex: _selectedIndex.clamp(0, songs.length - 1).toInt(),
+      onSelectedIndexChanged: (index) {
+        if (!mounted) return;
+        setState(() {
+          _selectedIndex = index;
+        });
+        _syncSelectedTokenForIndex(songs, index);
+      },
+      onSongSelected: (index) async {
+        await _playSongAndOpenPlayer(songs: songs, index: index);
+      },
+    );
+  }
+
+  Widget _buildListView(List<Song> songs) {
+    return ListView.builder(
+      controller: _listScrollController,
+      itemExtent: _listItemExtent,
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spacingLg,
+        0,
+        AppConstants.spacingXl + 30,
+        0,
+      ),
+      itemCount: songs.length,
+      itemBuilder: (context, index) {
+        final song = songs[index];
+        final isSelected = index == _selectedIndex;
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: AppConstants.spacingSm),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+              onTap: () async {
+                setState(() {
+                  _selectedIndex = index;
+                });
+                _syncSelectedTokenForIndex(songs, index);
+                await _playSongAndOpenPlayer(songs: songs, index: index);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppConstants.spacingMd,
+                  vertical: AppConstants.spacingSm,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isSelected
+                        ? [
+                            AppColors.surfaceLight.withValues(alpha: 0.9),
+                            AppColors.surface.withValues(alpha: 0.95),
+                          ]
+                        : [
+                            AppColors.surfaceLight.withValues(alpha: 0.65),
+                            AppColors.surface.withValues(alpha: 0.78),
+                          ],
+                  ),
+                  border: Border.all(
+                    color: isSelected
+                        ? AppColors.accent.withValues(alpha: 0.45)
+                        : AppColors.glassBorder,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusMd,
+                      ),
+                      child: SizedBox(
+                        width: 46,
+                        height: 46,
+                        child: song.albumArt != null
+                            ? CachedImageWidget(
+                                imagePath: song.albumArt!,
+                                fit: BoxFit.cover,
+                                useThumbnail: true,
+                                thumbnailWidth: 92,
+                                thumbnailHeight: 92,
+                              )
+                            : const ColoredBox(
+                                color: AppColors.surface,
+                                child: Icon(
+                                  LucideIcons.music,
+                                  color: AppColors.textTertiary,
+                                  size: 18,
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: AppConstants.spacingMd),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
+                                  color: context.adaptiveTextPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${song.artist} • ${song.fileType.toUpperCase()}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: context.adaptiveTextSecondary,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppConstants.spacingSm),
+                    Text(
+                      song.formattedDuration,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: context.adaptiveTextTertiary,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Map<String, int> _buildFastIndexMap(List<Song> songs) {
+    final map = <String, int>{};
+    for (var i = 0; i < songs.length; i++) {
+      final token = _tokenForTitle(songs[i].title);
+      map.putIfAbsent(token, () => i);
+    }
+    return map;
+  }
+
+  String _tokenForTitle(String title) {
+    final normalized = title.trim();
+    if (normalized.isEmpty) return '#';
+
+    final code = normalized.codeUnitAt(0);
+    if (_isAsciiUpper(code)) {
+      return String.fromCharCode(code);
+    }
+
+    if (_isDigit(code)) {
+      return '0-9';
+    }
+
+    final upperCode = code >= 97 && code <= 122 ? code - 32 : code;
+    if (_isAsciiUpper(upperCode)) {
+      return String.fromCharCode(upperCode);
+    }
+
+    return '#';
+  }
+
+  bool _isAsciiUpper(int codeUnit) => codeUnit >= 65 && codeUnit <= 90;
+  bool _isDigit(int codeUnit) => codeUnit >= 48 && codeUnit <= 57;
+
+  String _nearestIndexedToken(String token, Map<String, int> tokenToIndexMap) {
+    if (tokenToIndexMap.containsKey(token)) {
+      return token;
+    }
+
+    final start = _fastIndexTokens.indexOf(token);
+    if (start == -1) return tokenToIndexMap.keys.first;
+
+    for (var i = start + 1; i < _fastIndexTokens.length; i++) {
+      final candidate = _fastIndexTokens[i];
+      if (tokenToIndexMap.containsKey(candidate)) {
+        return candidate;
+      }
+    }
+
+    for (var i = start - 1; i >= 0; i--) {
+      final candidate = _fastIndexTokens[i];
+      if (tokenToIndexMap.containsKey(candidate)) {
+        return candidate;
+      }
+    }
+
+    return tokenToIndexMap.keys.first;
+  }
+
+  void _onFastIndexSelected({
+    required List<Song> songs,
+    required Map<String, int> tokenToIndexMap,
+    required String token,
+    required bool animate,
+    required SongViewMode viewMode,
+  }) {
+    if (songs.isEmpty || tokenToIndexMap.isEmpty) return;
+
+    final resolvedToken = _nearestIndexedToken(token, tokenToIndexMap);
+    final targetIndex = tokenToIndexMap[resolvedToken];
+    if (targetIndex == null) return;
+
+    _selectedFastToken = resolvedToken;
+
+    if (mounted && targetIndex != _selectedIndex) {
+      setState(() {
+        _selectedIndex = targetIndex;
+      });
+    }
+
+    if (viewMode == SongViewMode.list) {
+      _jumpInList(targetIndex, animate);
+      return;
+    }
+
+    _orbitScrollController.jumpToIndex(targetIndex, animate: animate);
+  }
+
+  void _jumpInList(int targetIndex, bool animate) {
+    if (!_listScrollController.hasClients) return;
+
+    final targetOffset = targetIndex * _listItemExtent;
+    final clampedOffset = targetOffset.clamp(
+      0.0,
+      _listScrollController.position.maxScrollExtent,
+    );
+
+    if (animate) {
+      _listScrollController.animateTo(
+        clampedOffset,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _listScrollController.jumpTo(clampedOffset);
+    }
+  }
+
+  void _syncSelectedTokenForIndex(List<Song> songs, int index) {
+    if (songs.isEmpty || index < 0 || index >= songs.length) {
+      return;
+    }
+    _selectedFastToken = _tokenForTitle(songs[index].title);
+  }
+
+  Future<void> _playSongAndOpenPlayer({
+    required List<Song> songs,
+    required int index,
+  }) async {
+    // Play the song with the full playlist context
+    await ref.read(playerProvider.notifier).play(songs[index], playlist: songs);
+
+    if (!mounted) return;
+
+    // Navigate to full player screen using helper to prevent duplicates
+    final result = await NavigationHelper.navigateToFullPlayer(
+      context,
+      heroTag: 'song_art_${songs[index].id}',
+    );
+
+    // If a navigation index was returned and it's not Songs (1), notify parent to switch tabs
+    if (result != null && result != 1 && widget.onNavigationRequested != null) {
+      widget.onNavigationRequested!(result);
+    }
   }
 
   Widget _buildLoadingState() {
@@ -310,7 +638,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
             ],
           ),
 
-          // Sort/Filter Button
+          // Sort/Filter/View Button
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -346,12 +674,15 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
               onSelected: (dynamic result) {
                 if (result is SongSortOption) {
                   ref.read(songsProvider.notifier).setSortOption(result);
+                  setState(() {
+                    _selectedIndex = 0;
+                  });
                 } else if (result is SongFileTypeFilter) {
                   ref.read(songsProvider.notifier).setFileTypeFilter(result);
+                  setState(() {
+                    _selectedIndex = 0;
+                  });
                 }
-                setState(() {
-                  _selectedIndex = 0;
-                });
               },
               itemBuilder: (BuildContext context) => [
                 PopupMenuItem<void>(

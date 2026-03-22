@@ -54,6 +54,9 @@ class _MainShellState extends ConsumerState<MainShell>
   // Animation controller for smoother nav bar transitions
   late final AnimationController _navBarAnimationController;
   late final Animation<Offset> _navBarSlideAnimation;
+  late final ProviderSubscription<bool> _navBarVisibilitySubscription;
+  late final ProviderSubscription<bool> _navBarAlwaysVisibleSubscription;
+  late final ProviderSubscription<Song?> _currentSongSubscription;
 
   // Track previous song to detect changes
   Song? _previousSong;
@@ -73,48 +76,27 @@ class _MainShellState extends ConsumerState<MainShell>
             reverseCurve: Curves.easeOutCubic,
           ),
         );
-  }
 
-  @override
-  void dispose() {
-    _navBarAnimationController.dispose();
-    super.dispose();
-  }
+    _navBarVisibilitySubscription = ref.listenManual<bool>(
+      navBarVisibleProvider,
+      (previous, next) {
+        _onNavBarVisibilityChanged(next);
+      },
+    );
 
-  void _onNavBarVisibilityChanged(bool isVisible) {
-    if (isVisible) {
-      _navBarAnimationController.reverse();
-    } else {
-      _navBarAnimationController.forward();
-    }
-  }
+    _navBarAlwaysVisibleSubscription = ref.listenManual<bool>(
+      navBarAlwaysVisibleProvider,
+      (previous, next) {
+        if (next) {
+          ref.read(navBarVisibleProvider.notifier).setVisible(true);
+        }
+      },
+    );
 
-  bool _handleScrollNotification(ScrollNotification notification) {
-    if (notification is UserScrollNotification) {
-      final direction = notification.direction;
-      final currentVisibility = ref.read(navBarVisibleProvider);
-
-      if (direction == ScrollDirection.forward && currentVisibility) {
-        ref.read(navBarVisibleProvider.notifier).setVisible(false);
-      } else if (direction == ScrollDirection.reverse && !currentVisibility) {
-        ref.read(navBarVisibleProvider.notifier).setVisible(true);
-      }
-    }
-    return false;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final currentIndex = ref.watch(navigationIndexProvider);
-    final backgroundColor = ref.watch(backgroundColorProvider);
-
-    // Listen to nav bar visibility changes and animate
-    ref.listen<bool>(navBarVisibleProvider, (previous, next) {
-      _onNavBarVisibilityChanged(next);
-    });
-
-    // Listen to song changes and automatically navigate to full player
-    ref.listen<Song?>(currentSongProvider, (previousSong, nextSong) {
+    _currentSongSubscription = ref.listenManual<Song?>(currentSongProvider, (
+      previousSong,
+      nextSong,
+    ) {
       // Navigate if:
       // 1. There is a new song (not null)
       // 2. The song actually changed (different from previous, or first song)
@@ -137,6 +119,51 @@ class _MainShellState extends ConsumerState<MainShell>
       // Update previous song
       _previousSong = nextSong;
     });
+  }
+
+  @override
+  void dispose() {
+    _navBarVisibilitySubscription.close();
+    _navBarAlwaysVisibleSubscription.close();
+    _currentSongSubscription.close();
+    _navBarAnimationController.dispose();
+    super.dispose();
+  }
+
+  void _onNavBarVisibilityChanged(bool isVisible) {
+    if (isVisible) {
+      _navBarAnimationController.reverse();
+    } else {
+      _navBarAnimationController.forward();
+    }
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    final alwaysVisible = ref.read(navBarAlwaysVisibleProvider);
+    if (alwaysVisible) {
+      if (!ref.read(navBarVisibleProvider)) {
+        ref.read(navBarVisibleProvider.notifier).setVisible(true);
+      }
+      return false;
+    }
+
+    if (notification is UserScrollNotification) {
+      final direction = notification.direction;
+      final currentVisibility = ref.read(navBarVisibleProvider);
+
+      if (direction == ScrollDirection.forward && currentVisibility) {
+        ref.read(navBarVisibleProvider.notifier).setVisible(false);
+      } else if (direction == ScrollDirection.reverse && !currentVisibility) {
+        ref.read(navBarVisibleProvider.notifier).setVisible(true);
+      }
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentIndex = ref.watch(navigationIndexProvider);
+    final backgroundColor = ref.watch(backgroundColorProvider);
 
     return AdaptiveColorProvider(
       backgroundColor: backgroundColor,
@@ -251,11 +278,30 @@ class _EmbeddedMiniPlayer extends ConsumerWidget {
         margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
         height: 56,
         decoration: BoxDecoration(
-          color: AppColors.glassBackground.withValues(alpha: 0.5),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.surfaceLight.withValues(alpha: 0.86),
+              AppColors.surface.withValues(alpha: 0.94),
+            ],
+          ),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: AppColors.glassBorder.withValues(alpha: 0.2),
+            color: const Color.fromARGB(
+              108,
+              255,
+              255,
+              255,
+            ).withValues(alpha: 0.45),
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.22),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
@@ -326,11 +372,11 @@ class _EmbeddedMiniPlayer extends ConsumerWidget {
                           currentSong.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: 'ProductSans',
                             fontWeight: FontWeight.w600,
                             fontSize: 14,
-                            color: AppColors.textPrimary,
+                            color: context.adaptiveTextPrimary,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -338,10 +384,11 @@ class _EmbeddedMiniPlayer extends ConsumerWidget {
                           currentSong.artist,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: 'ProductSans',
                             fontSize: 12,
-                            color: AppColors.textTertiary,
+                            color: context.adaptiveTextSecondary,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
@@ -357,7 +404,7 @@ class _EmbeddedMiniPlayer extends ConsumerWidget {
                             ref.read(playerProvider.notifier).togglePlayPause(),
                         icon: Icon(
                           isPlaying ? LucideIcons.pause : LucideIcons.play,
-                          color: AppColors.textPrimary,
+                          color: context.adaptiveTextPrimary,
                           size: 20,
                         ),
                       );
