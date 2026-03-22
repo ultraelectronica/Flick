@@ -53,6 +53,9 @@ mod transfer_buffer;
 #[cfg(feature = "uac2")]
 mod transfer_manager;
 
+#[cfg(all(test, feature = "uac2"))]
+mod tests;
+
 #[cfg(feature = "uac2")]
 pub use audio_format::{
     AudioFormat, BitDepth, ChannelConfig, FormatNegotiator, FormatType, SampleRate,
