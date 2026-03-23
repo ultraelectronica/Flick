@@ -418,6 +418,65 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  void _showLicensesBottomSheet() {
+    const licenseContent = '''
+MIT License
+
+Copyright (c) 2026 Flick Player Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+''';
+
+    GlassBottomSheet.show(
+      context: context,
+      title: 'Licenses',
+      maxHeightRatio: 0.7,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: AppConstants.spacingMd),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppConstants.spacingMd),
+              decoration: BoxDecoration(
+                color: AppColors.glassBackground,
+                borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                border: Border.all(color: AppColors.glassBorder),
+              ),
+              child: const Text(
+                licenseContent,
+                style: TextStyle(
+                  fontFamily: 'ProductSans',
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                  height: 1.6,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppConstants.spacingMd),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final songsViewMode = ref.watch(songsViewModeProvider);
@@ -573,7 +632,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             icon: LucideIcons.fileText,
                             title: 'Licenses',
                             subtitle: 'Open source licenses',
-                            onTap: () {},
+                            onTap: _showLicensesBottomSheet,
                           ),
                         ],
                       ),

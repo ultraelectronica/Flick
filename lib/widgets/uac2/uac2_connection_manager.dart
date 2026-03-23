@@ -160,7 +160,7 @@ class _Uac2ConnectionManagerState
                 Switch(
                   value: _autoReconnect,
                   onChanged: _toggleAutoReconnect,
-                  activeColor: AppColors.accent,
+                  activeThumbColor: AppColors.accent,
                 ),
               ],
             ),

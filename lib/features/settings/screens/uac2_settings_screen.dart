@@ -16,7 +16,6 @@ import 'package:flick/widgets/uac2/uac2_transfer_stats_widget.dart';
 import 'package:flick/widgets/uac2/uac2_pipeline_info_widget.dart';
 import 'package:flick/widgets/uac2/uac2_connection_manager.dart';
 import 'package:flick/widgets/uac2/uac2_fallback_manager.dart';
-import 'package:flick/widgets/uac2/uac2_pipeline_info_widget.dart';
 
 class Uac2SettingsScreen extends ConsumerStatefulWidget {
   const Uac2SettingsScreen({super.key});

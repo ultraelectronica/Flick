@@ -163,7 +163,11 @@ class _SongFastIndexOverlayState extends State<SongFastIndexOverlay> {
                   borderRadius: BorderRadius.circular(AppConstants.radiusLg),
                   border: Border.all(color: AppColors.glassBorder),
                 ),
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppConstants.spacingSm,
+                ),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     for (final token in tokens)

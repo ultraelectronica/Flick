@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
-import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/utils/responsive.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
@@ -554,34 +553,39 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                           const Uac2ErrorNotification(),
                           // Top Bar
                           Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: context.responsive(8.0, 12.0, 16.0),
+                              vertical: context.responsive(4.0, 6.0, 8.0),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 IconButton(
                                   onPressed: () => Navigator.of(context).pop(),
+                                  padding: EdgeInsets.all(context.responsive(8.0, 10.0, 12.0)),
+                                  constraints: const BoxConstraints(),
                                   icon: Icon(
                                     LucideIcons.chevronDown,
                                     color: context.adaptiveTextPrimary,
+                                    size: context.responsive(20.0, 22.0, 24.0),
                                   ),
                                 ),
                                 Text(
                                   "Now Playing",
                                   style: TextStyle(
                                     fontFamily: 'ProductSans',
-                                    fontSize: 14,
+                                    fontSize: context.responsive(12.0, 13.0, 14.0),
                                     fontWeight: FontWeight.w600,
                                     color: context.adaptiveTextSecondary,
-                                    letterSpacing: 1,
+                                    letterSpacing: 0.8,
                                   ),
                                 ),
                                 PopupMenuButton<String>(
+                                  padding: EdgeInsets.all(context.responsive(8.0, 10.0, 12.0)),
                                   icon: Icon(
                                     Icons.more_vert,
                                     color: context.adaptiveTextPrimary,
+                                    size: context.responsive(20.0, 22.0, 24.0),
                                   ),
                                   color: AppColors.surface,
                                   shape: RoundedRectangleBorder(
@@ -686,7 +690,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                             child: Builder(
                               builder: (context) {
                                 final mediaSize = MediaQuery.sizeOf(context);
-                                final isCompactHeight = mediaSize.height <= 600;
+                                // More adaptive compact height threshold
+                                final isCompactHeight = mediaSize.height <= 650 || 
+                                    (context.isCompact && mediaSize.height <= 700);
 
                                 if (isCompactHeight) {
                                   return CompactPlayerInfoLayout(
@@ -699,7 +705,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
 
                                 return Column(
                                   children: [
-                                    const Spacer(flex: 1),
+                                    const SizedBox(height: 30),
                                     Hero(
                                       tag: widget.heroTag,
                                       child: Builder(
@@ -709,30 +715,43 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                           ).width;
                                           final screenHeight =
                                               MediaQuery.sizeOf(context).height;
-                                          final maxSize = screenHeight * 0.36;
-                                          final size =
-                                              (context.responsive(0.8, 0.85) *
-                                                      screenWidth)
-                                                  .clamp(0.0, maxSize);
+                                          
+                                          // Better responsive sizing for album art with safer constraints
+                                          final double size;
+                                          if (context.isCompact) {
+                                            // Compact phones: smaller art, more space for controls
+                                            size = (screenWidth * 0.60).clamp(160.0, screenHeight * 0.25);
+                                          } else if (screenHeight < 700) {
+                                            // Short screens: prioritize controls
+                                            size = (screenWidth * 0.65).clamp(180.0, screenHeight * 0.28);
+                                          } else {
+                                            // Normal screens: larger art
+                                            final maxSize = screenHeight * 0.36;
+                                            size = (context.responsive(0.70, 0.75, 0.80) *
+                                                    screenWidth)
+                                                .clamp(200.0, maxSize);
+                                          }
+
+                                          final borderRadius = context.responsive(20.0, 28.0, 36.0);
 
                                           return Container(
                                             width: size,
                                             height: size,
                                             decoration: BoxDecoration(
                                               borderRadius:
-                                                  BorderRadius.circular(40),
+                                                  BorderRadius.circular(borderRadius),
                                               boxShadow: [
                                                 BoxShadow(
                                                   color: Colors.black
                                                       .withValues(alpha: 0.3),
-                                                  blurRadius: 32,
-                                                  offset: const Offset(0, 16),
+                                                  blurRadius: context.responsive(16.0, 24.0, 28.0),
+                                                  offset: Offset(0, context.responsive(8.0, 12.0, 14.0)),
                                                 ),
                                               ],
                                             ),
                                             child: ClipRRect(
                                               borderRadius:
-                                                  BorderRadius.circular(40),
+                                                  BorderRadius.circular(borderRadius),
                                               child: song.albumArt != null
                                                   ? CachedImageWidget(
                                                       imagePath: song.albumArt!,
@@ -744,12 +763,12 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                                             .glassBackgroundStrong,
                                                         borderRadius:
                                                             BorderRadius.circular(
-                                                              40,
+                                                              borderRadius,
                                                             ),
                                                       ),
-                                                      child: const Icon(
+                                                      child: Icon(
                                                         LucideIcons.music,
-                                                        size: 80,
+                                                        size: context.responsive(50.0, 60.0, 70.0),
                                                         color: AppColors
                                                             .textTertiary,
                                                       ),
@@ -760,11 +779,11 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                       ),
                                     ),
                                     SizedBox(
-                                      height: context.responsive(12.0, 32.0),
+                                      height: context.responsive(20.0, 24.0, 28.0),
                                     ),
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 24,
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: context.responsive(12.0, 16.0, 20.0),
                                       ),
                                       child: AnimatedSwitcher(
                                         duration: const Duration(
@@ -801,20 +820,20 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                             Text(
                                               song.title,
                                               textAlign: TextAlign.center,
-                                              maxLines: 1,
+                                              maxLines: context.isCompact ? 1 : 2,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
                                                 fontFamily: 'ProductSans',
                                                 fontSize: context
                                                     .responsiveText(
-                                                      AppConstants.fontSizeXxl,
+                                                      context.responsive(18.0, 22.0, 26.0),
                                                     ),
                                                 fontWeight: FontWeight.bold,
                                                 color:
                                                     context.adaptiveTextPrimary,
                                               ),
                                             ),
-                                            const SizedBox(height: 8),
+                                            SizedBox(height: context.responsive(3.0, 5.0, 6.0)),
                                             Text(
                                               song.artist,
                                               textAlign: TextAlign.center,
@@ -824,13 +843,13 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                                 fontFamily: 'ProductSans',
                                                 fontSize: context
                                                     .responsiveText(
-                                                      AppConstants.fontSizeLg,
+                                                      context.responsive(13.0, 15.0, 17.0),
                                                     ),
                                                 color: context
                                                     .adaptiveTextSecondary,
                                               ),
                                             ),
-                                            const SizedBox(height: 12),
+                                            SizedBox(height: context.responsive(6.0, 8.0, 8.0)),
                                             const Uac2PlayerStatus(
                                               compact: true,
                                             ),
@@ -838,28 +857,28 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(height: 8),
+                                    SizedBox(height: context.responsive(3.0, 5.0, 4.0)),
                                     Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
                                       children: [
                                         Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: context.responsive(4.0, 5.0, 6.0),
                                             vertical: 2,
                                           ),
                                           decoration: BoxDecoration(
                                             color: context.adaptiveTextTertiary
                                                 .withValues(alpha: 0.1),
                                             borderRadius: BorderRadius.circular(
-                                              4,
+                                              3,
                                             ),
                                           ),
                                           child: Text(
                                             song.fileType,
                                             style: TextStyle(
                                               fontFamily: 'ProductSans',
-                                              fontSize: 11,
+                                              fontSize: context.responsive(9.0, 10.0, 11.0),
                                               fontWeight: FontWeight.w600,
                                               color:
                                                   context.adaptiveTextSecondary,
@@ -867,12 +886,12 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                           ),
                                         ),
                                         if (song.resolution != null) ...[
-                                          const SizedBox(width: 8),
+                                          SizedBox(width: context.responsive(5.0, 6.0, 7.0)),
                                           Text(
                                             song.resolution!,
                                             style: TextStyle(
                                               fontFamily: 'ProductSans',
-                                              fontSize: 11,
+                                              fontSize: context.responsive(9.0, 10.0, 11.0),
                                               color:
                                                   context.adaptiveTextTertiary,
                                             ),
@@ -880,7 +899,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                         ],
                                       ],
                                     ),
-                                    const SizedBox(height: 16),
+                                    SizedBox(height: context.responsive(6.0, 10.0, 8.0)),
                                     Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
@@ -892,6 +911,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                             return IconButton(
                                               onPressed: () => _playerService
                                                   .toggleShuffle(),
+                                              padding: EdgeInsets.all(context.responsive(6.0, 8.0, 10.0)),
+                                              constraints: const BoxConstraints(),
                                               icon: Icon(
                                                 LucideIcons.shuffle,
                                                 color: isShuffle
@@ -899,13 +920,13 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                                     : context
                                                           .adaptiveTextTertiary,
                                                 size: context.responsiveIcon(
-                                                  AppConstants.iconSizeMd,
+                                                  context.responsive(18.0, 20.0, 22.0),
                                                 ),
                                               ),
                                             );
                                           },
                                         ),
-                                        const SizedBox(width: 16),
+                                        SizedBox(width: context.responsive(8.0, 12.0, 14.0)),
                                         ValueListenableBuilder<LoopMode>(
                                           valueListenable:
                                               _playerService.loopModeNotifier,
@@ -913,8 +934,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                             IconData icon = LucideIcons.repeat;
                                             Color color =
                                                 context.adaptiveTextTertiary;
-                                            if (loopMode == LoopMode.all)
+                                            if (loopMode == LoopMode.all) {
                                               color = context.adaptiveAccent;
+                                            }
                                             if (loopMode == LoopMode.one) {
                                               icon = LucideIcons.repeat1;
                                               color = context.adaptiveAccent;
@@ -922,17 +944,19 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                             return IconButton(
                                               onPressed: () => _playerService
                                                   .toggleLoopMode(),
+                                              padding: EdgeInsets.all(context.responsive(6.0, 8.0, 10.0)),
+                                              constraints: const BoxConstraints(),
                                               icon: Icon(
                                                 icon,
                                                 color: color,
                                                 size: context.responsiveIcon(
-                                                  AppConstants.iconSizeMd,
+                                                  context.responsive(18.0, 20.0, 22.0),
                                                 ),
                                               ),
                                             );
                                           },
                                         ),
-                                        const SizedBox(width: 16),
+                                        SizedBox(width: context.responsive(8.0, 12.0, 14.0)),
                                         FutureBuilder<bool>(
                                           future: _favoritesService.isFavorite(
                                             song.id,
@@ -965,6 +989,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                                   );
                                                 }
                                               },
+                                              padding: EdgeInsets.all(context.responsive(6.0, 8.0, 10.0)),
+                                              constraints: const BoxConstraints(),
                                               icon: Icon(
                                                 isFavorite
                                                     ? Icons.favorite
@@ -974,7 +1000,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                                     : context
                                                           .adaptiveTextTertiary,
                                                 size: context.responsiveIcon(
-                                                  AppConstants.iconSizeMd,
+                                                  context.responsive(18.0, 20.0, 22.0),
                                                 ),
                                               ),
                                             );
@@ -982,8 +1008,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 8),
-                                    const Spacer(flex: 2),
+                                    SizedBox(height: context.responsive(2.0, 3.0, 0.0)),
                                   ],
                                 );
                               },
@@ -992,7 +1017,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
 
                           // Waveform & Controls
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: context.responsive(12.0, 16.0, 20.0),
+                            ),
                             child: Column(
                               children: [
                                 _WaveformLayer(
@@ -1000,7 +1027,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                   throttledPosition: _throttledPosition,
                                   currentSong: song,
                                 ),
-                                const SizedBox(height: 8),
+                                SizedBox(height: context.responsive(2.0, 3.0, 4.0)),
                                 _PlayerControls(
                                   playerService: _playerService,
                                   formatDuration: _formatDuration,
@@ -1009,7 +1036,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                               ],
                             ),
                           ),
-                          SizedBox(height: context.responsive(16.0, 32.0)),
+                          SizedBox(height: context.responsive(8.0, 12.0, 12.0)),
                           // Bottom Directory Info
                           if (song.filePath != null)
                             Builder(
@@ -1025,34 +1052,40 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                   final folders = parts.sublist(startIndex);
                                   dirText = folders.join('/');
                                 }
-                                if (dirText.isEmpty)
+                                if (dirText.isEmpty) {
                                   return const SizedBox.shrink();
-                                return Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      LucideIcons.folder,
-                                      size: 14,
-                                      color: context.adaptiveTextPrimary,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Flexible(
-                                      child: Text(
-                                        dirText,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontFamily: 'ProductSans',
-                                          fontSize: 12,
-                                          color: context.adaptiveTextPrimary,
+                                }
+                                return Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: context.responsive(12.0, 16.0, 20.0),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        LucideIcons.folder,
+                                        size: context.responsive(11.0, 12.0, 13.0),
+                                        color: context.adaptiveTextPrimary,
+                                      ),
+                                      SizedBox(width: context.responsive(4.0, 5.0, 6.0)),
+                                      Flexible(
+                                        child: Text(
+                                          dirText,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontFamily: 'ProductSans',
+                                            fontSize: context.responsive(10.0, 11.0, 12.0),
+                                            color: context.adaptiveTextPrimary,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 );
                               },
                             ),
-                          SizedBox(height: context.responsive(16.0, 24.0)),
+                          SizedBox(height: context.responsive(8.0, 12.0, 16.0)),
                         ],
                       ),
                     ),
@@ -1095,7 +1128,7 @@ class _WaveformLayer extends StatelessWidget {
         }
 
         return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 4),
           child: RepaintBoundary(
             child: WaveformSeekBar(
               barCount: 60,
@@ -1164,38 +1197,44 @@ class _PlayerControls extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       // Previous
                       Container(
+                        width: context.responsive(40.0, 44.0, 48.0),
+                        height: context.responsive(40.0, 44.0, 48.0),
                         decoration: BoxDecoration(
                           color: const Color(0xFF121212).withValues(alpha: 0.6),
                           shape: BoxShape.circle,
                         ),
                         child: IconButton(
                           onPressed: () => playerService.previous(),
-                          iconSize: 24,
+                          iconSize: context.responsive(18.0, 20.0, 22.0),
+                          padding: EdgeInsets.zero,
                           icon: Icon(
                             LucideIcons.skipBack,
                             color: context.adaptiveTextPrimary,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 24),
+                      SizedBox(width: context.responsive(14.0, 18.0, 22.0)),
                       // Play/Pause - separate widget to minimize rebuilds
                       _PlayPauseButton(playerService: playerService),
-                      const SizedBox(width: 24),
+                      SizedBox(width: context.responsive(14.0, 18.0, 22.0)),
                       // Next
                       Container(
+                        width: context.responsive(40.0, 44.0, 48.0),
+                        height: context.responsive(40.0, 44.0, 48.0),
                         decoration: BoxDecoration(
                           color: const Color(0xFF121212).withValues(alpha: 0.6),
                           shape: BoxShape.circle,
                         ),
                         child: IconButton(
                           onPressed: () => playerService.next(),
-                          iconSize: 24,
+                          iconSize: context.responsive(18.0, 20.0, 22.0),
+                          padding: EdgeInsets.zero,
                           icon: Icon(
                             LucideIcons.skipForward,
                             color: context.adaptiveTextPrimary,
@@ -1226,23 +1265,27 @@ class _PlayPauseButton extends StatelessWidget {
       child: ValueListenableBuilder<bool>(
         valueListenable: playerService.isPlayingNotifier,
         builder: (context, isPlaying, _) {
+          final buttonSize = context.responsive(58.0, 64.0, 68.0);
+          final iconSize = context.responsive(26.0, 28.0, 30.0);
+          
           return Container(
-            width: 72,
-            height: 72,
+            width: buttonSize,
+            height: buttonSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: const Color(0xFF121212).withValues(alpha: 0.6),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.accent.withValues(alpha: 0.4),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+                  blurRadius: context.responsive(14.0, 18.0, 22.0),
+                  offset: Offset(0, context.responsive(5.0, 6.0, 7.0)),
                 ),
               ],
             ),
             child: IconButton(
               onPressed: () => playerService.togglePlayPause(),
-              iconSize: 32,
+              iconSize: iconSize,
+              padding: EdgeInsets.zero,
               icon: Icon(
                 isPlaying ? LucideIcons.pause : LucideIcons.play,
                 color: Colors.white,

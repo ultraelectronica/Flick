@@ -30,8 +30,15 @@ class CompactPlayerInfoLayout extends StatefulWidget {
 class _CompactPlayerInfoLayoutState extends State<CompactPlayerInfoLayout> {
   @override
   Widget build(BuildContext context) {
+    final isVeryCompact = context.isCompact || context.screenHeight < 600;
+    final albumArtSize = isVeryCompact 
+        ? (MediaQuery.sizeOf(context).height * 0.20).clamp(120.0, 160.0)
+        : (MediaQuery.sizeOf(context).height * 0.25).clamp(140.0, 200.0);
+    
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: EdgeInsets.symmetric(
+        horizontal: context.responsive(12.0, 16.0, 20.0),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -41,20 +48,24 @@ class _CompactPlayerInfoLayoutState extends State<CompactPlayerInfoLayout> {
               Hero(
                 tag: widget.heroTag,
                 child: Container(
-                  width: MediaQuery.sizeOf(context).height * 0.28,
-                  height: MediaQuery.sizeOf(context).height * 0.28,
+                  width: albumArtSize,
+                  height: albumArtSize,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(
+                      context.responsive(14.0, 18.0, 22.0),
+                    ),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 24,
-                        offset: const Offset(0, 12),
+                        blurRadius: context.responsive(12.0, 16.0, 20.0),
+                        offset: Offset(0, context.responsive(6.0, 8.0, 10.0)),
                       ),
                     ],
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(
+                      context.responsive(14.0, 18.0, 22.0),
+                    ),
                     child: widget.song.albumArt != null
                         ? CachedImageWidget(
                             imagePath: widget.song.albumArt!,
@@ -62,16 +73,16 @@ class _CompactPlayerInfoLayoutState extends State<CompactPlayerInfoLayout> {
                           )
                         : Container(
                             color: AppColors.glassBackgroundStrong,
-                            child: const Icon(
+                            child: Icon(
                               LucideIcons.music,
-                              size: 40,
+                              size: context.responsive(28.0, 32.0, 36.0),
                               color: AppColors.textTertiary,
                             ),
                           ),
                   ),
                 ),
               ),
-              const SizedBox(width: 24),
+              SizedBox(width: context.responsive(12.0, 16.0, 20.0)),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -79,58 +90,66 @@ class _CompactPlayerInfoLayoutState extends State<CompactPlayerInfoLayout> {
                   children: [
                     Text(
                       widget.song.title,
-                      maxLines: 2,
+                      maxLines: isVeryCompact ? 1 : 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontFamily: 'ProductSans',
-                        fontSize: context.responsiveText(18.0),
+                        fontSize: context.responsiveText(
+                          context.responsive(15.0, 16.0, 17.0),
+                        ),
                         fontWeight: FontWeight.bold,
                         color: context.adaptiveTextPrimary,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: context.responsive(2.0, 3.0, 4.0)),
                     Text(
                       widget.song.artist,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontFamily: 'ProductSans',
-                        fontSize: context.responsiveText(14.0),
+                        fontSize: context.responsiveText(
+                          context.responsive(12.0, 13.0, 13.5),
+                        ),
                         color: context.adaptiveTextSecondary,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: context.responsive(6.0, 8.0, 10.0)),
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: context.responsive(4.0, 5.0, 6.0),
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
                             color: context.adaptiveTextTertiary.withValues(
                               alpha: 0.1,
                             ),
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: BorderRadius.circular(3),
                           ),
                           child: Text(
                             widget.song.fileType,
                             style: TextStyle(
                               fontFamily: 'ProductSans',
-                              fontSize: 10,
+                              fontSize: context.responsive(8.0, 9.0, 9.5),
                               fontWeight: FontWeight.w600,
                               color: context.adaptiveTextSecondary,
                             ),
                           ),
                         ),
                         if (widget.song.resolution != null) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            widget.song.resolution!,
-                            style: TextStyle(
-                              fontFamily: 'ProductSans',
-                              fontSize: 10,
-                              color: context.adaptiveTextTertiary,
+                          SizedBox(width: context.responsive(4.0, 5.0, 6.0)),
+                          Flexible(
+                            child: Text(
+                              widget.song.resolution!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: 'ProductSans',
+                                fontSize: context.responsive(8.0, 9.0, 9.5),
+                                color: context.adaptiveTextTertiary,
+                              ),
                             ),
                           ),
                         ],
@@ -141,7 +160,7 @@ class _CompactPlayerInfoLayoutState extends State<CompactPlayerInfoLayout> {
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          SizedBox(height: context.responsive(12.0, 16.0, 20.0)),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -150,17 +169,19 @@ class _CompactPlayerInfoLayoutState extends State<CompactPlayerInfoLayout> {
                 builder: (context, isShuffle, _) {
                   return IconButton(
                     onPressed: () => widget.playerService.toggleShuffle(),
+                    padding: EdgeInsets.all(context.responsive(6.0, 8.0, 10.0)),
+                    constraints: const BoxConstraints(),
                     icon: Icon(
                       LucideIcons.shuffle,
                       color: isShuffle
                           ? context.adaptiveAccent
                           : context.adaptiveTextTertiary,
-                      size: 24,
+                      size: context.responsive(18.0, 20.0, 22.0),
                     ),
                   );
                 },
               ),
-              const SizedBox(width: 32),
+              SizedBox(width: context.responsive(20.0, 24.0, 28.0)),
               ValueListenableBuilder<LoopMode>(
                 valueListenable: widget.playerService.loopModeNotifier,
                 builder: (context, loopMode, _) {
@@ -175,11 +196,17 @@ class _CompactPlayerInfoLayoutState extends State<CompactPlayerInfoLayout> {
                   }
                   return IconButton(
                     onPressed: () => widget.playerService.toggleLoopMode(),
-                    icon: Icon(icon, color: color, size: 24),
+                    padding: EdgeInsets.all(context.responsive(6.0, 8.0, 10.0)),
+                    constraints: const BoxConstraints(),
+                    icon: Icon(
+                      icon, 
+                      color: color, 
+                      size: context.responsive(18.0, 20.0, 22.0),
+                    ),
                   );
                 },
               ),
-              const SizedBox(width: 32),
+              SizedBox(width: context.responsive(20.0, 24.0, 28.0)),
               FutureBuilder<bool>(
                 future: widget.favoritesService.isFavorite(widget.song.id),
                 builder: (context, snapshot) {
@@ -202,12 +229,14 @@ class _CompactPlayerInfoLayoutState extends State<CompactPlayerInfoLayout> {
                         );
                       }
                     },
+                    padding: EdgeInsets.all(context.responsive(6.0, 8.0, 10.0)),
+                    constraints: const BoxConstraints(),
                     icon: Icon(
                       isFavorite ? Icons.favorite : Icons.favorite_border,
                       color: isFavorite
                           ? Colors.red
                           : context.adaptiveTextTertiary,
-                      size: 24,
+                      size: context.responsive(18.0, 20.0, 22.0),
                     ),
                   );
                 },
