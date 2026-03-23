@@ -91,9 +91,9 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
           Text(
             'UAC2 Preferences',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: context.adaptiveTextPrimary,
-                ),
+              fontWeight: FontWeight.w600,
+              color: context.adaptiveTextPrimary,
+            ),
           ),
         ],
       ),
@@ -109,10 +109,10 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
       child: Text(
         title.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: context.adaptiveTextTertiary,
-              letterSpacing: 1.2,
-              fontWeight: FontWeight.w600,
-            ),
+          color: context.adaptiveTextTertiary,
+          letterSpacing: 1.2,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -144,7 +144,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               },
             ),
             loading: () => _buildLoadingTile(context),
-            error: (_, __) => _buildErrorTile(context),
+            error: (_, _) => _buildErrorTile(context),
           ),
           _buildDivider(),
           autoSelectAsync.when(
@@ -160,7 +160,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               },
             ),
             loading: () => _buildLoadingTile(context),
-            error: (_, __) => _buildErrorTile(context),
+            error: (_, _) => _buildErrorTile(context),
           ),
         ],
       ),
@@ -187,10 +187,11 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               icon: LucideIcons.settings,
               title: 'Format Strategy',
               subtitle: _getFormatPreferenceLabel(formatPref),
-              onTap: () => _showFormatPreferenceDialog(context, service, formatPref),
+              onTap: () =>
+                  _showFormatPreferenceDialog(context, service, formatPref),
             ),
             loading: () => _buildLoadingTile(context),
-            error: (_, __) => _buildErrorTile(context),
+            error: (_, _) => _buildErrorTile(context),
           ),
           _buildDivider(),
           preferredFormatAsync.when(
@@ -204,7 +205,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               onTap: () => _showCustomFormatDialog(context, service, format),
             ),
             loading: () => _buildLoadingTile(context),
-            error: (_, __) => _buildErrorTile(context),
+            error: (_, _) => _buildErrorTile(context),
           ),
         ],
       ),
@@ -250,11 +251,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               color: AppColors.glassBackground,
               borderRadius: BorderRadius.circular(AppConstants.radiusSm),
             ),
-            child: Icon(
-              icon,
-              color: context.adaptiveTextSecondary,
-              size: 20,
-            ),
+            child: Icon(icon, color: context.adaptiveTextSecondary, size: 20),
           ),
           const SizedBox(width: AppConstants.spacingMd),
           Expanded(
@@ -264,16 +261,16 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                 Text(
                   title,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: context.adaptiveTextPrimary,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    color: context.adaptiveTextPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: context.adaptiveTextTertiary,
-                      ),
+                    color: context.adaptiveTextTertiary,
+                  ),
                 ),
               ],
             ),
@@ -281,7 +278,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: AppColors.accent,
+            activeThumbColor: AppColors.accent,
           ),
         ],
       ),
@@ -329,18 +326,18 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                     Text(
                       title,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: isDestructive
-                                ? Colors.red.shade400
-                                : context.adaptiveTextPrimary,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        color: isDestructive
+                            ? Colors.red.shade400
+                            : context.adaptiveTextPrimary,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: context.adaptiveTextTertiary,
-                          ),
+                        color: context.adaptiveTextTertiary,
+                      ),
                     ),
                   ],
                 ),
@@ -375,11 +372,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
   }
 
   Widget _buildDivider() {
-    return const Divider(
-      height: 1,
-      thickness: 1,
-      color: AppColors.glassBorder,
-    );
+    return const Divider(height: 1, thickness: 1, color: AppColors.glassBorder);
   }
 
   String _getFormatPreferenceLabel(Uac2FormatPreference pref) {
@@ -498,11 +491,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                 ),
               ),
               if (isSelected)
-                Icon(
-                  Icons.check_circle,
-                  color: AppColors.accent,
-                  size: 20,
-                ),
+                Icon(Icons.check_circle, color: AppColors.accent, size: 20),
             ],
           ),
         ),
@@ -674,10 +663,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                 );
               }
             },
-            child: Text(
-              'Reset',
-              style: TextStyle(color: Colors.red.shade400),
-            ),
+            child: Text('Reset', style: TextStyle(color: Colors.red.shade400)),
           ),
         ],
       ),

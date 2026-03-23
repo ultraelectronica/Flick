@@ -349,7 +349,7 @@ class _FavoriteSongTile extends StatelessWidget {
                               File(song.albumArt!),
                               fit: BoxFit.cover,
                               filterQuality: FilterQuality.low,
-                              errorBuilder: (_, __, ___) =>
+                              errorBuilder: (_, _, _) =>
                                   _buildPlaceholder(context),
                             ),
                           )

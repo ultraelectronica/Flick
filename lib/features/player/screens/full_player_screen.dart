@@ -913,8 +913,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                             IconData icon = LucideIcons.repeat;
                                             Color color =
                                                 context.adaptiveTextTertiary;
-                                            if (loopMode == LoopMode.all)
+                                            if (loopMode == LoopMode.all) {
                                               color = context.adaptiveAccent;
+                                            }
                                             if (loopMode == LoopMode.one) {
                                               icon = LucideIcons.repeat1;
                                               color = context.adaptiveAccent;
@@ -1025,8 +1026,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                   final folders = parts.sublist(startIndex);
                                   dirText = folders.join('/');
                                 }
-                                if (dirText.isEmpty)
+                                if (dirText.isEmpty) {
                                   return const SizedBox.shrink();
+                                }
                                 return Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'lastfm_provider.dart';
 import '../models/song.dart';
 import '../services/player_service.dart';
 
@@ -79,6 +82,9 @@ final playerServiceProvider = Provider<PlayerService>((ref) {
 /// Notifier that bridges PlayerService ValueNotifiers to Riverpod state.
 class PlayerNotifier extends Notifier<PlayerState> {
   late PlayerService _service;
+  Song? _lastTrackedSong;
+  int _lastTrackedPositionSeconds = 0;
+  int _lastTrackedDurationSeconds = 0;
 
   @override
   PlayerState build() {
@@ -99,8 +105,47 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
     // Listen to ValueNotifiers and update state
     void syncState() {
+      final latestSong = _service.currentSongNotifier.value;
+      final latestPositionSeconds = _service.positionNotifier.value.inSeconds;
+      final latestDurationSeconds = _service.durationNotifier.value.inSeconds;
+
+      if (_lastTrackedSong != null && latestSong?.id != _lastTrackedSong!.id) {
+        _handleTrackEnded(
+          endedSong: _lastTrackedSong!,
+          listenedSeconds: _lastTrackedPositionSeconds,
+          trackDurationSeconds: _lastTrackedDurationSeconds,
+        );
+      }
+
+      if (latestSong != null && latestSong.id != _lastTrackedSong?.id) {
+        _handleTrackStarted(latestSong);
+      }
+
+      final isSameTrack =
+          latestSong != null && latestSong.id == _lastTrackedSong?.id;
+      final positionAdvanced =
+          latestPositionSeconds > _lastTrackedPositionSeconds;
+      if (isSameTrack && positionAdvanced) {
+        unawaited(
+          ref
+              .read(lastFmScrobbleProvider.notifier)
+              .onPlaybackProgress(
+                artist: latestSong.artist,
+                track: latestSong.title,
+                album: latestSong.album,
+                albumArtist: null,
+                listenedSeconds: latestPositionSeconds,
+                trackDurationSeconds: latestDurationSeconds,
+              ),
+        );
+      }
+
+      _lastTrackedSong = latestSong;
+      _lastTrackedPositionSeconds = latestPositionSeconds;
+      _lastTrackedDurationSeconds = latestDurationSeconds;
+
       state = state.copyWith(
-        currentSong: _service.currentSongNotifier.value,
+        currentSong: latestSong,
         isPlaying: _service.isPlayingNotifier.value,
         position: _service.positionNotifier.value,
         duration: _service.durationNotifier.value,
@@ -139,6 +184,35 @@ class PlayerNotifier extends Notifier<PlayerState> {
     });
 
     return initial;
+  }
+
+  void _handleTrackStarted(Song song) {
+    ref
+        .read(lastFmScrobbleProvider.notifier)
+        .onTrackStarted(
+          artist: song.artist,
+          track: song.title,
+          album: song.album,
+          albumArtist: null,
+          durationSeconds: song.duration.inSeconds,
+        );
+  }
+
+  void _handleTrackEnded({
+    required Song endedSong,
+    required int listenedSeconds,
+    required int trackDurationSeconds,
+  }) {
+    ref
+        .read(lastFmScrobbleProvider.notifier)
+        .onTrackEnded(
+          artist: endedSong.artist,
+          track: endedSong.title,
+          album: endedSong.album,
+          albumArtist: null,
+          listenedSeconds: listenedSeconds,
+          trackDurationSeconds: trackDurationSeconds,
+        );
   }
 
   /// Play a song, optionally with a playlist context.

@@ -16,7 +16,6 @@ import 'package:flick/widgets/uac2/uac2_transfer_stats_widget.dart';
 import 'package:flick/widgets/uac2/uac2_pipeline_info_widget.dart';
 import 'package:flick/widgets/uac2/uac2_connection_manager.dart';
 import 'package:flick/widgets/uac2/uac2_fallback_manager.dart';
-import 'package:flick/widgets/uac2/uac2_pipeline_info_widget.dart';
 
 class Uac2SettingsScreen extends ConsumerStatefulWidget {
   const Uac2SettingsScreen({super.key});
@@ -130,9 +129,9 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
             child: Text(
               'USB Audio (UAC2)',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: context.adaptiveTextPrimary,
-                  ),
+                fontWeight: FontWeight.w600,
+                color: context.adaptiveTextPrimary,
+              ),
             ),
           ),
           IconButton(
@@ -161,10 +160,10 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
       child: Text(
         title.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: context.adaptiveTextTertiary,
-              letterSpacing: 1.2,
-              fontWeight: FontWeight.w600,
-            ),
+          color: context.adaptiveTextTertiary,
+          letterSpacing: 1.2,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -189,8 +188,8 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
             child: Text(
               'UAC2 is not available on this platform',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: context.adaptiveTextSecondary,
-                  ),
+                color: context.adaptiveTextSecondary,
+              ),
             ),
           ),
         ],
@@ -220,18 +219,14 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.error_outline,
-            color: Colors.red.shade400,
-            size: 24,
-          ),
+          Icon(Icons.error_outline, color: Colors.red.shade400, size: 24),
           const SizedBox(width: AppConstants.spacingMd),
           Expanded(
             child: Text(
               'Error: $error',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.red.shade400,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.red.shade400),
             ),
           ),
         ],
@@ -260,17 +255,13 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
           ...devices.asMap().entries.map((entry) {
             final index = entry.key;
             final device = entry.value;
-            final isSelected = selectedDevice?.vendorId == device.vendorId &&
+            final isSelected =
+                selectedDevice?.vendorId == device.vendorId &&
                 selectedDevice?.productId == device.productId &&
                 selectedDevice?.serial == device.serial;
             return Column(
               children: [
-                _buildDeviceItem(
-                  context,
-                  device,
-                  isSelected,
-                  deviceStatus,
-                ),
+                _buildDeviceItem(context, device, isSelected, deviceStatus),
                 if (index < devices.length - 1) _buildDivider(),
               ],
             );
@@ -292,24 +283,20 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
       ),
       child: Column(
         children: [
-          Icon(
-            Icons.usb_off,
-            color: context.adaptiveTextTertiary,
-            size: 48,
-          ),
+          Icon(Icons.usb_off, color: context.adaptiveTextTertiary, size: 48),
           const SizedBox(height: AppConstants.spacingMd),
           Text(
             'No USB audio devices found',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: context.adaptiveTextSecondary,
-                ),
+              color: context.adaptiveTextSecondary,
+            ),
           ),
           const SizedBox(height: AppConstants.spacingSm),
           Text(
             'Connect a USB DAC or audio interface',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: context.adaptiveTextTertiary,
-                ),
+              color: context.adaptiveTextTertiary,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: AppConstants.spacingLg),
@@ -325,7 +312,8 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
     bool isSelected,
     Uac2DeviceStatus? deviceStatus,
   ) {
-    final isConnected = isSelected &&
+    final isConnected =
+        isSelected &&
         (deviceStatus?.state == Uac2State.connected ||
             deviceStatus?.state == Uac2State.streaming);
 
@@ -363,19 +351,19 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
                     Text(
                       '${device.manufacturer} ${device.productName}',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: context.adaptiveTextPrimary,
-                            fontWeight: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                          ),
+                        color: context.adaptiveTextPrimary,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       'VID: 0x${device.vendorId.toRadixString(16).padLeft(4, '0')} '
                       'PID: 0x${device.productId.toRadixString(16).padLeft(4, '0')}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: context.adaptiveTextTertiary,
-                          ),
+                        color: context.adaptiveTextTertiary,
+                      ),
                     ),
                   ],
                 ),
@@ -417,10 +405,7 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
           Container(
             width: 6,
             height: 6,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 4),
           Text(
@@ -456,9 +441,9 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
               Text(
                 'Refresh Devices',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: context.adaptiveTextSecondary,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  color: context.adaptiveTextSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ],
           ),
@@ -480,9 +465,7 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
           _buildInfoRow(
             context,
             'Manufacturer',
-            device.manufacturer.isNotEmpty
-                ? device.manufacturer
-                : 'Unknown',
+            device.manufacturer.isNotEmpty ? device.manufacturer : 'Unknown',
             LucideIcons.building,
           ),
           _buildDivider(),
@@ -518,13 +501,8 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
     );
   }
 
-  Widget _buildCapabilitiesCard(
-    BuildContext context,
-    Uac2DeviceInfo device,
-  ) {
-    final capabilitiesAsync = ref.watch(
-      uac2DeviceCapabilitiesProvider(device),
-    );
+  Widget _buildCapabilitiesCard(BuildContext context, Uac2DeviceInfo device) {
+    final capabilitiesAsync = ref.watch(uac2DeviceCapabilitiesProvider(device));
 
     return capabilitiesAsync.when(
       data: (capabilities) {
@@ -548,9 +526,9 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
       ),
       child: Text(
         'Capabilities not available',
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: context.adaptiveTextTertiary,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: context.adaptiveTextTertiary),
         textAlign: TextAlign.center,
       ),
     );
@@ -596,7 +574,13 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
             context,
             'Channels',
             capabilities.supportedChannels
-                .map((c) => c == 1 ? 'Mono' : c == 2 ? 'Stereo' : '$c ch')
+                .map(
+                  (c) => c == 1
+                      ? 'Mono'
+                      : c == 2
+                      ? 'Stereo'
+                      : '$c ch',
+                )
                 .join(', '),
             LucideIcons.radio,
           ),
@@ -646,8 +630,8 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
               status.currentFormat!.channels == 1
                   ? 'Mono'
                   : status.currentFormat!.channels == 2
-                      ? 'Stereo'
-                      : '${status.currentFormat!.channels} channels',
+                  ? 'Stereo'
+                  : '${status.currentFormat!.channels} channels',
               LucideIcons.radio,
             ),
           ],
@@ -669,11 +653,7 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
       padding: const EdgeInsets.symmetric(vertical: AppConstants.spacingSm),
       child: Row(
         children: [
-          Icon(
-            Icons.verified,
-            color: Colors.green.shade400,
-            size: 20,
-          ),
+          Icon(Icons.verified, color: Colors.green.shade400, size: 20),
           const SizedBox(width: AppConstants.spacingMd),
           Expanded(
             child: Column(
@@ -682,16 +662,16 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
                 Text(
                   'Bit-Perfect',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.green.shade400,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    color: Colors.green.shade400,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   'Audio is being transmitted without modification',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: context.adaptiveTextTertiary,
-                      ),
+                    color: context.adaptiveTextTertiary,
+                  ),
                 ),
               ],
             ),
@@ -715,9 +695,9 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
           Expanded(
             child: Text(
               message,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.red.shade400,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.red.shade400),
             ),
           ),
         ],
@@ -736,11 +716,7 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
       padding: const EdgeInsets.symmetric(vertical: AppConstants.spacingSm),
       child: Row(
         children: [
-          Icon(
-            icon,
-            color: context.adaptiveTextSecondary,
-            size: 20,
-          ),
+          Icon(icon, color: context.adaptiveTextSecondary, size: 20),
           const SizedBox(width: AppConstants.spacingMd),
           Expanded(
             child: Column(
@@ -749,16 +725,16 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
                 Text(
                   label,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: context.adaptiveTextTertiary,
-                      ),
+                    color: context.adaptiveTextTertiary,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   value,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: valueColor ?? context.adaptiveTextPrimary,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    color: valueColor ?? context.adaptiveTextPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),
@@ -769,11 +745,7 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
   }
 
   Widget _buildDivider() {
-    return const Divider(
-      height: 1,
-      thickness: 1,
-      color: AppColors.glassBorder,
-    );
+    return const Divider(height: 1, thickness: 1, color: AppColors.glassBorder);
   }
 
   void _handleDeviceSelection(

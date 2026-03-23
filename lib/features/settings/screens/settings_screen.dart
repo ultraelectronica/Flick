@@ -17,6 +17,7 @@ import 'package:flick/widgets/common/glass_bottom_sheet.dart';
 import 'package:flick/widgets/common/display_mode_wrapper.dart';
 import 'package:flick/features/settings/screens/equalizer_screen.dart';
 import 'package:flick/features/settings/screens/uac2_settings_screen.dart';
+import 'package:flick/features/settings/widgets/lastfm_settings_tile.dart';
 
 /// Settings screen matching the design language.
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -551,6 +552,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             },
                           ),
                         ],
+                      ),
+
+                      const SizedBox(height: AppConstants.spacingLg),
+
+                      // Integrations section
+                      _buildSectionHeader(context, 'Integrations'),
+                      _buildSettingsCard(
+                        context,
+                        children: [const LastFmSettingsTile()],
                       ),
 
                       const SizedBox(height: AppConstants.spacingLg),
