@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Internet permission for Last.fm scrobbling and online features -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- USB Host (optional): for UAC 2.0 DAC/AMP detection on Android -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
     <!-- Storage permissions for music library access -->
