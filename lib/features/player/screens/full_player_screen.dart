@@ -705,7 +705,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
 
                                 return Column(
                                   children: [
-                                    const Spacer(flex: 1),
+                                    const SizedBox(height: 30),
                                     Hero(
                                       tag: widget.heroTag,
                                       child: Builder(
@@ -779,7 +779,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                       ),
                                     ),
                                     SizedBox(
-                                      height: context.responsive(6.0, 12.0, 20.0),
+                                      height: context.responsive(20.0, 24.0, 28.0),
                                     ),
                                     Padding(
                                       padding: EdgeInsets.symmetric(
@@ -849,7 +849,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                                     .adaptiveTextSecondary,
                                               ),
                                             ),
-                                            SizedBox(height: context.responsive(6.0, 8.0, 10.0)),
+                                            SizedBox(height: context.responsive(6.0, 8.0, 8.0)),
                                             const Uac2PlayerStatus(
                                               compact: true,
                                             ),
@@ -857,7 +857,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                         ),
                                       ),
                                     ),
-                                    SizedBox(height: context.responsive(3.0, 5.0, 6.0)),
+                                    SizedBox(height: context.responsive(3.0, 5.0, 4.0)),
                                     Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
@@ -899,7 +899,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                         ],
                                       ],
                                     ),
-                                    SizedBox(height: context.responsive(6.0, 10.0, 14.0)),
+                                    SizedBox(height: context.responsive(6.0, 10.0, 8.0)),
                                     Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
@@ -1008,8 +1008,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                         ),
                                       ],
                                     ),
-                                    SizedBox(height: context.responsive(2.0, 3.0, 4.0)),
-                                    const Spacer(flex: 1),
+                                    SizedBox(height: context.responsive(2.0, 3.0, 0.0)),
                                   ],
                                 );
                               },
@@ -1028,7 +1027,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                   throttledPosition: _throttledPosition,
                                   currentSong: song,
                                 ),
-                                SizedBox(height: context.responsive(4.0, 6.0, 8.0)),
+                                SizedBox(height: context.responsive(2.0, 3.0, 4.0)),
                                 _PlayerControls(
                                   playerService: _playerService,
                                   formatDuration: _formatDuration,
@@ -1037,7 +1036,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                               ],
                             ),
                           ),
-                          SizedBox(height: context.responsive(8.0, 12.0, 20.0)),
+                          SizedBox(height: context.responsive(8.0, 12.0, 12.0)),
                           // Bottom Directory Info
                           if (song.filePath != null)
                             Builder(
@@ -1129,7 +1128,7 @@ class _WaveformLayer extends StatelessWidget {
         }
 
         return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 4),
           child: RepaintBoundary(
             child: WaveformSeekBar(
               barCount: 60,
