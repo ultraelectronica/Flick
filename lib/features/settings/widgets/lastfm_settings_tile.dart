@@ -120,86 +120,86 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
     if (!mounted) return;
 
     try {
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Configure Last.fm Credentials'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Get your API key and shared secret from:',
-                style: TextStyle(fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              GestureDetector(
-                onTap: () {
-                  launchUrl(
-                    Uri.parse('https://www.last.fm/api/account/create'),
-                    mode: LaunchMode.externalApplication,
-                  );
-                },
-                child: Text(
-                  'https://www.last.fm/api/account/create',
-                  style: TextStyle(
-                    color: Theme.of(context).primaryColor,
-                    decoration: TextDecoration.underline,
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Configure Last.fm Credentials'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Get your API key and shared secret from:',
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () {
+                    launchUrl(
+                      Uri.parse('https://www.last.fm/api/account/create'),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
+                  child: Text(
+                    'https://www.last.fm/api/account/create',
+                    style: TextStyle(
+                      color: Theme.of(context).primaryColor,
+                      decoration: TextDecoration.underline,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: apiKeyController,
-                decoration: const InputDecoration(
-                  labelText: 'API Key',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+                const SizedBox(height: 16),
+                TextField(
+                  controller: apiKeyController,
+                  decoration: const InputDecoration(
+                    labelText: 'API Key',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: sharedSecretController,
-                decoration: const InputDecoration(
-                  labelText: 'Shared Secret',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+                const SizedBox(height: 12),
+                TextField(
+                  controller: sharedSecretController,
+                  decoration: const InputDecoration(
+                    labelText: 'Shared Secret',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  obscureText: true,
                 ),
-                obscureText: true,
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              if (apiKeyController.text.isEmpty ||
-                  sharedSecretController.text.isEmpty) {
-                _showError('Please enter both API key and shared secret');
-                return;
-              }
-              await auth.setApiCredentials(
-                apiKeyController.text,
-                sharedSecretController.text,
-              );
-              if (mounted) {
-                Navigator.pop(ctx);
-                _showSuccess('Credentials saved successfully!');
-                if (autoConnectAfterSave && mounted) {
-                  await _startAuth();
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (apiKeyController.text.isEmpty ||
+                    sharedSecretController.text.isEmpty) {
+                  _showError('Please enter both API key and shared secret');
+                  return;
                 }
-              }
-            },
-            child: const Text('Save & Connect'),
-          ),
-        ],
-      ),
-    );
+                await auth.setApiCredentials(
+                  apiKeyController.text,
+                  sharedSecretController.text,
+                );
+                if (mounted) {
+                  Navigator.pop(ctx);
+                  _showSuccess('Credentials saved successfully!');
+                  if (autoConnectAfterSave && mounted) {
+                    await _startAuth();
+                  }
+                }
+              },
+              child: const Text('Save & Connect'),
+            ),
+          ],
+        ),
+      );
     } finally {
       apiKeyController.dispose();
       sharedSecretController.dispose();

@@ -221,9 +221,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
             albumArtist: null,
             durationSeconds: song.duration.inSeconds,
           )
-          .catchError(
-            (e) => debugPrint('[LastFm] onTrackStarted error: $e'),
-          ),
+          .catchError((e) => debugPrint('[LastFm] onTrackStarted error: $e')),
     );
   }
 
@@ -243,9 +241,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
             listenedSeconds: listenedSeconds,
             trackDurationSeconds: trackDurationSeconds,
           )
-          .catchError(
-            (e) => debugPrint('[LastFm] onTrackEnded error: $e'),
-          ),
+          .catchError((e) => debugPrint('[LastFm] onTrackEnded error: $e')),
     );
   }
 

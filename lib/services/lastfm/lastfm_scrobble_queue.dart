@@ -55,9 +55,7 @@ class LastFmScrobbleQueue {
       debugPrint('[LastFm] queue flush success; queue cleared');
     } on LastFmNoSessionException {
       // No active session — keep queue intact for later retry after login
-      debugPrint(
-        '[LastFm] queue flush skipped: no session; queue retained',
-      );
+      debugPrint('[LastFm] queue flush skipped: no session; queue retained');
       return;
     } on LastFmApiException catch (e) {
       if (e.code == 9) {
