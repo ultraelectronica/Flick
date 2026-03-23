@@ -19,7 +19,6 @@ class LastFmSettingsTile extends ConsumerStatefulWidget {
 class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
     with WidgetsBindingObserver {
   bool _awaitingCallback = false;
-  bool _showSharedSecret = false;
 
   @override
   void initState() {
@@ -98,7 +97,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: context.adaptiveTextTertiary.withOpacity(0.3),
+                color: context.adaptiveTextTertiary.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -111,7 +110,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.15),
+                      color: Colors.red.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -154,7 +153,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                         AppConstants.radiusMd,
                       ),
                       border: Border.all(
-                        color: context.adaptiveTextTertiary.withOpacity(0.1),
+                        color: context.adaptiveTextTertiary.withValues(alpha: 0.1),
                       ),
                     ),
                     child: Row(
@@ -190,7 +189,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             side: BorderSide(
-                              color: context.adaptiveTextTertiary.withOpacity(
+                              color: context.adaptiveTextTertiary.withValues(alpha: 
                                 0.3,
                               ),
                             ),
@@ -257,6 +256,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
     final sharedSecretController = TextEditingController(
       text: creds.sharedSecret ?? '',
     );
+    bool obscureSecret = true;
 
     if (!mounted) return;
 
@@ -265,18 +265,20 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (ctx) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Theme.of(ctx).scaffoldBackgroundColor,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppConstants.radiusLg),
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
               ),
-            ),
-            child: Column(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).scaffoldBackgroundColor,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(AppConstants.radiusLg),
+                  ),
+                ),
+                child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // Handle bar
@@ -285,7 +287,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: context.adaptiveTextTertiary.withOpacity(0.3),
+                    color: context.adaptiveTextTertiary.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -298,7 +300,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFD51007).withOpacity(0.15),
+                          color: const Color(0xFFD51007).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -352,7 +354,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                             AppConstants.radiusMd,
                           ),
                           border: Border.all(
-                            color: context.adaptiveTextTertiary.withOpacity(
+                            color: context.adaptiveTextTertiary.withValues(alpha:
                               0.1,
                             ),
                           ),
@@ -441,7 +443,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                               AppConstants.radiusMd,
                             ),
                             borderSide: BorderSide(
-                              color: context.adaptiveTextTertiary.withOpacity(
+                              color: context.adaptiveTextTertiary.withValues(alpha:
                                 0.1,
                               ),
                             ),
@@ -475,7 +477,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                       const SizedBox(height: 8),
                       TextField(
                         controller: sharedSecretController,
-                        obscureText: !_showSharedSecret,
+                        obscureText: obscureSecret,
                         style: TextStyle(color: context.adaptiveTextPrimary),
                         decoration: InputDecoration(
                           hintText: 'Enter your shared secret',
@@ -495,7 +497,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                               AppConstants.radiusMd,
                             ),
                             borderSide: BorderSide(
-                              color: context.adaptiveTextTertiary.withOpacity(
+                              color: context.adaptiveTextTertiary.withValues(alpha:
                                 0.1,
                               ),
                             ),
@@ -515,14 +517,14 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                           ),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _showSharedSecret
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
+                              obscureSecret
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
                               color: context.adaptiveTextSecondary,
                             ),
                             onPressed: () {
                               setState(
-                                () => _showSharedSecret = !_showSharedSecret,
+                                () => obscureSecret = !obscureSecret,
                               );
                             },
                           ),
@@ -543,7 +545,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                                 ),
                                 side: BorderSide(
                                   color: context.adaptiveTextTertiary
-                                      .withOpacity(0.3),
+                                      .withValues(alpha: 0.3),
                                 ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(
@@ -618,6 +620,8 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
               ],
             ),
           ),
+            );
+          },
         ),
       );
     } finally {
@@ -742,7 +746,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: context.adaptiveTextTertiary.withOpacity(0.3),
+                color: context.adaptiveTextTertiary.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -755,7 +759,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4CAF50).withOpacity(0.15),
+                      color: const Color(0xFF4CAF50).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -806,7 +810,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                         AppConstants.radiusMd,
                       ),
                       border: Border.all(
-                        color: context.adaptiveTextTertiary.withOpacity(0.1),
+                        color: context.adaptiveTextTertiary.withValues(alpha: 0.1),
                       ),
                     ),
                     child: Row(
@@ -814,7 +818,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFD51007).withOpacity(0.15),
+                            color: const Color(0xFFD51007).withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(
@@ -866,7 +870,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         side: BorderSide(
-                          color: context.adaptiveTextTertiary.withOpacity(0.3),
+                          color: context.adaptiveTextTertiary.withValues(alpha: 0.3),
                         ),
                         foregroundColor: context.adaptiveTextPrimary,
                         shape: RoundedRectangleBorder(
@@ -890,7 +894,7 @@ class _LastFmSettingsTileState extends ConsumerState<LastFmSettingsTile>
                       icon: const Icon(Icons.logout, size: 18),
                       label: const Text('Disconnect'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.withOpacity(0.1),
+                        backgroundColor: Colors.red.withValues(alpha: 0.1),
                         foregroundColor: Colors.red,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         elevation: 0,
