@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'lastfm_provider.dart';
 import '../models/song.dart';
 import '../services/player_service.dart';
 
@@ -79,6 +82,15 @@ final playerServiceProvider = Provider<PlayerService>((ref) {
 /// Notifier that bridges PlayerService ValueNotifiers to Riverpod state.
 class PlayerNotifier extends Notifier<PlayerState> {
   late PlayerService _service;
+  Song? _lastTrackedSong;
+  int _lastTrackedPositionSeconds = 0;
+  int _lastTrackedDurationSeconds = 0;
+
+  /// Accumulated actual listen time for the current track (ignores seeks).
+  int _accumulatedListenSeconds = 0;
+
+  /// Expose accumulated listen seconds for lifecycle hooks (e.g. app pause).
+  int get accumulatedListenSeconds => _accumulatedListenSeconds;
 
   @override
   PlayerState build() {
@@ -99,8 +111,65 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
     // Listen to ValueNotifiers and update state
     void syncState() {
+      final latestSong = _service.currentSongNotifier.value;
+      final latestPositionSeconds = _service.positionNotifier.value.inSeconds;
+      final latestDurationSeconds = _service.durationNotifier.value.inSeconds;
+
+      if (_lastTrackedSong != null && latestSong?.id != _lastTrackedSong!.id) {
+        _handleTrackEnded(
+          endedSong: _lastTrackedSong!,
+          listenedSeconds: _accumulatedListenSeconds,
+          trackDurationSeconds: _lastTrackedDurationSeconds,
+        );
+      }
+
+      if (latestSong != null && latestSong.id != _lastTrackedSong?.id) {
+        _handleTrackStarted(latestSong);
+        _accumulatedListenSeconds = 0;
+      }
+
+      // Accumulate actual listen time: only count small position deltas
+      // (≤ 3s) as real playback. Larger jumps indicate seeks.
+      final isSameTrack =
+          latestSong != null && latestSong.id == _lastTrackedSong?.id;
+      if (isSameTrack) {
+        final delta = latestPositionSeconds - _lastTrackedPositionSeconds;
+        if (delta > 0 && delta <= 3) {
+          _accumulatedListenSeconds += delta;
+        }
+      }
+
+      final positionAdvanced =
+          latestPositionSeconds > _lastTrackedPositionSeconds;
+      if (isSameTrack && positionAdvanced) {
+        unawaited(
+          ref
+              .read(lastFmScrobbleProvider.notifier)
+              .onPlaybackProgress(
+                artist: latestSong.artist,
+                track: latestSong.title,
+                album: latestSong.album,
+                albumArtist: null,
+                listenedSeconds: _accumulatedListenSeconds,
+                trackDurationSeconds: latestDurationSeconds,
+              ),
+        );
+      }
+
+      // Latch duration to highest value for the same track. During gapless
+      // transitions the player may briefly reset duration to 0 before the
+      // song notifier fires, which would wipe the stored value.
+      if (!isSameTrack) {
+        _lastTrackedDurationSeconds = latestDurationSeconds;
+      } else if (latestDurationSeconds > _lastTrackedDurationSeconds) {
+        _lastTrackedDurationSeconds = latestDurationSeconds;
+      }
+
+      _lastTrackedSong = latestSong;
+      _lastTrackedPositionSeconds = latestPositionSeconds;
+
       state = state.copyWith(
-        currentSong: _service.currentSongNotifier.value,
+        currentSong: latestSong,
         isPlaying: _service.isPlayingNotifier.value,
         position: _service.positionNotifier.value,
         duration: _service.durationNotifier.value,
@@ -139,6 +208,41 @@ class PlayerNotifier extends Notifier<PlayerState> {
     });
 
     return initial;
+  }
+
+  void _handleTrackStarted(Song song) {
+    unawaited(
+      ref
+          .read(lastFmScrobbleProvider.notifier)
+          .onTrackStarted(
+            artist: song.artist,
+            track: song.title,
+            album: song.album,
+            albumArtist: null,
+            durationSeconds: song.duration.inSeconds,
+          )
+          .catchError((e) => debugPrint('[LastFm] onTrackStarted error: $e')),
+    );
+  }
+
+  void _handleTrackEnded({
+    required Song endedSong,
+    required int listenedSeconds,
+    required int trackDurationSeconds,
+  }) {
+    unawaited(
+      ref
+          .read(lastFmScrobbleProvider.notifier)
+          .onTrackEnded(
+            artist: endedSong.artist,
+            track: endedSong.title,
+            album: endedSong.album,
+            albumArtist: null,
+            listenedSeconds: listenedSeconds,
+            trackDurationSeconds: trackDurationSeconds,
+          )
+          .catchError((e) => debugPrint('[LastFm] onTrackEnded error: $e')),
+    );
   }
 
   /// Play a song, optionally with a playlist context.

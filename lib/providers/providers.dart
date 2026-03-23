@@ -7,6 +7,7 @@ export 'player_provider.dart';
 export 'songs_provider.dart';
 export 'favorites_provider.dart';
 export 'library_scanner_provider.dart';
+export 'lastfm_provider.dart';
 export 'navigation_provider.dart';
 export 'playlist_provider.dart';
 export 'songs_view_mode_provider.dart';

@@ -260,8 +260,7 @@ class _ArtistCard extends StatelessWidget {
                             File(artistArt!),
                             fit: BoxFit.cover,
                             filterQuality: FilterQuality.low,
-                            errorBuilder: (_, __, ___) =>
-                                _buildInitials(context),
+                            errorBuilder: (_, _, _) => _buildInitials(context),
                           ),
                         )
                       : _buildInitials(context),

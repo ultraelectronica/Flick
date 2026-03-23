@@ -17,8 +17,7 @@ class Uac2ConnectionManager extends ConsumerStatefulWidget {
       _Uac2ConnectionManagerState();
 }
 
-class _Uac2ConnectionManagerState
-    extends ConsumerState<Uac2ConnectionManager> {
+class _Uac2ConnectionManagerState extends ConsumerState<Uac2ConnectionManager> {
   Timer? _updateTimer;
   rust_uac2.Uac2ConnectionState? _connectionState;
   bool _autoReconnect = false;
@@ -65,20 +64,18 @@ class _Uac2ConnectionManagerState
   Future<void> _attemptReconnect() async {
     final service = ref.read(uac2ServiceProvider);
     final success = await service.attemptReconnect();
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            success
-                ? 'Reconnection successful'
-                : 'Reconnection failed',
+            success ? 'Reconnection successful' : 'Reconnection failed',
           ),
           backgroundColor: success ? Colors.green : Colors.red,
         ),
       );
     }
-    
+
     await _loadConnectionState();
   }
 
@@ -112,9 +109,9 @@ class _Uac2ConnectionManagerState
               Text(
                 'Connection Management',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: context.adaptiveTextPrimary,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: context.adaptiveTextPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -140,7 +137,9 @@ class _Uac2ConnectionManagerState
             const Divider(height: 1, color: AppColors.glassBorder),
           ],
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppConstants.spacingSm),
+            padding: const EdgeInsets.symmetric(
+              vertical: AppConstants.spacingSm,
+            ),
             child: Row(
               children: [
                 Icon(
@@ -153,8 +152,8 @@ class _Uac2ConnectionManagerState
                   child: Text(
                     'Auto-Reconnect',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: context.adaptiveTextSecondary,
-                        ),
+                      color: context.adaptiveTextSecondary,
+                    ),
                   ),
                 ),
                 Switch(
@@ -200,26 +199,22 @@ class _Uac2ConnectionManagerState
       padding: const EdgeInsets.symmetric(vertical: AppConstants.spacingSm),
       child: Row(
         children: [
-          Icon(
-            icon,
-            color: context.adaptiveTextSecondary,
-            size: 18,
-          ),
+          Icon(icon, color: context.adaptiveTextSecondary, size: 18),
           const SizedBox(width: AppConstants.spacingMd),
           Expanded(
             child: Text(
               label,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: context.adaptiveTextSecondary,
-                  ),
+                color: context.adaptiveTextSecondary,
+              ),
             ),
           ),
           Text(
             value,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: valueColor ?? context.adaptiveTextPrimary,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: valueColor ?? context.adaptiveTextPrimary,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),

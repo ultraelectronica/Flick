@@ -4,6 +4,9 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+import java.io.File
+import java.util.Properties
+
 android {
     namespace = "com.ultraelectronica.flick"
     compileSdk = flutter.compileSdkVersion
@@ -62,9 +65,77 @@ flutter {
 }
 
 // Copy libc++_shared.so from NDK before building
-tasks.register<Exec>("copyNdkLibs") {
+tasks.register("copyNdkLibs") {
     description = "Copy libc++_shared.so from Android NDK to jniLibs"
-    commandLine("bash", "${projectDir}/../copy_ndk_libs.sh")
+    doLast {
+        fun ndkHomeFromLocalProperties(): String? {
+            val propsFile = rootProject.file("local.properties")
+            if (!propsFile.exists()) return null
+
+            val props = Properties()
+            propsFile.inputStream().use { props.load(it) }
+
+            val explicitNdk = props.getProperty("ndk.dir")
+            if (!explicitNdk.isNullOrBlank()) {
+                return explicitNdk
+            }
+
+            val sdkDir = props.getProperty("sdk.dir") ?: return null
+            val ndkRoot = File(sdkDir, "ndk")
+            if (!ndkRoot.exists()) return null
+
+            return ndkRoot.listFiles()
+                ?.filter { it.isDirectory }
+                ?.maxByOrNull { it.name }
+                ?.absolutePath
+        }
+
+        val ndkHome =
+            System.getenv("ANDROID_NDK_HOME")
+                ?: System.getenv("ANDROID_NDK_ROOT")
+                ?: ndkHomeFromLocalProperties()
+                ?: throw GradleException(
+                    "ANDROID_NDK_HOME/ANDROID_NDK_ROOT is not set and no NDK could be resolved from local.properties",
+                )
+
+        val abiToArch = mapOf(
+            "arm64-v8a" to "aarch64-linux-android",
+            "armeabi-v7a" to "arm-linux-androideabi",
+            "x86_64" to "x86_64-linux-android",
+            "x86" to "i686-linux-android",
+        )
+
+        val jniLibsDir = project.file("src/main/jniLibs")
+        val prebuiltRoots = listOf(
+            "toolchains/llvm/prebuilt/windows-x86_64",
+            "toolchains/llvm/prebuilt/linux-x86_64",
+            "toolchains/llvm/prebuilt/darwin-x86_64",
+            "toolchains/llvm/prebuilt/darwin-arm64",
+        )
+
+        abiToArch.forEach { (abi, arch) ->
+            val abiOutDir = File(jniLibsDir, abi)
+            abiOutDir.mkdirs()
+
+            val candidates = mutableListOf<File>()
+
+            prebuiltRoots.forEach { root ->
+                candidates += File(ndkHome, "$root/sysroot/usr/lib/$arch/libc++_shared.so")
+                candidates += File(ndkHome, "$root/sysroot/usr/lib/$abi/libc++_shared.so")
+            }
+
+            // Legacy location (older NDKs)
+            candidates += File(ndkHome, "sources/cxx-stl/llvm-libc++/libs/$abi/libc++_shared.so")
+
+            val sourceLib = candidates.firstOrNull { it.exists() }
+            if (sourceLib != null) {
+                sourceLib.copyTo(File(abiOutDir, "libc++_shared.so"), overwrite = true)
+                logger.lifecycle("Copied libc++_shared.so for $abi from ${sourceLib.absolutePath}")
+            } else {
+                logger.warn("Warning: libc++_shared.so not found for $abi in NDK $ndkHome")
+            }
+        }
+    }
 }
 
 // Make preBuild depend on copyNdkLibs

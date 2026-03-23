@@ -28,6 +28,7 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  crypto: ^3.0.3
   cupertino_icons: ^1.0.8
   fl_chart: ^1.1.1
   flutter:
@@ -37,12 +38,14 @@ dependencies:
   flutter_launcher_icons: ^0.14.4
   flutter_riverpod: ^3.0.3
   flutter_rust_bridge: 2.11.1
-  flutter_soloud: ^3.4.8
+  flutter_secure_storage: ^9.0.0
   flutter_svg: ^2.2.3
   freezed_annotation: ^3.0.0
+  http: ^1.2.0
   isar_community: ^3.3.0
   isar_community_flutter_libs: ^3.3.0
   just_audio: ^0.10.5
+  json_annotation: ^4.9.0
   lucide_icons_flutter: ^3.1.8
   native_toolchain_rust: ^1.0.3
   path_provider: ^2.1.1
@@ -64,6 +67,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   isar_community_generator: ^3.3.0
+  json_serializable: ^6.8.0
   riverpod_generator: ^4.0.0+1
   riverpod_lint: ^3.0.3
 
@@ -72,6 +76,9 @@ dev_dependencies:
 # https://github.com/rrousselGit/riverpod/issues/4393
 dependency_overrides:
   analyzer: ">=7.4.5 <8.3.0"
+  # Pin rive_native to a known‑good version to align with rive ^0.14.0 and
+  # avoid transitive version‑solving issues. Remove once upstream constraints are fixed.
+  rive_native: 0.1.4
 
 flutter_launcher_icons:
   android: "launcher_icon"

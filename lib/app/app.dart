@@ -50,7 +50,7 @@ class MainShell extends ConsumerStatefulWidget {
 }
 
 class _MainShellState extends ConsumerState<MainShell>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // Animation controller for smoother nav bar transitions
   late final AnimationController _navBarAnimationController;
   late final Animation<Offset> _navBarSlideAnimation;
@@ -64,6 +64,7 @@ class _MainShellState extends ConsumerState<MainShell>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _navBarAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 280),
@@ -123,11 +124,42 @@ class _MainShellState extends ConsumerState<MainShell>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _navBarVisibilitySubscription.close();
     _navBarAlwaysVisibleSubscription.close();
     _currentSongSubscription.close();
     _navBarAnimationController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      // Attempt to scrobble the current track before the app suspends.
+      // Only fire if playback is not active — audio apps often keep playing
+      // in the background, so treat this as a true "end" only when paused.
+      final playerState = ref.read(playerProvider);
+      final song = playerState.currentSong;
+      if (song != null && !playerState.isPlaying) {
+        final notifier = ref.read(playerProvider.notifier);
+        ref
+            .read(lastFmScrobbleProvider.notifier)
+            .onTrackEnded(
+              artist: song.artist,
+              track: song.title,
+              album: song.album,
+              albumArtist: null,
+              listenedSeconds: notifier.accumulatedListenSeconds,
+              trackDurationSeconds: playerState.duration.inSeconds,
+            );
+      }
+    }
+    if (state == AppLifecycleState.resumed) {
+      ref.read(lastFmScrobbleQueueProvider).flush().catchError((e) {
+        debugPrint('[LastFm] queue flush on resume failed: $e');
+      });
+    }
   }
 
   void _onNavBarVisibilityChanged(bool isVisible) {

@@ -335,7 +335,7 @@ class _AlbumCardState extends State<_AlbumCard>
                                     cacheWidth: artworkTargetWidth,
                                     filterQuality: FilterQuality.low,
                                     gaplessPlayback: true,
-                                    errorBuilder: (_, __, ___) =>
+                                    errorBuilder: (_, _, _) =>
                                         _buildPlaceholder(context),
                                   ),
                                 )

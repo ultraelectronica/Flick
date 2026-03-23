@@ -284,28 +284,53 @@ class PlayerService {
   Future<void> _savePosition() async {
     final song = currentSongNotifier.value;
     if (song != null) {
-      await _lastPlayedService.saveLastPlayed(song.id, positionNotifier.value);
+      await _lastPlayedService.saveLastPlayed(
+        song.id,
+        positionNotifier.value,
+        playlistSongIds: _playlist.map((s) => s.id).toList(),
+        currentIndex: _currentIndex,
+      );
     }
   }
 
   Future<void> restoreLastPlayed() async {
     final lastPlayed = await _lastPlayedService.getLastPlayed();
     if (lastPlayed != null) {
-      currentSongNotifier.value = lastPlayed.song;
+      final restoredPlaylist = lastPlayed.playlist;
       _playlist.clear();
-      _playlist.add(lastPlayed.song);
       _originalPlaylist.clear();
-      _originalPlaylist.add(lastPlayed.song);
-      _currentIndex = 0;
 
-      if (lastPlayed.song.filePath != null) {
+      if (restoredPlaylist != null && restoredPlaylist.isNotEmpty) {
+        _playlist.addAll(restoredPlaylist);
+        _originalPlaylist.addAll(restoredPlaylist);
+        final fallbackIndex = restoredPlaylist.indexWhere(
+          (song) => song.id == lastPlayed.song.id,
+        );
+        _currentIndex =
+            lastPlayed.playlistIndex ??
+            (fallbackIndex >= 0 ? fallbackIndex : 0);
+      } else {
+        _playlist.add(lastPlayed.song);
+        _originalPlaylist.add(lastPlayed.song);
+        _currentIndex = 0;
+      }
+
+      if (_currentIndex < 0 || _currentIndex >= _playlist.length) {
+        _currentIndex = 0;
+      }
+
+      currentSongNotifier.value = _playlist[_currentIndex];
+      final restoredSong = currentSongNotifier.value;
+
+      if (restoredSong?.filePath != null) {
         try {
           positionNotifier.value = lastPlayed.position;
-          durationNotifier.value = lastPlayed.song.duration;
+          durationNotifier.value =
+              currentSongNotifier.value?.duration ?? Duration.zero;
 
-          final isFav = await _favoritesService.isFavorite(lastPlayed.song.id);
+          final isFav = await _favoritesService.isFavorite(restoredSong!.id);
           await _notificationService.showNotification(
-            song: lastPlayed.song,
+            song: restoredSong,
             isPlaying: false,
             position: lastPlayed.position,
             isShuffle: isShuffleNotifier.value,
