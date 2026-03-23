@@ -83,7 +83,14 @@ class LastFmScrobbleQueue {
     if (raw == null) {
       return [];
     }
-    return jsonDecode(raw) as List<dynamic>;
+    try {
+      return jsonDecode(raw) as List<dynamic>;
+    } catch (e) {
+      // Malformed or incompatible JSON; clear stored queue and start fresh
+      debugPrint('[LastFm] queue load failed; clearing corrupt data: $e');
+      await prefs.remove(_kQueueKey);
+      return [];
+    }
   }
 
   Future<void> _save(List<dynamic> queue) async {
