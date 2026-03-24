@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'permission_service.dart';
+import '../data/repositories/folder_repository.dart';
+import '../data/entities/folder_entity.dart';
 
 /// Represents an audio file discovered during folder scanning.
 class AudioFileInfo {
@@ -87,6 +89,14 @@ class MusicFolder {
   }
 }
 
+/// Exception thrown when trying to add a folder that already exists.
+class FolderAlreadyExistsException implements Exception {
+  final String message;
+  FolderAlreadyExistsException(this.message);
+  @override
+  String toString() => message;
+}
+
 /// Service for managing music folders and their contents.
 class MusicFolderService {
   static const _channel = MethodChannel('com.ultraelectronica.flick/storage');
@@ -99,10 +109,18 @@ class MusicFolderService {
 
   /// Add a new music folder using the system folder picker.
   /// Returns the added folder, or null if cancelled.
+  /// Throws [FolderAlreadyExistsException] if the folder is already added.
   Future<MusicFolder?> addFolder() async {
     // Open folder picker
     final uri = await _permissionService.openFolderPicker();
     if (uri == null) return null;
+
+    // Check if folder already exists
+    final existingFolders = await getSavedFolders();
+    final alreadyExists = existingFolders.any((f) => f.uri == uri);
+    if (alreadyExists) {
+      throw FolderAlreadyExistsException('This folder has already been added');
+    }
 
     // Take persistable permission
     final success = await _permissionService.takePersistablePermission(uri);
@@ -120,8 +138,9 @@ class MusicFolderService {
       dateAdded: DateTime.now(),
     );
 
-    // Save to preferences
+    // Save to preferences AND database
     await _saveFolderToPrefs(folder);
+    await _saveFolderToDatabase(folder);
 
     return folder;
   }
@@ -131,8 +150,9 @@ class MusicFolderService {
     // Release permission
     await _permissionService.releasePersistablePermission(uri);
 
-    // Remove from preferences
+    // Remove from preferences AND database
     await _removeFolderFromPrefs(uri);
+    await _removeFolderFromDatabase(uri);
   }
 
   /// Get all saved music folders.
@@ -285,5 +305,20 @@ class MusicFolderService {
     }
 
     return result;
+  }
+
+  Future<void> _saveFolderToDatabase(MusicFolder folder) async {
+    final repository = FolderRepository();
+    final entity = FolderEntity()
+      ..uri = folder.uri
+      ..displayName = folder.displayName
+      ..dateAdded = folder.dateAdded
+      ..songCount = 0;
+    await repository.upsertFolder(entity);
+  }
+
+  Future<void> _removeFolderFromDatabase(String uri) async {
+    final repository = FolderRepository();
+    await repository.deleteFolder(uri);
   }
 }

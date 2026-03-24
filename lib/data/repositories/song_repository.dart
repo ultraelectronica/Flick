@@ -72,17 +72,43 @@ class SongRepository {
 
   /// Add multiple songs in a batch.
   Future<void> upsertSongs(List<SongEntity> entities) async {
-    await _isar.writeTxn(() async {
-      for (final entity in entities) {
-        final existing = await _isar.songEntitys
-            .filter()
-            .filePathEqualTo(entity.filePath)
-            .findFirst();
+    if (entities.isEmpty) return;
 
+    await _isar.writeTxn(() async {
+      // Batch query for all existing songs by file paths
+      final filePaths = entities.map((e) => e.filePath).toList();
+      
+      // Build a map of existing songs by file path for quick lookup
+      final existingMap = <String, SongEntity>{};
+      
+      // Query in chunks to avoid potential query size limits
+      const chunkSize = 100;
+      for (var i = 0; i < filePaths.length; i += chunkSize) {
+        final end = (i + chunkSize < filePaths.length) 
+            ? i + chunkSize 
+            : filePaths.length;
+        final chunkPaths = filePaths.sublist(i, end);
+        
+        // Query for existing songs in this chunk
+        for (final path in chunkPaths) {
+          final existing = await _isar.songEntitys
+              .filter()
+              .filePathEqualTo(path)
+              .findFirst();
+          if (existing != null) {
+            existingMap[path] = existing;
+          }
+        }
+      }
+      
+      // Assign IDs to entities that already exist
+      for (final entity in entities) {
+        final existing = existingMap[entity.filePath];
         if (existing != null) {
           entity.id = existing.id;
         }
       }
+      
       await _isar.songEntitys.putAll(entities);
     });
   }

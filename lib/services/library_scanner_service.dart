@@ -32,6 +32,7 @@ class LibraryScannerService {
   final MusicFolderService _musicFolderService;
 
   bool _isCancelled = false;
+  final Set<String> _currentlyScanning = {};
 
   LibraryScannerService({
     SongRepository? songRepository,
@@ -47,10 +48,21 @@ class LibraryScannerService {
 
   /// Scan a single folder using appropriate method for platform.
   Stream<ScanProgress> scanFolder(String folderUri, String displayName) async* {
-    if (Platform.isAndroid) {
-      yield* _scanFolderAndroid(folderUri, displayName);
-    } else {
-      yield* _scanFolderRust(folderUri, displayName);
+    // Prevent concurrent scans of the same folder
+    if (_currentlyScanning.contains(folderUri)) {
+      debugPrint('Folder $displayName is already being scanned, skipping...');
+      return;
+    }
+
+    _currentlyScanning.add(folderUri);
+    try {
+      if (Platform.isAndroid) {
+        yield* _scanFolderAndroid(folderUri, displayName);
+      } else {
+        yield* _scanFolderRust(folderUri, displayName);
+      }
+    } finally {
+      _currentlyScanning.remove(folderUri);
     }
   }
 
