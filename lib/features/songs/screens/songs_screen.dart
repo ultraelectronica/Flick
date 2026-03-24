@@ -141,8 +141,9 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                     loading: () => _buildLoadingState(),
                     error: (error, stack) => _buildErrorState(error),
                     data: (songsState) {
-                      var songs = songsState.sortedSongs;
-                      _cachedSongs = songs;
+                      final allSongs = songsState.sortedSongs;
+                      var songs = allSongs;
+                      _cachedSongs = allSongs;
 
                       if (_searchQuery.isNotEmpty) {
                         songs = songs.where((song) {
@@ -151,7 +152,6 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                               ) ||
                               song.artist.toLowerCase().contains(_searchQuery);
                         }).toList();
-                        _cachedSongs = songs;
                       }
 
                       if (songs.isEmpty && _searchQuery.isEmpty) {
@@ -510,15 +510,17 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     required List<Song> songs,
     required int index,
   }) async {
-    // Play the song with the full playlist context
-    await ref.read(playerProvider.notifier).play(songs[index], playlist: songs);
+    // Always use the full unfiltered library (_cachedSongs) as the playlist
+    // so shuffle works on all songs, not just search results
+    final songToPlay = songs[index];
+    await ref.read(playerProvider.notifier).play(songToPlay, playlist: _cachedSongs);
 
     if (!mounted) return;
 
     // Navigate to full player screen using helper to prevent duplicates
     final result = await NavigationHelper.navigateToFullPlayer(
       context,
-      heroTag: 'song_art_${songs[index].id}',
+      heroTag: 'song_art_${songToPlay.id}',
     );
 
     // If a navigation index was returned and it's not Songs (1), notify parent to switch tabs

@@ -63,6 +63,7 @@ class PlayerService {
   final List<Song> _playlist = [];
   final List<Song> _originalPlaylist = []; // For shuffle restore
   int _currentIndex = -1;
+  bool _isRebuildingPlaylist = false; // Flag to prevent unwanted updates during rebuild
 
   // Track previous position to detect repeat wrap-around for notification progress
   Duration _lastPosition = Duration.zero;
@@ -154,6 +155,9 @@ class PlayerService {
 
     // Listen to sequence state changes for gapless transitions
     _justAudioPlayer.sequenceStateStream.listen((sequenceState) {
+      // Skip updates during playlist rebuild to prevent wrong song display
+      if (_isRebuildingPlaylist) return;
+      
       if (sequenceState.currentIndex != null) {
         final newIndex = sequenceState.currentIndex!;
         if (newIndex != _currentIndex && newIndex < _playlist.length) {
@@ -445,6 +449,7 @@ class PlayerService {
     if (_playlist.isEmpty || _currentIndex < 0) return;
 
     try {
+      _isRebuildingPlaylist = true;
       final wasPlaying = isPlayingNotifier.value;
       final currentPosition = positionNotifier.value;
 
@@ -464,6 +469,8 @@ class PlayerService {
       }
     } catch (e) {
       debugPrint('Error rebuilding playlist: $e');
+    } finally {
+      _isRebuildingPlaylist = false;
     }
   }
 
@@ -484,7 +491,7 @@ class PlayerService {
 
   // ==================== Shuffle/Loop Toggles ====================
 
-  void toggleShuffle() {
+  Future<void> toggleShuffle() async {
     final enable = !isShuffleNotifier.value;
     isShuffleNotifier.value = enable;
 
@@ -506,8 +513,8 @@ class PlayerService {
     }
 
     // Rebuild playlist with new order
-    _rebuildPlaylist();
-    _updateNotificationState();
+    await _rebuildPlaylist();
+    await _updateNotificationState();
   }
 
   void toggleLoopMode() {

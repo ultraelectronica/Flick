@@ -281,8 +281,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
   }
 
   /// Toggle shuffle mode.
-  void toggleShuffle() {
-    _service.toggleShuffle();
+  Future<void> toggleShuffle() async {
+    await _service.toggleShuffle();
   }
 
   /// Toggle loop mode.
