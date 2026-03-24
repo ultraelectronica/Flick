@@ -12,6 +12,7 @@ import 'package:flick/features/player/widgets/waveform_seek_bar.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
 import 'package:flick/widgets/common/display_mode_wrapper.dart';
+import 'package:flick/widgets/common/marquee_widget.dart';
 import 'package:flick/widgets/uac2/uac2_player_status.dart';
 import 'package:flick/widgets/uac2/uac2_error_notification.dart';
 
@@ -554,7 +555,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                               child: Icon(
                                 LucideIcons.music,
                                 size: 120,
-                                color: AppColors.textTertiary.withValues(alpha: 0.3),
+                                color: AppColors.textTertiary.withValues(
+                                  alpha: 0.3,
+                                ),
                               ),
                             ),
                     ),
@@ -596,11 +599,14 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                 // Dropdown with individual background
                                 Container(
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF121212).withValues(alpha: 0.7),
+                                    color: const Color(
+                                      0xFF121212,
+                                    ).withValues(alpha: 0.7),
                                     shape: BoxShape.circle,
                                   ),
                                   child: IconButton(
-                                    onPressed: () => Navigator.of(context).pop(),
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(),
                                     padding: EdgeInsets.all(
                                       context.responsive(8.0, 10.0, 12.0),
                                     ),
@@ -608,18 +614,32 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                     icon: Icon(
                                       LucideIcons.chevronDown,
                                       color: Colors.white,
-                                      size: context.responsive(20.0, 22.0, 24.0),
+                                      size: context.responsive(
+                                        20.0,
+                                        22.0,
+                                        24.0,
+                                      ),
                                     ),
                                   ),
                                 ),
                                 // Now Playing with Title - Artist in same container
                                 Container(
                                   padding: EdgeInsets.symmetric(
-                                    horizontal: context.responsive(16.0, 18.0, 20.0),
-                                    vertical: context.responsive(8.0, 9.0, 10.0),
+                                    horizontal: context.responsive(
+                                      16.0,
+                                      18.0,
+                                      20.0,
+                                    ),
+                                    vertical: context.responsive(
+                                      8.0,
+                                      9.0,
+                                      10.0,
+                                    ),
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF121212).withValues(alpha: 0.7),
+                                    color: const Color(
+                                      0xFF121212,
+                                    ).withValues(alpha: 0.7),
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Column(
@@ -635,22 +655,47 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                             14.0,
                                           ),
                                           fontWeight: FontWeight.w600,
-                                          color: Colors.white.withValues(alpha: 0.9),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.9,
+                                          ),
                                           letterSpacing: 0.8,
                                         ),
                                       ),
-                                      SizedBox(height: context.responsive(6.0, 7.0, 8.0)),
                                       SizedBox(
-                                        height: context.responsive(20.0, 22.0, 24.0),
-                                        child: _ScrollingText(
-                                          text: '${song.title} - ${song.artist}',
-                                          style: TextStyle(
-                                            fontFamily: 'ProductSans',
-                                            fontSize: context.responsiveText(
-                                              context.responsive(13.0, 14.0, 15.0),
+                                        height: context.responsive(
+                                          6.0,
+                                          7.0,
+                                          8.0,
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: context.responsive(
+                                          120.0,
+                                          140.0,
+                                          160.0,
+                                        ),
+                                        height: context.responsive(
+                                          20.0,
+                                          22.0,
+                                          24.0,
+                                        ),
+                                        child: MarqueeWidget(
+                                          child: Text(
+                                            '${song.title} - ${song.artist}',
+                                            style: TextStyle(
+                                              fontFamily: 'ProductSans',
+                                              fontSize: context.responsiveText(
+                                                context.responsive(
+                                                  13.0,
+                                                  14.0,
+                                                  15.0,
+                                                ),
+                                              ),
+                                              fontWeight: FontWeight.w500,
+                                              color: Colors.white.withValues(
+                                                alpha: 0.85,
+                                              ),
                                             ),
-                                            fontWeight: FontWeight.w500,
-                                            color: Colors.white.withValues(alpha: 0.85),
                                           ),
                                         ),
                                       ),
@@ -660,7 +705,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                 // Three-dot menu with individual background
                                 Container(
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF121212).withValues(alpha: 0.7),
+                                    color: const Color(
+                                      0xFF121212,
+                                    ).withValues(alpha: 0.7),
                                     shape: BoxShape.circle,
                                   ),
                                   child: PopupMenuButton<String>(
@@ -670,103 +717,108 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                     icon: Icon(
                                       Icons.more_vert,
                                       color: Colors.white,
-                                      size: context.responsive(20.0, 22.0, 24.0),
+                                      size: context.responsive(
+                                        20.0,
+                                        22.0,
+                                        24.0,
+                                      ),
                                     ),
                                     color: AppColors.surface,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                     itemBuilder: (context) => [
-                                    PopupMenuItem(
-                                      value: 'add_to_playlist',
-                                      child: Row(
-                                        children: [
-                                          const Icon(
-                                            LucideIcons.listPlus,
-                                            color: AppColors.textPrimary,
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Text(
-                                            'Add to Playlist',
-                                            style: TextStyle(
-                                              fontFamily: 'ProductSans',
-                                              color:
-                                                  context.adaptiveTextPrimary,
+                                      PopupMenuItem(
+                                        value: 'add_to_playlist',
+                                        child: Row(
+                                          children: [
+                                            const Icon(
+                                              LucideIcons.listPlus,
+                                              color: AppColors.textPrimary,
+                                              size: 20,
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'speed',
-                                      child: ValueListenableBuilder<double>(
-                                        valueListenable: _playerService
-                                            .playbackSpeedNotifier,
-                                        builder: (context, speed, _) {
-                                          return Row(
-                                            children: [
-                                              const Icon(
-                                                LucideIcons.gauge,
-                                                color: AppColors.textPrimary,
-                                                size: 20,
+                                            const SizedBox(width: 12),
+                                            Text(
+                                              'Add to Playlist',
+                                              style: TextStyle(
+                                                fontFamily: 'ProductSans',
+                                                color:
+                                                    context.adaptiveTextPrimary,
                                               ),
-                                              const SizedBox(width: 12),
-                                              Text(
-                                                'Speed: ${speed}x',
-                                                style: const TextStyle(
-                                                  fontFamily: 'ProductSans',
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'speed',
+                                        child: ValueListenableBuilder<double>(
+                                          valueListenable: _playerService
+                                              .playbackSpeedNotifier,
+                                          builder: (context, speed, _) {
+                                            return Row(
+                                              children: [
+                                                const Icon(
+                                                  LucideIcons.gauge,
                                                   color: AppColors.textPrimary,
+                                                  size: 20,
                                                 ),
-                                              ),
-                                            ],
-                                          );
-                                        },
+                                                const SizedBox(width: 12),
+                                                Text(
+                                                  'Speed: ${speed}x',
+                                                  style: const TextStyle(
+                                                    fontFamily: 'ProductSans',
+                                                    color:
+                                                        AppColors.textPrimary,
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          },
+                                        ),
                                       ),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'timer',
-                                      child: ValueListenableBuilder<Duration?>(
-                                        valueListenable: _playerService
-                                            .sleepTimerRemainingNotifier,
-                                        builder: (context, remaining, _) {
-                                          return Row(
-                                            children: [
-                                              Icon(
-                                                LucideIcons.moonStar,
-                                                color: remaining != null
-                                                    ? AppColors.accent
-                                                    : AppColors.textPrimary,
-                                                size: 20,
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Text(
-                                                remaining != null
-                                                    ? 'Sleep: ${_formatDuration(remaining)}'
-                                                    : 'Sleep Timer',
-                                                style: TextStyle(
-                                                  fontFamily: 'ProductSans',
+                                      PopupMenuItem(
+                                        value: 'timer',
+                                        child: ValueListenableBuilder<Duration?>(
+                                          valueListenable: _playerService
+                                              .sleepTimerRemainingNotifier,
+                                          builder: (context, remaining, _) {
+                                            return Row(
+                                              children: [
+                                                Icon(
+                                                  LucideIcons.moonStar,
                                                   color: remaining != null
                                                       ? AppColors.accent
                                                       : AppColors.textPrimary,
+                                                  size: 20,
                                                 ),
-                                              ),
-                                            ],
-                                          );
-                                        },
+                                                const SizedBox(width: 12),
+                                                Text(
+                                                  remaining != null
+                                                      ? 'Sleep: ${_formatDuration(remaining)}'
+                                                      : 'Sleep Timer',
+                                                  style: TextStyle(
+                                                    fontFamily: 'ProductSans',
+                                                    color: remaining != null
+                                                        ? AppColors.accent
+                                                        : AppColors.textPrimary,
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          },
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                  onSelected: (value) {
-                                    if (value == 'add_to_playlist') {
-                                      _showAddToPlaylistDialog(context, song);
-                                    } else if (value == 'speed') {
-                                      _showSpeedBottomSheet(context);
-                                    } else if (value == 'timer') {
-                                      _showSleepTimerBottomSheet(context);
-                                    }
-                                  },
-                                ),
+                                    ],
+                                    onSelected: (value) {
+                                      if (value == 'add_to_playlist') {
+                                        _showAddToPlaylistDialog(context, song);
+                                      } else if (value == 'speed') {
+                                        _showSpeedBottomSheet(context);
+                                      } else if (value == 'timer') {
+                                        _showSleepTimerBottomSheet(context);
+                                      }
+                                    },
+                                  ),
                                 ),
                               ],
                             ),
@@ -796,13 +848,21 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                       context.responsive(6.0, 7.0, 8.0),
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.15),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.15,
+                                      ),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Icon(
                                       LucideIcons.fileText,
-                                      color: Colors.white.withValues(alpha: 0.9),
-                                      size: context.responsive(16.0, 17.0, 18.0),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.9,
+                                      ),
+                                      size: context.responsive(
+                                        16.0,
+                                        17.0,
+                                        18.0,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -812,31 +872,53 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                   children: [
                                     Container(
                                       padding: EdgeInsets.symmetric(
-                                        horizontal: context.responsive(4.0, 5.0, 6.0),
+                                        horizontal: context.responsive(
+                                          4.0,
+                                          5.0,
+                                          6.0,
+                                        ),
                                         vertical: 2,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.white.withValues(alpha: 0.2),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.2,
+                                        ),
                                         borderRadius: BorderRadius.circular(3),
                                       ),
                                       child: Text(
                                         song.fileType,
                                         style: TextStyle(
                                           fontFamily: 'ProductSans',
-                                          fontSize: context.responsive(9.0, 10.0, 11.0),
+                                          fontSize: context.responsive(
+                                            9.0,
+                                            10.0,
+                                            11.0,
+                                          ),
                                           fontWeight: FontWeight.w600,
                                           color: Colors.white,
                                         ),
                                       ),
                                     ),
                                     if (song.resolution != null) ...[
-                                      SizedBox(width: context.responsive(5.0, 6.0, 7.0)),
+                                      SizedBox(
+                                        width: context.responsive(
+                                          5.0,
+                                          6.0,
+                                          7.0,
+                                        ),
+                                      ),
                                       Text(
                                         song.resolution!,
                                         style: TextStyle(
                                           fontFamily: 'ProductSans',
-                                          fontSize: context.responsive(9.0, 10.0, 11.0),
-                                          color: Colors.white.withValues(alpha: 0.7),
+                                          fontSize: context.responsive(
+                                            9.0,
+                                            10.0,
+                                            11.0,
+                                          ),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.7,
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -849,15 +931,22 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                     final isFavorite = snapshot.data ?? false;
                                     return GestureDetector(
                                       onTap: () async {
-                                        final newState = await _favoritesService.toggleFavorite(song.id);
+                                        final newState = await _favoritesService
+                                            .toggleFavorite(song.id);
                                         setState(() {});
                                         if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
                                             SnackBar(
                                               content: Text(
-                                                newState ? 'Added to favorites' : 'Removed from favorites',
+                                                newState
+                                                    ? 'Added to favorites'
+                                                    : 'Removed from favorites',
                                               ),
-                                              duration: const Duration(seconds: 1),
+                                              duration: const Duration(
+                                                seconds: 1,
+                                              ),
                                             ),
                                           );
                                         }
@@ -868,16 +957,30 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                         ),
                                         decoration: BoxDecoration(
                                           color: isFavorite
-                                              ? Colors.red.withValues(alpha: 0.25)
-                                              : Colors.white.withValues(alpha: 0.15),
-                                          borderRadius: BorderRadius.circular(10),
+                                              ? Colors.red.withValues(
+                                                  alpha: 0.25,
+                                                )
+                                              : Colors.white.withValues(
+                                                  alpha: 0.15,
+                                                ),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
                                         ),
                                         child: Icon(
-                                          isFavorite ? Icons.favorite : Icons.favorite_border,
+                                          isFavorite
+                                              ? Icons.favorite
+                                              : Icons.favorite_border,
                                           color: isFavorite
                                               ? Colors.red
-                                              : Colors.white.withValues(alpha: 0.9),
-                                          size: context.responsive(16.0, 17.0, 18.0),
+                                              : Colors.white.withValues(
+                                                  alpha: 0.9,
+                                                ),
+                                          size: context.responsive(
+                                            16.0,
+                                            17.0,
+                                            18.0,
+                                          ),
                                         ),
                                       ),
                                     );
@@ -887,7 +990,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                             ),
                           ),
 
-                          SizedBox(height: context.responsive(12.0, 14.0, 16.0)),
+                          SizedBox(
+                            height: context.responsive(12.0, 14.0, 16.0),
+                          ),
 
                           // Waveform & Controls (lowered)
                           Padding(
@@ -902,18 +1007,23 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                   throttledPosition: _throttledPosition,
                                   currentSong: song,
                                 ),
-                                SizedBox(height: context.responsive(2.0, 3.0, 4.0)),
+                                SizedBox(
+                                  height: context.responsive(2.0, 3.0, 4.0),
+                                ),
                                 _PlayerControls(
                                   playerService: _playerService,
                                   formatDuration: _formatDuration,
                                   currentSong: song,
-                                  isShuffleNotifier: _playerService.isShuffleNotifier,
+                                  isShuffleNotifier:
+                                      _playerService.isShuffleNotifier,
                                 ),
                               ],
                             ),
                           ),
 
-                          SizedBox(height: context.responsive(16.0, 20.0, 24.0)),
+                          SizedBox(
+                            height: context.responsive(16.0, 20.0, 24.0),
+                          ),
 
                           // Bottom Directory Info
                           if (song.filePath != null)
@@ -924,7 +1034,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                 final parts = filePath.split(RegExp(r'[/\\]'));
                                 if (parts.length > 1) {
                                   parts.removeLast();
-                                  final startIndex = parts.length > 2 ? parts.length - 2 : 0;
+                                  final startIndex = parts.length > 2
+                                      ? parts.length - 2
+                                      : 0;
                                   final folders = parts.sublist(startIndex);
                                   dirText = folders.join('/');
                                 }
@@ -932,18 +1044,36 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                   return const SizedBox.shrink();
                                 }
                                 return Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: context.responsive(12.0, 16.0, 20.0),
+                                  padding: EdgeInsets.only(
+                                    left: context.responsive(12.0, 16.0, 20.0),
+                                    right: context.responsive(12.0, 16.0, 20.0),
+                                    bottom: context.responsive(
+                                      16.0,
+                                      20.0,
+                                      24.0,
+                                    ),
                                   ),
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Icon(
                                         LucideIcons.folder,
-                                        size: context.responsive(11.0, 12.0, 13.0),
-                                        color: Colors.white.withValues(alpha: 0.7),
+                                        size: context.responsive(
+                                          11.0,
+                                          12.0,
+                                          13.0,
+                                        ),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.7,
+                                        ),
                                       ),
-                                      SizedBox(width: context.responsive(4.0, 5.0, 6.0)),
+                                      SizedBox(
+                                        width: context.responsive(
+                                          4.0,
+                                          5.0,
+                                          6.0,
+                                        ),
+                                      ),
                                       Flexible(
                                         child: Text(
                                           dirText,
@@ -951,8 +1081,14 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontFamily: 'ProductSans',
-                                            fontSize: context.responsive(10.0, 11.0, 12.0),
-                                            color: Colors.white.withValues(alpha: 0.7),
+                                            fontSize: context.responsive(
+                                              10.0,
+                                              11.0,
+                                              12.0,
+                                            ),
+                                            color: Colors.white.withValues(
+                                              alpha: 0.7,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -970,86 +1106,6 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
             );
           },
         ),
-      ),
-    );
-  }
-}
-
-/// Scrolling text widget for long titles
-class _ScrollingText extends StatefulWidget {
-  final String text;
-  final TextStyle style;
-
-  const _ScrollingText({
-    required this.text,
-    required this.style,
-  });
-
-  @override
-  State<_ScrollingText> createState() => _ScrollingTextState();
-}
-
-class _ScrollingTextState extends State<_ScrollingText> {
-  late ScrollController _scrollController;
-  Timer? _scrollTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController = ScrollController();
-    _startScrolling();
-  }
-
-  @override
-  void dispose() {
-    _scrollTimer?.cancel();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _startScrolling() {
-    // Wait a bit before starting to scroll
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      
-      _scrollTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
-        if (!mounted || !_scrollController.hasClients) {
-          timer.cancel();
-          return;
-        }
-
-        final maxScroll = _scrollController.position.maxScrollExtent;
-        final currentScroll = _scrollController.offset;
-
-        if (maxScroll > 0) {
-          if (currentScroll >= maxScroll) {
-            // Reset to start
-            _scrollController.jumpTo(0);
-            timer.cancel();
-            Future.delayed(const Duration(seconds: 2), () {
-              if (mounted) _startScrolling();
-            });
-          } else {
-            _scrollController.animateTo(
-              currentScroll + 1,
-              duration: const Duration(milliseconds: 50),
-              curve: Curves.linear,
-            );
-          }
-        }
-      });
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      controller: _scrollController,
-      scrollDirection: Axis.horizontal,
-      child: Text(
-        widget.text,
-        style: widget.style,
-        maxLines: 1,
       ),
     );
   }
@@ -1198,10 +1254,7 @@ class _PlayerControls extends StatelessWidget {
                           onPressed: () => playerService.previous(),
                           iconSize: context.responsive(18.0, 20.0, 22.0),
                           padding: EdgeInsets.zero,
-                          icon: Icon(
-                            LucideIcons.skipBack,
-                            color: Colors.white,
-                          ),
+                          icon: Icon(LucideIcons.skipBack, color: Colors.white),
                         ),
                       ),
                       SizedBox(width: context.responsive(14.0, 18.0, 22.0)),
