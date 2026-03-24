@@ -395,11 +395,14 @@ class PlayerService {
     if (_currentIndex < _playlist.length - 1) {
       _currentIndex++;
       debugPrint('next(): Advancing to index $_currentIndex');
-      await play(_playlist[_currentIndex]);
+      await _justAudioPlayer.seekToNext();
     } else if (loopModeNotifier.value == LoopMode.all) {
       _currentIndex = 0;
       debugPrint('next(): LoopMode.all, wrapping to index 0');
-      await play(_playlist[_currentIndex]);
+      await _justAudioPlayer.seek(Duration.zero, index: 0);
+      if (!isPlayingNotifier.value) {
+        await _justAudioPlayer.play();
+      }
     } else {
       debugPrint('next(): End of playlist, pausing');
       await pause();
@@ -415,7 +418,7 @@ class PlayerService {
     } else {
       if (_currentIndex > 0) {
         _currentIndex--;
-        await play(_playlist[_currentIndex]);
+        await _justAudioPlayer.seekToPrevious();
       } else {
         await seek(Duration.zero);
       }
