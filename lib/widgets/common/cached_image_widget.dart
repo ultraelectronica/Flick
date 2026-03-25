@@ -95,48 +95,35 @@ class CachedImageWidget extends StatelessWidget {
   Widget _buildFileImage() {
     final file = File(imagePath!);
 
-    return FutureBuilder<bool>(
-      future: file.exists(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData || !snapshot.data!) {
-          return SizedBox(
-            width: width,
-            height: height,
-            child: errorWidget ?? defaultErrorWidget(),
-          );
+    return Image.file(
+      file,
+      width: width,
+      height: height,
+      fit: fit,
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded || frame != null) {
+          return child;
         }
-
-        return Image.file(
-          file,
+        return SizedBox(
           width: width,
           height: height,
-          fit: fit,
-          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-            if (wasSynchronouslyLoaded || frame != null) {
-              return child;
-            }
-            return SizedBox(
-              width: width,
-              height: height,
-              child: placeholder ?? defaultPlaceholder(),
-            );
-          },
-          errorBuilder: (context, error, stackTrace) {
-            return SizedBox(
-              width: width,
-              height: height,
-              child: errorWidget ?? defaultErrorWidget(),
-            );
-          },
-          // Use lower resolution for thumbnails
-          cacheWidth: useThumbnail && thumbnailWidth != null
-              ? thumbnailWidth
-              : null,
-          cacheHeight: useThumbnail && thumbnailHeight != null
-              ? thumbnailHeight
-              : null,
+          child: placeholder ?? defaultPlaceholder(),
         );
       },
+      errorBuilder: (context, error, stackTrace) {
+        return SizedBox(
+          width: width,
+          height: height,
+          child: errorWidget ?? defaultErrorWidget(),
+        );
+      },
+      // Use lower resolution for thumbnails
+      cacheWidth: useThumbnail && thumbnailWidth != null
+          ? thumbnailWidth
+          : null,
+      cacheHeight: useThumbnail && thumbnailHeight != null
+          ? thumbnailHeight
+          : null,
     );
   }
 

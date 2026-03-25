@@ -65,7 +65,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // Sync folders from SharedPreferences to database (migration)
     final folders = await _folderService.getSavedFolders();
     final repository = FolderRepository();
-    
+
     for (final folder in folders) {
       final entity = FolderEntity()
         ..uri = folder.uri
@@ -119,9 +119,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     } on FolderAlreadyExistsException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.message),
             duration: const Duration(seconds: 3),
@@ -208,9 +206,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   void _openDuplicateCleaner() {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const DuplicateCleanerScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const DuplicateCleanerScreen()),
     );
   }
 
@@ -520,6 +516,9 @@ SOFTWARE.
   Widget build(BuildContext context) {
     final songsViewMode = ref.watch(songsViewModeProvider);
     final navBarAlwaysVisible = ref.watch(navBarAlwaysVisibleProvider);
+    final ambientBackgroundEnabled = ref.watch(
+      ambientBackgroundEnabledProvider,
+    );
 
     return DisplayModeWrapper(
       child: SafeArea(
@@ -609,6 +608,22 @@ SOFTWARE.
                               ref
                                   .read(navBarAlwaysVisibleProvider.notifier)
                                   .setAlwaysVisible(value);
+                            },
+                          ),
+                          _buildDivider(),
+                          _buildToggleSetting(
+                            context,
+                            icon: LucideIcons.sparkles,
+                            title: 'Ambient Background',
+                            subtitle:
+                                'Use album art as the blurred app background',
+                            value: ambientBackgroundEnabled,
+                            onChanged: (value) {
+                              ref
+                                  .read(
+                                    ambientBackgroundEnabledProvider.notifier,
+                                  )
+                                  .setEnabled(value);
                             },
                           ),
                         ],
@@ -1050,7 +1065,9 @@ SOFTWARE.
                 onChanged: (value) {
                   ref.read(autoSyncEnabledProvider.notifier).set(value);
                   if (value) {
-                    autoSyncService.syncInterval = Duration(minutes: autoSyncInterval);
+                    autoSyncService.syncInterval = Duration(
+                      minutes: autoSyncInterval,
+                    );
                     autoSyncService.start();
                   } else {
                     autoSyncService.stop();

@@ -1,4 +1,3 @@
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -67,6 +66,10 @@ class FlickNavBar extends StatelessWidget {
     final horizontalPadding = context.scaleSize(AppConstants.spacingLg);
     final verticalPadding = context.scaleSize(AppConstants.spacingSm);
 
+    // NOTE: BackdropFilter (blur) was intentionally removed here.
+    // Using a more-opaque semi-solid gradient achieves the same dark-glass look
+    // on the existing dark theme at zero GPU cost, versus a permanent per-frame
+    // blur layer that was expensive on lower-end devices.
     return Container(
       margin: EdgeInsets.fromLTRB(
         horizontalPadding,
@@ -74,53 +77,42 @@ class FlickNavBar extends StatelessWidget {
         horizontalPadding,
         bottomPadding + verticalPadding,
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(context.scaleSize(20)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: AppConstants.glassBlurSigma,
-            sigmaY: AppConstants.glassBlurSigma,
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.surfaceLight.withValues(alpha: 0.75),
-                  AppColors.surface.withValues(alpha: 0.85),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(context.scaleSize(28)),
-              border: Border.all(color: AppColors.glassBorder, width: 1),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 24,
-                  spreadRadius: 2,
-                  offset: const Offset(0, 10),
-                ),
-                BoxShadow(
-                  color: AppColors.accent.withValues(alpha: 0.03),
-                  blurRadius: 40,
-                  spreadRadius: -8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Optional Mini Player
-                if (showMiniPlayer && miniPlayerWidget != null)
-                  miniPlayerWidget!,
-
-                // Navigation Items
-                _buildNavigationRow(context),
-              ],
-            ),
-          ),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.surfaceLight.withValues(alpha: 0.92),
+            AppColors.surface.withValues(alpha: 0.97),
+          ],
         ),
+        borderRadius: BorderRadius.circular(context.scaleSize(20)),
+        border: Border.all(color: AppColors.glassBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 24,
+            spreadRadius: 2,
+            offset: const Offset(0, 10),
+          ),
+          BoxShadow(
+            color: AppColors.accent.withValues(alpha: 0.03),
+            blurRadius: 40,
+            spreadRadius: -8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Optional Mini Player
+          if (showMiniPlayer && miniPlayerWidget != null)
+            miniPlayerWidget!,
+
+          // Navigation Items
+          _buildNavigationRow(context),
+        ],
       ),
     );
   }
