@@ -38,8 +38,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
   // Last drag update time for throttling
   DateTime _lastDragUpdate = DateTime.now();
 
-  // Throttled position for waveform updates (updates every 50ms for smooth animation)
-  Duration _throttledPosition = Duration.zero;
+  // Notifier for throttled position – only _WaveformLayer listens, so no setState needed.
+  late final ValueNotifier<Duration> _throttledPositionNotifier;
   Timer? _positionThrottleTimer;
 
   @override
@@ -55,18 +55,18 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
     );
     _dragController.value = 0.0;
 
-    // Initialize with current position
-    _throttledPosition = _playerService.positionNotifier.value;
-    // Set up throttled position updates for waveform (50ms interval for smooth animation)
+    // Initialize notifier with current position
+    _throttledPositionNotifier = ValueNotifier(
+      _playerService.positionNotifier.value,
+    );
+    // Throttled position tick: only mutates the notifier – never calls setState.
     _positionThrottleTimer = Timer.periodic(const Duration(milliseconds: 50), (
       timer,
     ) {
       if (mounted) {
         final newPosition = _playerService.positionNotifier.value;
-        // Only update if position actually changed
-        if (_throttledPosition != newPosition) {
-          _throttledPosition = newPosition;
-          setState(() {});
+        if (_throttledPositionNotifier.value != newPosition) {
+          _throttledPositionNotifier.value = newPosition;
         }
       }
     });
@@ -75,6 +75,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
   @override
   void dispose() {
     _positionThrottleTimer?.cancel();
+    _throttledPositionNotifier.dispose();
     _dragController.dispose();
     super.dispose();
   }
@@ -1033,7 +1034,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                               children: [
                                 _WaveformLayer(
                                   playerService: _playerService,
-                                  throttledPosition: _throttledPosition,
+                                  positionNotifier: _throttledPositionNotifier,
                                   currentSong: song,
                                 ),
                                 SizedBox(
@@ -1140,45 +1141,58 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
   }
 }
 
-/// Extracted waveform layer widget to reduce nesting and improve performance
-/// Uses TweenAnimationBuilder for smooth position interpolation between updates
-class _WaveformLayer extends StatelessWidget {
+/// Extracted waveform layer widget.
+/// Owns a ValueListenableBuilder on [positionNotifier] so that 50ms position
+/// ticks **never** cause the parent [_FullPlayerScreenState] to rebuild.
+class _WaveformLayer extends StatefulWidget {
   final PlayerService playerService;
-  final Duration throttledPosition;
+  final ValueNotifier<Duration> positionNotifier;
   final Song? currentSong;
 
   const _WaveformLayer({
     required this.playerService,
-    required this.throttledPosition,
+    required this.positionNotifier,
     required this.currentSong,
   });
 
   @override
+  State<_WaveformLayer> createState() => _WaveformLayerState();
+}
+
+class _WaveformLayerState extends State<_WaveformLayer> {
+  @override
   Widget build(BuildContext context) {
+    // Outer builder: re-runs only when the track duration changes.
     return ValueListenableBuilder<Duration>(
-      valueListenable: playerService.durationNotifier,
+      valueListenable: widget.playerService.durationNotifier,
       builder: (context, engineDuration, _) {
-        // Use engine duration if available, otherwise fallback to song duration
         final duration = engineDuration.inMilliseconds > 0
             ? engineDuration
-            : (currentSong?.duration ?? Duration.zero);
+            : (widget.currentSong?.duration ?? Duration.zero);
 
         if (duration.inMilliseconds == 0) {
           return const SizedBox();
         }
 
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: RepaintBoundary(
-            child: WaveformSeekBar(
-              barCount: 60,
-              position: throttledPosition,
-              duration: duration,
-              onChanged: (newPos) {
-                playerService.seek(newPos);
-              },
-            ),
-          ),
+        // Inner builder: re-runs every 50ms with the throttled position.
+        // Only this subtree is rebuilt – the parent is completely unaffected.
+        return ValueListenableBuilder<Duration>(
+          valueListenable: widget.positionNotifier,
+          builder: (context, position, _) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: RepaintBoundary(
+                child: WaveformSeekBar(
+                  barCount: 60,
+                  position: position,
+                  duration: duration,
+                  onChanged: (newPos) {
+                    widget.playerService.seek(newPos);
+                  },
+                ),
+              ),
+            );
+          },
         );
       },
     );
