@@ -39,12 +39,28 @@ class PlaylistService {
     }
   }
 
-  Future<Playlist> createPlaylist(String name) async {
+  String _normalizeName(String name) => name.trim().toLowerCase();
+
+  bool _playlistNameExists(String name, {String? excludeId}) {
+    final normalizedName = _normalizeName(name);
+    return _playlists.any(
+      (playlist) =>
+          playlist.id != excludeId &&
+          _normalizeName(playlist.name) == normalizedName,
+    );
+  }
+
+  Future<Playlist?> createPlaylist(String name) async {
     await _ensureLoaded();
+    final trimmedName = name.trim();
+
+    if (trimmedName.isEmpty || _playlistNameExists(trimmedName)) {
+      return null;
+    }
 
     final playlist = Playlist(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: name,
+      name: trimmedName,
       createdAt: DateTime.now(),
     );
 
@@ -60,7 +76,16 @@ class PlaylistService {
     final index = _playlists.indexWhere((p) => p.id == playlist.id);
     if (index == -1) return null;
 
-    final updated = playlist.copyWith(updatedAt: DateTime.now());
+    final trimmedName = playlist.name.trim();
+    if (trimmedName.isEmpty ||
+        _playlistNameExists(trimmedName, excludeId: playlist.id)) {
+      return null;
+    }
+
+    final updated = playlist.copyWith(
+      name: trimmedName,
+      updatedAt: DateTime.now(),
+    );
     _playlists[index] = updated;
     await _savePlaylists();
 

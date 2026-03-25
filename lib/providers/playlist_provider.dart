@@ -54,7 +54,9 @@ class PlaylistsNotifier extends AsyncNotifier<PlaylistsState> {
 
     final service = ref.read(playlistServiceProvider);
     final playlist = await service.createPlaylist(name.trim());
-    ref.invalidateSelf();
+    if (ref.mounted) {
+      ref.invalidateSelf();
+    }
 
     return playlist;
   }
@@ -63,7 +65,7 @@ class PlaylistsNotifier extends AsyncNotifier<PlaylistsState> {
     final service = ref.read(playlistServiceProvider);
     final success = await service.deletePlaylist(id);
 
-    if (success) {
+    if (success && ref.mounted) {
       ref.invalidateSelf();
     }
 
@@ -83,7 +85,9 @@ class PlaylistsNotifier extends AsyncNotifier<PlaylistsState> {
     );
 
     if (updated != null) {
-      ref.invalidateSelf();
+      if (ref.mounted) {
+        ref.invalidateSelf();
+      }
       return true;
     }
 
@@ -94,7 +98,7 @@ class PlaylistsNotifier extends AsyncNotifier<PlaylistsState> {
     final service = ref.read(playlistServiceProvider);
     final success = await service.addSongToPlaylist(playlistId, songId);
 
-    if (success) {
+    if (success && ref.mounted) {
       ref.invalidateSelf();
     }
 
@@ -105,7 +109,7 @@ class PlaylistsNotifier extends AsyncNotifier<PlaylistsState> {
     final service = ref.read(playlistServiceProvider);
     final success = await service.removeSongFromPlaylist(playlistId, songId);
 
-    if (success) {
+    if (success && ref.mounted) {
       ref.invalidateSelf();
     }
 

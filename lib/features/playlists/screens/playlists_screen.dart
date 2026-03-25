@@ -365,11 +365,22 @@ class PlaylistsScreen extends ConsumerWidget {
         .read(playlistsProvider.notifier)
         .createPlaylist(name);
 
+    if (playlist == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('A playlist with this name already exists'),
+          ),
+        );
+      }
+      return;
+    }
+
     if (dialogContext != null && dialogContext.mounted) {
       Navigator.pop(dialogContext);
     }
 
-    if (playlist != null && context.mounted) {
+    if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Playlist "${playlist.name}" created')),
       );

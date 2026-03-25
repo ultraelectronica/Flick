@@ -343,8 +343,12 @@ class SongActionsBottomSheet extends ConsumerWidget {
                       const SizedBox(height: AppConstants.spacingLg),
                       ElevatedButton.icon(
                         onPressed: () {
+                          final rootContext = Navigator.of(
+                            context,
+                            rootNavigator: true,
+                          ).context;
                           Navigator.pop(context);
-                          _showCreatePlaylistDialog(context, sheetRef);
+                          _showCreatePlaylistDialog(rootContext);
                         },
                         icon: const Icon(LucideIcons.plus),
                         label: const Text('Create Playlist'),
@@ -363,8 +367,12 @@ class SongActionsBottomSheet extends ConsumerWidget {
                     icon: LucideIcons.plus,
                     label: 'Create New Playlist',
                     onTap: () {
+                      final rootContext = Navigator.of(
+                        context,
+                        rootNavigator: true,
+                      ).context;
                       Navigator.pop(context);
-                      _showCreatePlaylistDialog(context, sheetRef);
+                      _showCreatePlaylistDialog(rootContext);
                     },
                   ),
                   const Divider(height: 1),
@@ -400,73 +408,71 @@ class SongActionsBottomSheet extends ConsumerWidget {
     );
   }
 
-  void _showCreatePlaylistDialog(BuildContext context, WidgetRef ref) {
+  void _showCreatePlaylistDialog(BuildContext context) {
     final controller = TextEditingController();
+    final container = ProviderScope.containerOf(context, listen: false);
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create Playlist'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Playlist name',
-            border: OutlineInputBorder(),
-          ),
-          onSubmitted: (value) async {
-            if (value.trim().isNotEmpty) {
-              final playlist = await ref
-                  .read(playlistsProvider.notifier)
-                  .createPlaylist(value.trim());
-              if (playlist != null && context.mounted) {
-                await ref
-                    .read(playlistsProvider.notifier)
-                    .addSongToPlaylist(playlist.id, song.id);
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Created ${playlist.name} and added song'),
-                    ),
-                  );
-                }
-              }
+      builder: (dialogContext) {
+        Future<void> createAndAddSong(String value) async {
+          final playlistName = value.trim();
+          if (playlistName.isEmpty) return;
+
+          final playlist = await container
+              .read(playlistsProvider.notifier)
+              .createPlaylist(playlistName);
+
+          if (playlist == null) {
+            if (dialogContext.mounted) {
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                const SnackBar(
+                  content: Text('A playlist with this name already exists'),
+                ),
+              );
             }
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            return;
+          }
+
+          if (!dialogContext.mounted) return;
+
+          await container
+              .read(playlistsProvider.notifier)
+              .addSongToPlaylist(playlist.id, song.id);
+
+          if (!dialogContext.mounted) return;
+
+          Navigator.pop(dialogContext);
+          ScaffoldMessenger.of(dialogContext).showSnackBar(
+            SnackBar(content: Text('Created ${playlist.name} and added song')),
+          );
+        }
+
+        return AlertDialog(
+          title: const Text('Create Playlist'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'Playlist name',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: createAndAddSong,
           ),
-          ElevatedButton(
-            onPressed: () async {
-              if (controller.text.trim().isNotEmpty) {
-                final playlist = await ref
-                    .read(playlistsProvider.notifier)
-                    .createPlaylist(controller.text.trim());
-                if (playlist != null && context.mounted) {
-                  await ref
-                      .read(playlistsProvider.notifier)
-                      .addSongToPlaylist(playlist.id, song.id);
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Created ${playlist.name} and added song',
-                        ),
-                      ),
-                    );
-                  }
-                }
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                await createAndAddSong(controller.text);
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        );
+      },
     );
   }
 
