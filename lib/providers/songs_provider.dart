@@ -38,7 +38,31 @@ extension SongFileTypeFilterExtension on SongFileTypeFilter {
 
   bool matches(String fileType) {
     if (this == SongFileTypeFilter.all) return true;
-    return fileType.toUpperCase() == displayName;
+    
+    // Normalize file type for comparison (remove dots, convert to uppercase)
+    final normalized = fileType.replaceAll('.', '').toUpperCase().trim();
+    final filterName = displayName.toUpperCase();
+    
+    // Direct match
+    if (normalized == filterName) return true;
+    
+    // Handle common variations
+    switch (this) {
+      case SongFileTypeFilter.mp3:
+        return normalized == 'MP3' || normalized == 'MPEG';
+      case SongFileTypeFilter.aac:
+        return normalized == 'AAC' || normalized == 'M4A' || normalized == 'MP4';
+      case SongFileTypeFilter.ogg:
+        return normalized == 'OGG' || normalized == 'VORBIS' || normalized == 'OGA';
+      case SongFileTypeFilter.alac:
+        return normalized == 'ALAC' || normalized == 'M4A';
+      case SongFileTypeFilter.wav:
+        return normalized == 'WAV' || normalized == 'WAVE';
+      case SongFileTypeFilter.flac:
+        return normalized == 'FLAC';
+      case SongFileTypeFilter.all:
+        return true;
+    }
   }
 }
 

@@ -28,8 +28,6 @@ class SongsScreen extends ConsumerStatefulWidget {
 
 class _SongsScreenState extends ConsumerState<SongsScreen> {
   static const double _listItemExtent = 80;
-  static const List<String> _fastIndexTokens =
-      SongFastIndexOverlay.defaultTokens;
 
   int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
@@ -214,6 +212,23 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
       return content;
     }
 
+    final songsAsync = ref.read(songsProvider);
+    final sortOption = songsAsync.value?.sortOption ?? SongSortOption.albumArtist;
+    
+    // Get appropriate tokens based on sort option
+    List<String> tokens = _getFastIndexTokens(sortOption);
+    
+    // For date sorting, generate tokens from actual years in the data
+    if (sortOption == SongSortOption.dateAdded) {
+      final years = tokenToIndexMap.keys.toList()..sort((a, b) => b.compareTo(a));
+      tokens = years;
+    }
+    
+    // If tokens list is empty or we need to use actual data, use the keys from the map
+    if (tokens.isEmpty || sortOption == SongSortOption.fileType) {
+      tokens = tokenToIndexMap.keys.toList()..sort();
+    }
+
     final railTopInset = AppConstants.spacingSm;
     final railBottomInset = shouldReserveBottomSpace
         ? AppConstants.spacingSm
@@ -229,7 +244,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
           child: SongFastIndexOverlay(
             tokenToIndex: tokenToIndexMap,
             selectedToken: _selectedFastToken,
-            tokens: _fastIndexTokens,
+            tokens: tokens,
             onSelect: (token, animate) {
               _onFastIndexSelected(
                 songs: songs,
@@ -237,6 +252,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                 token: token,
                 animate: animate,
                 viewMode: viewMode,
+                tokens: tokens,
               );
             },
           ),
@@ -393,16 +409,42 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   }
 
   Map<String, int> _buildFastIndexMap(List<Song> songs) {
+    final songsAsync = ref.read(songsProvider);
+    final sortOption = songsAsync.value?.sortOption ?? SongSortOption.albumArtist;
+    
     final map = <String, int>{};
     for (var i = 0; i < songs.length; i++) {
-      final token = _tokenForTitle(songs[i].title);
+      final token = _tokenForSong(songs[i], sortOption);
       map.putIfAbsent(token, () => i);
     }
     return map;
   }
 
-  String _tokenForTitle(String title) {
-    final normalized = title.trim();
+  String _tokenForSong(Song song, SongSortOption sortOption) {
+    String text;
+    
+    switch (sortOption) {
+      case SongSortOption.albumArtist:
+        text = song.albumArtist ?? song.artist;
+      case SongSortOption.artist:
+        text = song.artist;
+      case SongSortOption.title:
+        text = song.title;
+      case SongSortOption.dateAdded:
+        // For date sorting, group by year
+        final year = song.dateAdded?.year;
+        if (year == null) return '#';
+        return year.toString();
+      case SongSortOption.fileType:
+        // For file type sorting, use the file type itself
+        return song.fileType.toUpperCase();
+    }
+    
+    return _extractToken(text);
+  }
+
+  String _extractToken(String text) {
+    final normalized = text.trim();
     if (normalized.isEmpty) return '#';
 
     final code = normalized.codeUnitAt(0);
@@ -425,23 +467,37 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   bool _isAsciiUpper(int codeUnit) => codeUnit >= 65 && codeUnit <= 90;
   bool _isDigit(int codeUnit) => codeUnit >= 48 && codeUnit <= 57;
 
-  String _nearestIndexedToken(String token, Map<String, int> tokenToIndexMap) {
+  List<String> _getFastIndexTokens(SongSortOption sortOption) {
+    switch (sortOption) {
+      case SongSortOption.dateAdded:
+        // For date sorting, show years (dynamically generated from songs)
+        return []; // Will be populated from actual data
+      case SongSortOption.fileType:
+        // For file type sorting, show common formats
+        return ['FLAC', 'MP3', 'WAV', 'AAC', 'OGG', 'ALAC', '#'];
+      default:
+        // For text-based sorting (title, artist, albumArtist)
+        return SongFastIndexOverlay.defaultTokens;
+    }
+  }
+
+  String _nearestIndexedToken(String token, Map<String, int> tokenToIndexMap, List<String> tokens) {
     if (tokenToIndexMap.containsKey(token)) {
       return token;
     }
 
-    final start = _fastIndexTokens.indexOf(token);
+    final start = tokens.indexOf(token);
     if (start == -1) return tokenToIndexMap.keys.first;
 
-    for (var i = start + 1; i < _fastIndexTokens.length; i++) {
-      final candidate = _fastIndexTokens[i];
+    for (var i = start + 1; i < tokens.length; i++) {
+      final candidate = tokens[i];
       if (tokenToIndexMap.containsKey(candidate)) {
         return candidate;
       }
     }
 
     for (var i = start - 1; i >= 0; i--) {
-      final candidate = _fastIndexTokens[i];
+      final candidate = tokens[i];
       if (tokenToIndexMap.containsKey(candidate)) {
         return candidate;
       }
@@ -456,10 +512,11 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     required String token,
     required bool animate,
     required SongViewMode viewMode,
+    required List<String> tokens,
   }) {
     if (songs.isEmpty || tokenToIndexMap.isEmpty) return;
 
-    final resolvedToken = _nearestIndexedToken(token, tokenToIndexMap);
+    final resolvedToken = _nearestIndexedToken(token, tokenToIndexMap, tokens);
     final targetIndex = tokenToIndexMap[resolvedToken];
     if (targetIndex == null) return;
 
@@ -503,7 +560,9 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     if (songs.isEmpty || index < 0 || index >= songs.length) {
       return;
     }
-    _selectedFastToken = _tokenForTitle(songs[index].title);
+    final songsAsync = ref.read(songsProvider);
+    final sortOption = songsAsync.value?.sortOption ?? SongSortOption.albumArtist;
+    _selectedFastToken = _tokenForSong(songs[index], sortOption);
   }
 
   Future<void> _playSongAndOpenPlayer({
