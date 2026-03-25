@@ -5,7 +5,6 @@ import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/providers/providers.dart';
-import 'package:flick/widgets/common/glass_bottom_sheet.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -17,10 +16,27 @@ class SongActionsBottomSheet extends ConsumerWidget {
 
   /// Show the song actions bottom sheet
   static Future<void> show(BuildContext context, Song song) {
-    return GlassBottomSheet.show(
+    return showModalBottomSheet(
       context: context,
-      maxHeightRatio: 0.7,
-      content: SongActionsBottomSheet(song: song),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border.all(color: AppColors.glassBorder),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            AppConstants.spacingLg,
+            AppConstants.spacingSm,
+            AppConstants.spacingLg,
+            MediaQuery.of(sheetContext).padding.bottom + AppConstants.spacingLg,
+          ),
+          child: SongActionsBottomSheet(song: song),
+        ),
+      ),
     );
   }
 
@@ -29,102 +45,60 @@ class SongActionsBottomSheet extends ConsumerWidget {
     final isFavorite = ref.watch(isSongFavoriteProvider(song.id));
 
     return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: AppConstants.spacingSm),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildDragHandle(),
-            const SizedBox(height: AppConstants.spacingMd),
-
-            // Song header
-            _buildSongHeader(context),
-            const SizedBox(height: AppConstants.spacingLg),
-
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Quick Actions',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: context.adaptiveTextSecondary,
-                  letterSpacing: 0.2,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildDragHandle(),
+          const SizedBox(height: AppConstants.spacingMd),
+          _buildSongHeader(context),
+          const SizedBox(height: AppConstants.spacingMd),
+          _buildActionTile(
+            context: context,
+            icon: LucideIcons.heart,
+            highlighted: isFavorite,
+            label: isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
+            onTap: () async {
+              await ref
+                  .read(favoritesProvider.notifier)
+                  .toggleFavorite(song.id);
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
+            },
+          ),
+          _buildActionTile(
+            context: context,
+            icon: LucideIcons.listPlus,
+            label: 'Add to Playlist',
+            onTap: () {
+              Navigator.pop(context);
+              _showAddToPlaylistSheet(context);
+            },
+          ),
+          _buildActionTile(
+            context: context,
+            icon: LucideIcons.info,
+            label: 'View Metadata',
+            onTap: () {
+              Navigator.pop(context);
+              _showMetadataSheet(context);
+            },
+          ),
+          _buildActionTile(
+            context: context,
+            icon: LucideIcons.folderOpen,
+            label: 'Show in Files',
+            onTap: () {
+              Navigator.pop(context);
+              // TODO: Implement show in files functionality
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(song.filePath ?? 'File path not available'),
                 ),
-              ),
-            ),
-            const SizedBox(height: AppConstants.spacingSm),
-
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.surfaceLight.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                border: Border.all(color: AppColors.glassBorder),
-              ),
-              child: Column(
-                children: [
-                  _buildActionTile(
-                    context: context,
-                    icon: LucideIcons.heart,
-                    iconFilled: isFavorite,
-                    label: isFavorite
-                        ? 'Remove from Favorites'
-                        : 'Add to Favorites',
-                    subtitle: isFavorite
-                        ? 'This song will be removed from your liked songs'
-                        : 'Keep this song in your liked songs',
-                    onTap: () async {
-                      await ref
-                          .read(favoritesProvider.notifier)
-                          .toggleFavorite(song.id);
-                      if (context.mounted) {
-                        Navigator.pop(context);
-                      }
-                    },
-                  ),
-                  _buildActionDivider(),
-                  _buildActionTile(
-                    context: context,
-                    icon: LucideIcons.listPlus,
-                    label: 'Add to Playlist',
-                    subtitle: 'Choose one of your playlists',
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showAddToPlaylistSheet(context);
-                    },
-                  ),
-                  _buildActionDivider(),
-                  _buildActionTile(
-                    context: context,
-                    icon: LucideIcons.info,
-                    label: 'View Metadata',
-                    subtitle: 'See format, duration, and file details',
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showMetadataSheet(context);
-                    },
-                  ),
-                  _buildActionDivider(),
-                  _buildActionTile(
-                    context: context,
-                    icon: LucideIcons.folderOpen,
-                    label: 'Show in Files',
-                    subtitle: 'Show the current file path',
-                    onTap: () {
-                      Navigator.pop(context);
-                      // TODO: Implement show in files functionality
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            song.filePath ?? 'File path not available',
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -135,7 +109,7 @@ class SongActionsBottomSheet extends ConsumerWidget {
         width: 40,
         height: 4,
         decoration: BoxDecoration(
-          color: AppColors.glassBorder,
+          color: AppColors.glassBorderStrong,
           borderRadius: BorderRadius.circular(AppConstants.radiusSm),
         ),
       ),
@@ -143,83 +117,91 @@ class SongActionsBottomSheet extends ConsumerWidget {
   }
 
   Widget _buildSongHeader(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppConstants.spacingMd),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.surfaceLight.withValues(alpha: 0.65),
-            AppColors.surface.withValues(alpha: 0.78),
-          ],
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            width: 68,
+            height: 68,
+            child: song.albumArt != null
+                ? CachedImageWidget(
+                    imagePath: song.albumArt!,
+                    fit: BoxFit.cover,
+                    useThumbnail: true,
+                    thumbnailWidth: 136,
+                    thumbnailHeight: 136,
+                  )
+                : const ColoredBox(
+                    color: AppColors.surfaceLight,
+                    child: Icon(
+                      LucideIcons.music,
+                      color: AppColors.textTertiary,
+                      size: 24,
+                    ),
+                  ),
+          ),
         ),
-        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                song.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'ProductSans',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: context.adaptiveTextPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                song.artist,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'ProductSans',
+                  fontSize: 14,
+                  color: context.adaptiveTextSecondary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildInfoChip(context, song.formattedDuration),
+                  _buildInfoChip(context, song.fileType.toUpperCase()),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoChip(BuildContext context, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.glassBorder),
       ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-            child: SizedBox(
-              width: 56,
-              height: 56,
-              child: song.albumArt != null
-                  ? CachedImageWidget(
-                      imagePath: song.albumArt!,
-                      fit: BoxFit.cover,
-                      useThumbnail: true,
-                      thumbnailWidth: 112,
-                      thumbnailHeight: 112,
-                    )
-                  : const ColoredBox(
-                      color: AppColors.surface,
-                      child: Icon(
-                        LucideIcons.music,
-                        color: AppColors.textTertiary,
-                        size: 24,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(width: AppConstants.spacingMd),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  song.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: context.adaptiveTextPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  song.artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: context.adaptiveTextSecondary,
-                  ),
-                ),
-                if (song.album != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    song.album!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: context.adaptiveTextTertiary,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
+      child: Text(
+        value,
+        style: TextStyle(
+          fontFamily: 'ProductSans',
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: context.adaptiveTextSecondary,
+        ),
       ),
     );
   }
@@ -229,60 +211,45 @@ class SongActionsBottomSheet extends ConsumerWidget {
     required IconData icon,
     required String label,
     required VoidCallback onTap,
-    String? subtitle,
-    bool iconFilled = false,
+    bool highlighted = false,
   }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppConstants.spacingMd,
-            vertical: AppConstants.spacingMd,
-          ),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(AppConstants.spacingSm),
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
-                  color: iconFilled
+                  color: highlighted
                       ? AppColors.accent.withValues(alpha: 0.16)
-                      : AppColors.surfaceLight.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                      : AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   icon,
-                  size: 20,
-                  color: iconFilled
+                  size: 18,
+                  color: highlighted
                       ? AppColors.accent
                       : context.adaptiveTextSecondary,
                 ),
               ),
-              const SizedBox(width: AppConstants.spacingMd),
+              const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: context.adaptiveTextPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: context.adaptiveTextSecondary,
-                        ),
-                      ),
-                    ],
-                  ],
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontFamily: 'ProductSans',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: context.adaptiveTextPrimary,
+                  ),
                 ),
               ),
               Icon(
@@ -297,114 +264,188 @@ class SongActionsBottomSheet extends ConsumerWidget {
     );
   }
 
-  Widget _buildActionDivider() {
-    return Divider(height: 1, thickness: 1, color: AppColors.glassBorderStrong);
-  }
-
   void _showAddToPlaylistSheet(BuildContext context) {
-    GlassBottomSheet.show(
+    showModalBottomSheet(
       context: context,
-      title: 'Add to Playlist',
-      maxHeightRatio: 0.6,
-      content: Consumer(
-        builder: (context, sheetRef, _) {
-          final playlistsAsync = sheetRef.watch(playlistsProvider);
-          return playlistsAsync.when(
-            loading: () => const Center(
-              child: Padding(
-                padding: EdgeInsets.all(AppConstants.spacingXl),
-                child: CircularProgressIndicator(),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final maxHeight = MediaQuery.of(sheetContext).size.height * 0.72;
+        final bottomPadding =
+            MediaQuery.of(sheetContext).padding.bottom + AppConstants.spacingLg;
+
+        return SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+                border: Border.all(color: AppColors.glassBorder),
               ),
-            ),
-            error: (error, _) => Padding(
-              padding: const EdgeInsets.all(AppConstants.spacingXl),
-              child: Text('Error loading playlists: $error'),
-            ),
-            data: (state) {
-              if (state.playlists.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.all(AppConstants.spacingXl),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+              padding: EdgeInsets.fromLTRB(
+                AppConstants.spacingLg,
+                AppConstants.spacingSm,
+                AppConstants.spacingLg,
+                bottomPadding,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildDragHandle(),
+                  const SizedBox(height: AppConstants.spacingMd),
+                  Row(
                     children: [
                       Icon(
-                        LucideIcons.listMusic,
-                        size: 48,
-                        color: context.adaptiveTextTertiary.withValues(
-                          alpha: 0.5,
-                        ),
+                        LucideIcons.listPlus,
+                        color: sheetContext.adaptiveTextSecondary,
+                        size: 20,
                       ),
-                      const SizedBox(height: AppConstants.spacingMd),
+                      const SizedBox(width: AppConstants.spacingSm),
                       Text(
-                        'No playlists yet',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(color: context.adaptiveTextSecondary),
-                      ),
-                      const SizedBox(height: AppConstants.spacingLg),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          final rootContext = Navigator.of(
-                            context,
-                            rootNavigator: true,
-                          ).context;
-                          Navigator.pop(context);
-                          _showCreatePlaylistDialog(rootContext);
-                        },
-                        icon: const Icon(LucideIcons.plus),
-                        label: const Text('Create Playlist'),
+                        'Add to Playlist',
+                        style: TextStyle(
+                          fontFamily: 'ProductSans',
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: sheetContext.adaptiveTextPrimary,
+                        ),
                       ),
                     ],
                   ),
-                );
-              }
-
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Create new playlist option
-                  _buildActionTile(
-                    context: context,
-                    icon: LucideIcons.plus,
-                    label: 'Create New Playlist',
-                    onTap: () {
-                      final rootContext = Navigator.of(
-                        context,
-                        rootNavigator: true,
-                      ).context;
-                      Navigator.pop(context);
-                      _showCreatePlaylistDialog(rootContext);
-                    },
-                  ),
-                  const Divider(height: 1),
                   const SizedBox(height: AppConstants.spacingSm),
-
-                  // Existing playlists
-                  ...state.playlists.map((playlist) {
-                    return _buildActionTile(
-                      context: context,
-                      icon: LucideIcons.listMusic,
-                      label: playlist.name,
-                      onTap: () async {
-                        await sheetRef
-                            .read(playlistsProvider.notifier)
-                            .addSongToPlaylist(playlist.id, song.id);
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Added to ${playlist.name}'),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: Consumer(
+                      builder: (context, sheetRef, _) {
+                        final playlistsAsync = sheetRef.watch(
+                          playlistsProvider,
+                        );
+                        return playlistsAsync.when(
+                          loading: () => const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(AppConstants.spacingXl),
+                              child: CircularProgressIndicator(),
                             ),
-                          );
-                        }
+                          ),
+                          error: (error, _) => Padding(
+                            padding: const EdgeInsets.all(
+                              AppConstants.spacingXl,
+                            ),
+                            child: Text('Error loading playlists: $error'),
+                          ),
+                          data: (state) {
+                            if (state.playlists.isEmpty) {
+                              return Padding(
+                                padding: const EdgeInsets.all(
+                                  AppConstants.spacingXl,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      LucideIcons.listMusic,
+                                      size: 48,
+                                      color: context.adaptiveTextTertiary
+                                          .withValues(alpha: 0.5),
+                                    ),
+                                    const SizedBox(
+                                      height: AppConstants.spacingMd,
+                                    ),
+                                    Text(
+                                      'No playlists yet',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(
+                                            color:
+                                                context.adaptiveTextSecondary,
+                                          ),
+                                    ),
+                                    const SizedBox(
+                                      height: AppConstants.spacingLg,
+                                    ),
+                                    ElevatedButton.icon(
+                                      onPressed: () {
+                                        final rootContext = Navigator.of(
+                                          context,
+                                          rootNavigator: true,
+                                        ).context;
+                                        Navigator.pop(context);
+                                        _showCreatePlaylistDialog(rootContext);
+                                      },
+                                      icon: const Icon(LucideIcons.plus),
+                                      label: const Text('Create Playlist'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            return ListView(
+                              shrinkWrap: true,
+                              children: [
+                                _buildActionTile(
+                                  context: context,
+                                  icon: LucideIcons.plus,
+                                  label: 'Create New Playlist',
+                                  onTap: () {
+                                    final rootContext = Navigator.of(
+                                      context,
+                                      rootNavigator: true,
+                                    ).context;
+                                    Navigator.pop(context);
+                                    _showCreatePlaylistDialog(rootContext);
+                                  },
+                                ),
+                                Divider(
+                                  height: 1,
+                                  color: AppColors.glassBorderStrong,
+                                ),
+                                const SizedBox(height: AppConstants.spacingSm),
+                                ...state.playlists.map((playlist) {
+                                  return _buildActionTile(
+                                    context: context,
+                                    icon: LucideIcons.listMusic,
+                                    label: playlist.name,
+                                    onTap: () async {
+                                      await sheetRef
+                                          .read(playlistsProvider.notifier)
+                                          .addSongToPlaylist(
+                                            playlist.id,
+                                            song.id,
+                                          );
+                                      if (context.mounted) {
+                                        Navigator.pop(context);
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Added to ${playlist.name}',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  );
+                                }),
+                              ],
+                            );
+                          },
+                        );
                       },
-                    );
-                  }),
+                    ),
+                  ),
                 ],
-              );
-            },
-          );
-        },
-      ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -477,63 +518,148 @@ class SongActionsBottomSheet extends ConsumerWidget {
   }
 
   void _showMetadataSheet(BuildContext context) {
-    GlassBottomSheet.show(
+    showModalBottomSheet(
       context: context,
-      title: 'Song Metadata',
-      maxHeightRatio: 0.7,
-      content: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppConstants.spacingMd),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildMetadataRow(context, 'Title', song.title),
-            _buildMetadataRow(context, 'Artist', song.artist),
-            if (song.album != null)
-              _buildMetadataRow(context, 'Album', song.album!),
-            if (song.albumArtist != null)
-              _buildMetadataRow(context, 'Album Artist', song.albumArtist!),
-            _buildMetadataRow(context, 'Duration', song.formattedDuration),
-            _buildMetadataRow(context, 'Format', song.fileType.toUpperCase()),
-            if (song.resolution != null)
-              _buildMetadataRow(context, 'Resolution', song.resolution!),
-            if (song.filePath != null)
-              _buildMetadataRow(context, 'File Path', song.filePath!),
-            if (song.dateAdded != null)
-              _buildMetadataRow(
-                context,
-                'Date Added',
-                '${song.dateAdded!.year}-${song.dateAdded!.month.toString().padLeft(2, '0')}-${song.dateAdded!.day.toString().padLeft(2, '0')}',
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final bottomPadding =
+            MediaQuery.of(sheetContext).padding.bottom + AppConstants.spacingLg;
+        final maxHeight = MediaQuery.of(sheetContext).size.height * 0.72;
+
+        return SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+                border: Border.all(color: AppColors.glassBorder),
               ),
-          ],
-        ),
-      ),
+              padding: EdgeInsets.fromLTRB(
+                AppConstants.spacingLg,
+                AppConstants.spacingSm,
+                AppConstants.spacingLg,
+                bottomPadding,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildDragHandle(),
+                  const SizedBox(height: AppConstants.spacingMd),
+                  Row(
+                    children: [
+                      Icon(
+                        LucideIcons.info,
+                        size: 20,
+                        color: sheetContext.adaptiveTextSecondary,
+                      ),
+                      const SizedBox(width: AppConstants.spacingSm),
+                      Text(
+                        'Song Metadata',
+                        style: TextStyle(
+                          fontFamily: 'ProductSans',
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: sheetContext.adaptiveTextPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppConstants.spacingSm),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildMetadataRow(sheetContext, 'Title', song.title),
+                          _buildMetadataRow(
+                            sheetContext,
+                            'Artist',
+                            song.artist,
+                          ),
+                          if (song.album != null)
+                            _buildMetadataRow(
+                              sheetContext,
+                              'Album',
+                              song.album!,
+                            ),
+                          if (song.albumArtist != null)
+                            _buildMetadataRow(
+                              sheetContext,
+                              'Album Artist',
+                              song.albumArtist!,
+                            ),
+                          _buildMetadataRow(
+                            sheetContext,
+                            'Duration',
+                            song.formattedDuration,
+                          ),
+                          _buildMetadataRow(
+                            sheetContext,
+                            'Format',
+                            song.fileType.toUpperCase(),
+                          ),
+                          if (song.resolution != null)
+                            _buildMetadataRow(
+                              sheetContext,
+                              'Resolution',
+                              song.resolution!,
+                            ),
+                          if (song.filePath != null)
+                            _buildMetadataRow(
+                              sheetContext,
+                              'File Path',
+                              song.filePath!,
+                            ),
+                          if (song.dateAdded != null)
+                            _buildMetadataRow(
+                              sheetContext,
+                              'Date Added',
+                              '${song.dateAdded!.year}-${song.dateAdded!.month.toString().padLeft(2, '0')}-${song.dateAdded!.day.toString().padLeft(2, '0')}',
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildMetadataRow(BuildContext context, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: AppConstants.spacingSm,
-        horizontal: AppConstants.spacingMd,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 110,
+            width: 96,
             child: Text(
               label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: context.adaptiveTextSecondary,
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
+                color: context.adaptiveTextSecondary,
               ),
             ),
           ),
-          const SizedBox(width: AppConstants.spacingMd),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               value,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                fontSize: 13,
                 color: context.adaptiveTextPrimary,
               ),
             ),

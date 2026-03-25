@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/utils/responsive.dart';
+import 'package:flick/data/repositories/song_repository.dart';
+import 'package:flick/features/albums/screens/albums_screen.dart';
+import 'package:flick/features/artists/screens/artists_screen.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/services/favorites_service.dart';
@@ -30,6 +33,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
   final PlayerService _playerService = PlayerService();
   final FavoritesService _favoritesService = FavoritesService();
   final LyricsService _lyricsService = LyricsService();
+  final SongRepository _songRepository = SongRepository();
   static const String _topBarTextFontFamily = 'ProductSans';
   static const FontWeight _topBarTextFontWeight = FontWeight.w500;
 
@@ -150,11 +154,11 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
-          color: AppColors.glassBackgroundStrong.withValues(alpha: 0.95),
+          color: AppColors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border.all(color: AppColors.glassBorder, width: 1),
+          border: Border.all(color: AppColors.glassBorder),
         ),
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,11 +254,11 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
-          color: AppColors.glassBackgroundStrong.withValues(alpha: 0.95),
+          color: AppColors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border.all(color: AppColors.glassBorder, width: 1),
+          border: Border.all(color: AppColors.glassBorder),
         ),
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -524,6 +528,411 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
         ),
       ),
     );
+  }
+
+  void _showSongActionsBottomSheet(BuildContext context, Song song) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border.all(color: AppColors.glassBorder),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.glassBorderStrong,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: 68,
+                      height: 68,
+                      child: song.albumArt != null
+                          ? CachedImageWidget(
+                              imagePath: song.albumArt!,
+                              fit: BoxFit.cover,
+                              useThumbnail: true,
+                              thumbnailWidth: 136,
+                              thumbnailHeight: 136,
+                            )
+                          : Container(
+                              color: AppColors.surfaceLight,
+                              child: const Icon(
+                                LucideIcons.music,
+                                color: AppColors.textTertiary,
+                                size: 24,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          song.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: sheetContext.adaptiveTextPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          song.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontSize: 14,
+                            color: sheetContext.adaptiveTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _buildSongInfoChip(
+                              sheetContext,
+                              song.formattedDuration,
+                            ),
+                            _buildSongInfoChip(
+                              sheetContext,
+                              song.fileType.toUpperCase(),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _buildSongActionTile(
+                context: sheetContext,
+                icon: LucideIcons.listPlus,
+                label: 'Add to Playlist',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showAddToPlaylistDialog(context, song);
+                },
+              ),
+              _buildSongActionTile(
+                context: sheetContext,
+                icon: LucideIcons.info,
+                label: 'View Metadata',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showSongMetadataBottomSheet(context, song);
+                },
+              ),
+              _buildSongActionTile(
+                context: sheetContext,
+                icon: LucideIcons.fileText,
+                label: 'Lyrics',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  if (mounted) {
+                    setState(() {
+                      _isLyricsMode = true;
+                    });
+                  }
+                },
+              ),
+              _buildSongActionTile(
+                context: sheetContext,
+                icon: LucideIcons.user,
+                label: 'Go to Artist',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _openArtistFromSong(context, song);
+                },
+              ),
+              _buildSongActionTile(
+                context: sheetContext,
+                icon: LucideIcons.disc,
+                label: 'Go to Album',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _openAlbumFromSong(context, song);
+                },
+              ),
+              _buildSongActionTile(
+                context: sheetContext,
+                icon: LucideIcons.gauge,
+                label: 'Playback Speed',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showSpeedBottomSheet(context);
+                },
+              ),
+              _buildSongActionTile(
+                context: sheetContext,
+                icon: LucideIcons.moonStar,
+                label: 'Sleep Timer',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showSleepTimerBottomSheet(context);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSongInfoChip(BuildContext context, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Text(
+        value,
+        style: TextStyle(
+          fontFamily: 'ProductSans',
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: context.adaptiveTextSecondary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSongActionTile({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  icon,
+                  size: 18,
+                  color: context.adaptiveTextSecondary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontFamily: 'ProductSans',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: context.adaptiveTextPrimary,
+                  ),
+                ),
+              ),
+              Icon(
+                LucideIcons.chevronRight,
+                size: 16,
+                color: context.adaptiveTextTertiary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSongMetadataBottomSheet(BuildContext context, Song song) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: AppColors.glassBorder),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  LucideIcons.info,
+                  size: 20,
+                  color: sheetContext.adaptiveTextSecondary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Song Metadata',
+                  style: TextStyle(
+                    fontFamily: 'ProductSans',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: sheetContext.adaptiveTextPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildMetadataRow(sheetContext, 'Title', song.title),
+            _buildMetadataRow(sheetContext, 'Artist', song.artist),
+            if (song.album != null)
+              _buildMetadataRow(sheetContext, 'Album', song.album!),
+            _buildMetadataRow(sheetContext, 'Duration', song.formattedDuration),
+            _buildMetadataRow(
+              sheetContext,
+              'Format',
+              song.fileType.toUpperCase(),
+            ),
+            if (song.resolution != null)
+              _buildMetadataRow(sheetContext, 'Resolution', song.resolution!),
+            if (song.filePath != null)
+              _buildMetadataRow(sheetContext, 'File Path', song.filePath!),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetadataRow(BuildContext context, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: context.adaptiveTextSecondary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                fontSize: 13,
+                color: context.adaptiveTextPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openArtistFromSong(BuildContext context, Song song) async {
+    final artistName = song.artist.trim();
+    if (artistName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Artist is not available for this song')),
+      );
+      return;
+    }
+
+    final artistMap = await _songRepository.getSongsByArtist();
+    final artistSongs = artistMap[artistName];
+    if (!mounted) return;
+
+    if (artistSongs == null || artistSongs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load artist songs')),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ArtistDetailScreen(
+          artistName: artistName,
+          songs: artistSongs,
+          artistArt: _firstArt(artistSongs),
+          playerService: _playerService,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAlbumFromSong(BuildContext context, Song song) async {
+    final albumName = (song.album?.trim().isNotEmpty ?? false)
+        ? song.album!.trim()
+        : 'Unknown Album';
+
+    final albumMap = await _songRepository.getSongsByAlbum();
+    final albumSongs = albumMap[albumName];
+    if (!mounted) return;
+
+    if (albumSongs == null || albumSongs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load album songs')),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AlbumDetailScreen(
+          albumName: albumName,
+          songs: albumSongs,
+          albumArt: _firstArt(albumSongs),
+          playerService: _playerService,
+        ),
+      ),
+    );
+  }
+
+  String? _firstArt(List<Song> songs) {
+    for (final item in songs) {
+      final art = item.albumArt;
+      if (art != null && art.isNotEmpty) {
+        return art;
+      }
+    }
+    return null;
   }
 
   Widget _buildFileInfoRow(
@@ -949,7 +1358,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                     ).withValues(alpha: 0.7),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: PopupMenuButton<String>(
+                                  child: IconButton(
                                     padding: EdgeInsets.all(
                                       context.responsive(8.0, 10.0, 12.0),
                                     ),
@@ -962,100 +1371,11 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                                         24.0,
                                       ),
                                     ),
-                                    color: AppColors.surface,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    itemBuilder: (context) => [
-                                      PopupMenuItem(
-                                        value: 'add_to_playlist',
-                                        child: Row(
-                                          children: [
-                                            const Icon(
-                                              LucideIcons.listPlus,
-                                              color: AppColors.textPrimary,
-                                              size: 20,
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Text(
-                                              'Add to Playlist',
-                                              style: TextStyle(
-                                                fontFamily: 'ProductSans',
-                                                color:
-                                                    context.adaptiveTextPrimary,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'speed',
-                                        child: ValueListenableBuilder<double>(
-                                          valueListenable: _playerService
-                                              .playbackSpeedNotifier,
-                                          builder: (context, speed, _) {
-                                            return Row(
-                                              children: [
-                                                const Icon(
-                                                  LucideIcons.gauge,
-                                                  color: AppColors.textPrimary,
-                                                  size: 20,
-                                                ),
-                                                const SizedBox(width: 12),
-                                                Text(
-                                                  'Speed: ${speed}x',
-                                                  style: const TextStyle(
-                                                    fontFamily: 'ProductSans',
-                                                    color:
-                                                        AppColors.textPrimary,
-                                                  ),
-                                                ),
-                                              ],
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'timer',
-                                        child: ValueListenableBuilder<Duration?>(
-                                          valueListenable: _playerService
-                                              .sleepTimerRemainingNotifier,
-                                          builder: (context, remaining, _) {
-                                            return Row(
-                                              children: [
-                                                Icon(
-                                                  LucideIcons.moonStar,
-                                                  color: remaining != null
-                                                      ? AppColors.accent
-                                                      : AppColors.textPrimary,
-                                                  size: 20,
-                                                ),
-                                                const SizedBox(width: 12),
-                                                Text(
-                                                  remaining != null
-                                                      ? 'Sleep: ${_formatDuration(remaining)}'
-                                                      : 'Sleep Timer',
-                                                  style: TextStyle(
-                                                    fontFamily: 'ProductSans',
-                                                    color: remaining != null
-                                                        ? AppColors.accent
-                                                        : AppColors.textPrimary,
-                                                  ),
-                                                ),
-                                              ],
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                    onSelected: (value) {
-                                      if (value == 'add_to_playlist') {
-                                        _showAddToPlaylistDialog(context, song);
-                                      } else if (value == 'speed') {
-                                        _showSpeedBottomSheet(context);
-                                      } else if (value == 'timer') {
-                                        _showSleepTimerBottomSheet(context);
-                                      }
+                                    onPressed: () {
+                                      _showSongActionsBottomSheet(
+                                        context,
+                                        song,
+                                      );
                                     },
                                   ),
                                 ),

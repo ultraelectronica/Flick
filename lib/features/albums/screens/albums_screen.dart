@@ -58,7 +58,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            _AlbumDetailScreen(
+            AlbumDetailScreen(
               albumName: albumName,
               songs: songs,
               albumArt: _getAlbumArt(songs),
@@ -333,6 +333,7 @@ class _AlbumCardState extends State<_AlbumCard>
                                     File(widget.albumArt!),
                                     fit: BoxFit.cover,
                                     cacheWidth: artworkTargetWidth,
+                                    cacheHeight: artworkTargetHeight,
                                     filterQuality: FilterQuality.low,
                                     gaplessPlayback: true,
                                     errorBuilder: (_, _, _) =>
@@ -392,13 +393,14 @@ class _AlbumCardState extends State<_AlbumCard>
 }
 
 /// Album detail screen showing songs in the album.
-class _AlbumDetailScreen extends StatelessWidget {
+class AlbumDetailScreen extends StatelessWidget {
   final String albumName;
   final List<Song> songs;
   final String? albumArt;
   final PlayerService playerService;
 
-  const _AlbumDetailScreen({
+  const AlbumDetailScreen({
+    super.key,
     required this.albumName,
     required this.songs,
     required this.albumArt,

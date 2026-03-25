@@ -66,7 +66,7 @@ class _ArtistsScreenState extends State<ArtistsScreen> {
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            _ArtistDetailScreen(
+            ArtistDetailScreen(
               artistName: artistName,
               songs: songs,
               artistArt: _getArtistArt(songs),
@@ -318,13 +318,14 @@ class _ArtistCard extends StatelessWidget {
 }
 
 /// Artist detail screen showing songs by the artist.
-class _ArtistDetailScreen extends StatelessWidget {
+class ArtistDetailScreen extends StatelessWidget {
   final String artistName;
   final List<Song> songs;
   final String? artistArt;
   final PlayerService playerService;
 
-  const _ArtistDetailScreen({
+  const ArtistDetailScreen({
+    super.key,
     required this.artistName,
     required this.songs,
     required this.artistArt,
