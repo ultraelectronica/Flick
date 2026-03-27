@@ -157,6 +157,41 @@ pub fn audio_set_equalizer(enabled: bool, gains_db: Vec<f32>) -> Result<(), Stri
         .set_equalizer(enabled, arr)
 }
 
+/// Configure compressor settings for the native audio engine.
+pub fn audio_set_compressor(
+    enabled: bool,
+    threshold_db: f32,
+    ratio: f32,
+    attack_ms: f32,
+    release_ms: f32,
+    makeup_gain_db: f32,
+) -> Result<(), String> {
+    AUDIO_ENGINE
+        .get()
+        .ok_or("Audio engine not initialized")?
+        .set_compressor(
+            enabled,
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            makeup_gain_db,
+        )
+}
+
+/// Configure limiter settings for the native audio engine.
+pub fn audio_set_limiter(
+    enabled: bool,
+    input_gain_db: f32,
+    ceiling_db: f32,
+    release_ms: f32,
+) -> Result<(), String> {
+    AUDIO_ENGINE
+        .get()
+        .ok_or("Audio engine not initialized")?
+        .set_limiter(enabled, input_gain_db, ceiling_db, release_ms)
+}
+
 /// Configure crossfade settings.
 pub fn audio_set_crossfade(enabled: bool, duration_secs: f32) -> Result<(), String> {
     AUDIO_ENGINE

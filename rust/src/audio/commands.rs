@@ -28,6 +28,22 @@ pub enum AudioCommand {
     SetPlaybackSpeed { speed: f32 },
     /// Set graphic EQ: enabled and 10 band gains in dB.
     SetEqualizer { enabled: bool, gains_db: [f32; 10] },
+    /// Configure compressor settings.
+    SetCompressor {
+        enabled: bool,
+        threshold_db: f32,
+        ratio: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        makeup_gain_db: f32,
+    },
+    /// Configure limiter settings.
+    SetLimiter {
+        enabled: bool,
+        input_gain_db: f32,
+        ceiling_db: f32,
+        release_ms: f32,
+    },
     /// Trigger crossfade to next track immediately
     CrossfadeToNext,
     /// Skip to the next track (with crossfade if enabled)
