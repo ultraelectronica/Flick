@@ -89,8 +89,16 @@ class SongRepository {
     if (entities.isEmpty) return;
 
     await _isar.writeTxn(() async {
+      final unresolvedEntities = entities
+          .where((entity) => entity.id == Isar.autoIncrement)
+          .toList();
+      if (unresolvedEntities.isEmpty) {
+        await _isar.songEntitys.putAll(entities);
+        return;
+      }
+
       // Batch query for all existing songs by file paths
-      final filePaths = entities.map((e) => e.filePath).toList();
+      final filePaths = unresolvedEntities.map((e) => e.filePath).toList();
 
       // Build a map of existing songs by file path for quick lookup
       final existingMap = <String, SongEntity>{};
@@ -116,7 +124,7 @@ class SongRepository {
       }
 
       // Assign IDs to entities that already exist
-      for (final entity in entities) {
+      for (final entity in unresolvedEntities) {
         final existing = existingMap[entity.filePath];
         if (existing != null) {
           entity.id = existing.id;
@@ -272,8 +280,12 @@ class SongRepository {
   }
 
   int _compareAlbumSongs(Song a, Song b) {
-    final discA = (a.discNumber != null && a.discNumber! > 0) ? a.discNumber! : 1;
-    final discB = (b.discNumber != null && b.discNumber! > 0) ? b.discNumber! : 1;
+    final discA = (a.discNumber != null && a.discNumber! > 0)
+        ? a.discNumber!
+        : 1;
+    final discB = (b.discNumber != null && b.discNumber! > 0)
+        ? b.discNumber!
+        : 1;
     final discCompare = discA.compareTo(discB);
     if (discCompare != 0) return discCompare;
 
