@@ -9,28 +9,11 @@ import 'package:flick/services/uac2_exception.dart';
 
 const Object _unset = Object();
 
-enum Uac2State {
-  idle,
-  connecting,
-  connected,
-  streaming,
-  error,
-}
+enum Uac2State { idle, connecting, connected, streaming, error }
 
-enum Uac2RouteType {
-  internalDac,
-  externalUsb,
-  wired,
-  bluetooth,
-  dock,
-  unknown,
-}
+enum Uac2RouteType { internalDac, externalUsb, wired, bluetooth, dock, unknown }
 
-enum Uac2VolumeMode {
-  system,
-  hardware,
-  unavailable,
-}
+enum Uac2VolumeMode { system, hardware, unavailable }
 
 class Uac2AudioFormat {
   final int sampleRate;
@@ -44,10 +27,10 @@ class Uac2AudioFormat {
   });
 
   Map<String, dynamic> toJson() => {
-        'sampleRate': sampleRate,
-        'bitDepth': bitDepth,
-        'channels': channels,
-      };
+    'sampleRate': sampleRate,
+    'bitDepth': bitDepth,
+    'channels': channels,
+  };
 
   factory Uac2AudioFormat.fromJson(Map<String, dynamic> json) {
     return Uac2AudioFormat(
@@ -156,6 +139,11 @@ class Uac2Service {
     return rust_uac2.uac2IsAvailable();
   }
 
+  bool get supportsTransferStats {
+    if (Platform.isAndroid) return false;
+    return rust_uac2.uac2IsAvailable();
+  }
+
   void addStatusListener(ValueChanged<Uac2DeviceStatus?> listener) {
     _statusListeners.add(listener);
   }
@@ -244,10 +232,9 @@ class Uac2Service {
   Future<bool> hasPermission(String deviceName) async {
     if (!Platform.isAndroid) return true;
     try {
-      final result = await _channel.invokeMethod<bool>(
-        'hasPermission',
-        {'deviceName': deviceName},
-      );
+      final result = await _channel.invokeMethod<bool>('hasPermission', {
+        'deviceName': deviceName,
+      });
       return result ?? false;
     } catch (e) {
       debugPrint('Uac2Service.hasPermission failed: $e');
@@ -258,10 +245,9 @@ class Uac2Service {
   Future<bool> requestPermission(String deviceName) async {
     if (!Platform.isAndroid) return true;
     try {
-      final result = await _channel.invokeMethod<bool>(
-        'requestPermission',
-        {'deviceName': deviceName},
-      );
+      final result = await _channel.invokeMethod<bool>('requestPermission', {
+        'deviceName': deviceName,
+      });
       return result ?? false;
     } catch (e) {
       debugPrint('Uac2Service.requestPermission failed: $e');
@@ -454,10 +440,9 @@ class Uac2Service {
 
     try {
       if (Platform.isAndroid) {
-        final result = await _channel.invokeMethod<bool>(
-          'setRouteVolume',
-          {'volume': volume},
-        );
+        final result = await _channel.invokeMethod<bool>('setRouteVolume', {
+          'volume': volume,
+        });
         if (result == true) {
           await _refreshAndroidRouteStatus();
         }
@@ -496,10 +481,9 @@ class Uac2Service {
 
     try {
       if (Platform.isAndroid) {
-        final result = await _channel.invokeMethod<bool>(
-          'setRouteMuted',
-          {'muted': muted},
-        );
+        final result = await _channel.invokeMethod<bool>('setRouteMuted', {
+          'muted': muted,
+        });
         if (result == true) {
           await _refreshAndroidRouteStatus();
         }
@@ -583,10 +567,7 @@ class Uac2Service {
     if (_currentDeviceStatus == null) return null;
 
     try {
-      if (Platform.isAndroid) {
-        return null;
-      }
-      if (!rust_uac2.uac2IsAvailable()) return null;
+      if (!supportsTransferStats) return null;
       return rust_uac2.uac2GetTransferStats();
     } catch (e) {
       debugPrint('Uac2Service.getTransferStats failed: $e');
@@ -598,10 +579,7 @@ class Uac2Service {
     if (_currentDeviceStatus == null) return false;
 
     try {
-      if (Platform.isAndroid) {
-        return false;
-      }
-      if (!rust_uac2.uac2IsAvailable()) return false;
+      if (!supportsTransferStats) return false;
       await rust_uac2.uac2ResetTransferStats();
       return true;
     } catch (e) {
@@ -748,7 +726,8 @@ class Uac2Service {
     final effectiveFormat = formatOverride ?? _lastKnownFormat;
     final effectiveIsPlaying = isPlaying ?? _lastKnownIsPlaying;
     final effectiveHasSong = hasActiveSong ?? _lastKnownHasSong;
-    final prefersExternalDevice = resolvedPreferredDevice != null &&
+    final prefersExternalDevice =
+        resolvedPreferredDevice != null &&
         (resolvedPreferredDevice.vendorId != 0 ||
             resolvedPreferredDevice.productId != 0 ||
             (resolvedPreferredDevice.deviceName?.isNotEmpty ?? false));
@@ -759,7 +738,8 @@ class Uac2Service {
         return;
       }
 
-      final fallbackDevice = resolvedPreferredDevice ??
+      final fallbackDevice =
+          resolvedPreferredDevice ??
           _currentDeviceStatus?.device ??
           _buildSyntheticAndroidDevice(
             routeType: Uac2RouteType.unknown,
@@ -862,20 +842,16 @@ class Uac2Service {
     Uac2DeviceInfo? preferredDevice,
   }) async {
     try {
-      final raw = await _channel.invokeMapMethod<dynamic, dynamic>(
-        'getRouteStatus',
-        {
-          'deviceName': preferredDevice?.deviceName,
-          'productName': preferredDevice?.productName,
-          'vendorId': preferredDevice?.vendorId,
-          'productId': preferredDevice?.productId,
-          'serial': preferredDevice?.serial,
-        },
-      );
+      final raw = await _channel
+          .invokeMapMethod<dynamic, dynamic>('getRouteStatus', {
+            'deviceName': preferredDevice?.deviceName,
+            'productName': preferredDevice?.productName,
+            'vendorId': preferredDevice?.vendorId,
+            'productId': preferredDevice?.productId,
+            'serial': preferredDevice?.serial,
+          });
       if (raw == null) return null;
-      return raw.map(
-        (key, value) => MapEntry(key.toString(), value),
-      );
+      return raw.map((key, value) => MapEntry(key.toString(), value));
     } catch (e) {
       debugPrint('Uac2Service._getAndroidRouteStatus failed: $e');
       return null;

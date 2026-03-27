@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/app_colors.dart';
@@ -21,6 +22,8 @@ class _Uac2TransferStatsWidgetState
     extends ConsumerState<Uac2TransferStatsWidget> {
   Timer? _updateTimer;
   rust_uac2.Uac2TransferStats? _stats;
+  bool _loading = true;
+  String? _unavailableMessage;
 
   @override
   void initState() {
@@ -34,24 +37,41 @@ class _Uac2TransferStatsWidgetState
     super.dispose();
   }
 
-  void _startUpdating() {
+  Future<void> _startUpdating() async {
+    await _loadStats();
+    if (!mounted) return;
+
+    final service = ref.read(uac2ServiceProvider);
+    if (!service.supportsTransferStats) {
+      return;
+    }
+
     _updateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _loadStats();
     });
-    _loadStats();
   }
 
   Future<void> _loadStats() async {
     final service = ref.read(uac2ServiceProvider);
     final stats = await service.getTransferStats();
 
-    if (mounted && stats != null) {
-      setState(() => _stats = stats);
-    }
+    if (!mounted) return;
+
+    setState(() {
+      _stats = stats;
+      _loading = false;
+      _unavailableMessage = stats == null
+          ? _buildUnavailableMessage(service)
+          : null;
+    });
   }
 
   Future<void> _resetStats() async {
     final service = ref.read(uac2ServiceProvider);
+    if (!service.supportsTransferStats) {
+      return;
+    }
+
     await service.resetTransferStats();
     await _loadStats();
   }
@@ -65,7 +85,7 @@ class _Uac2TransferStatsWidgetState
       return const SizedBox.shrink();
     }
 
-    if (_stats == null) {
+    if (_loading) {
       return Container(
         padding: const EdgeInsets.all(AppConstants.spacingLg),
         decoration: BoxDecoration(
@@ -81,6 +101,10 @@ class _Uac2TransferStatsWidgetState
           ),
         ),
       );
+    }
+
+    if (_stats == null) {
+      return _buildUnavailable(context);
     }
 
     return Container(
@@ -104,9 +128,9 @@ class _Uac2TransferStatsWidgetState
               Text(
                 'Transfer Statistics',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: context.adaptiveTextPrimary,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: context.adaptiveTextPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const Spacer(),
               IconButton(
@@ -196,26 +220,22 @@ class _Uac2TransferStatsWidgetState
       padding: const EdgeInsets.symmetric(vertical: AppConstants.spacingSm),
       child: Row(
         children: [
-          Icon(
-            icon,
-            color: context.adaptiveTextSecondary,
-            size: 18,
-          ),
+          Icon(icon, color: context.adaptiveTextSecondary, size: 18),
           const SizedBox(width: AppConstants.spacingMd),
           Expanded(
             child: Text(
               label,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: context.adaptiveTextSecondary,
-                  ),
+                color: context.adaptiveTextSecondary,
+              ),
             ),
           ),
           Text(
             value,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: valueColor ?? context.adaptiveTextPrimary,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: valueColor ?? context.adaptiveTextPrimary,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -226,5 +246,55 @@ class _Uac2TransferStatsWidgetState
     if (rate >= 0.99) return Colors.green.shade400;
     if (rate >= 0.95) return Colors.orange.shade400;
     return Colors.red.shade400;
+  }
+
+  Widget _buildUnavailable(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppConstants.spacingLg),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            LucideIcons.info,
+            color: context.adaptiveTextSecondary,
+            size: 20,
+          ),
+          const SizedBox(width: AppConstants.spacingMd),
+          Expanded(
+            child: Text(
+              _unavailableMessage ?? 'Transfer statistics unavailable',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: context.adaptiveTextTertiary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _buildUnavailableMessage(Uac2Service service) {
+    if (!service.supportsTransferStats) {
+      if (kIsWeb) {
+        return 'Transfer statistics are not available on this platform.';
+      }
+
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.android:
+          return 'Transfer statistics are not available on Android yet.';
+        case TargetPlatform.iOS:
+        case TargetPlatform.fuchsia:
+        case TargetPlatform.linux:
+        case TargetPlatform.macOS:
+        case TargetPlatform.windows:
+          return 'Transfer statistics are not available on this platform.';
+      }
+    }
+
+    return 'Transfer statistics are currently unavailable.';
   }
 }
