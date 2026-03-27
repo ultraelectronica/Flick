@@ -311,12 +311,9 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
 
         return Padding(
           padding: const EdgeInsets.only(bottom: AppConstants.spacingSm),
-          child: GestureDetector(
-            onHorizontalDragEnd: (details) async {
-              if (details.primaryVelocity != null &&
-                  details.primaryVelocity! < -400) {
-                await _queueSong(song);
-              }
+          child: _QueueSwipeListItem(
+            onQueued: () async {
+              await _queueSong(song);
             },
             child: Material(
               color: Colors.transparent,
@@ -1101,6 +1098,150 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     if (result != null && result != 1 && widget.onNavigationRequested != null) {
       widget.onNavigationRequested!(result);
     }
+  }
+}
+
+class _QueueSwipeListItem extends StatefulWidget {
+  final Widget child;
+  final Future<void> Function() onQueued;
+
+  const _QueueSwipeListItem({required this.child, required this.onQueued});
+
+  @override
+  State<_QueueSwipeListItem> createState() => _QueueSwipeListItemState();
+}
+
+class _QueueSwipeListItemState extends State<_QueueSwipeListItem> {
+  double _dragDx = 0;
+  bool _queuedFlash = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final revealProgress = (-_dragDx / 120).clamp(0.0, 1.0);
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  AppColors.accent.withValues(
+                    alpha: 0.14 + (revealProgress * 0.14),
+                  ),
+                  AppColors.surface,
+                ],
+              ),
+              border: Border.all(
+                color: AppColors.accent.withValues(
+                  alpha: 0.18 + (revealProgress * 0.24),
+                ),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spacingLg,
+              ),
+              child: Row(
+                children: [
+                  const Spacer(),
+                  Opacity(
+                    opacity: revealProgress,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.queue_music_rounded,
+                          color: AppColors.accent,
+                          size: 20,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Add to queue',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        GestureDetector(
+          onHorizontalDragUpdate: (details) {
+            final nextDx = (_dragDx + details.delta.dx).clamp(-132.0, 0.0);
+            if (nextDx != _dragDx) {
+              setState(() {
+                _dragDx = nextDx;
+              });
+            }
+          },
+          onHorizontalDragEnd: (details) async {
+            final shouldQueue =
+                _dragDx <= -84 ||
+                (details.primaryVelocity != null &&
+                    details.primaryVelocity! < -400);
+            if (shouldQueue) {
+              setState(() {
+                _dragDx = 0;
+                _queuedFlash = true;
+              });
+              await widget.onQueued();
+              if (!mounted) return;
+              await Future<void>.delayed(const Duration(milliseconds: 180));
+              if (!mounted) return;
+              setState(() {
+                _queuedFlash = false;
+              });
+              return;
+            }
+            setState(() {
+              _dragDx = 0;
+            });
+          },
+          onHorizontalDragCancel: () {
+            if (_dragDx != 0) {
+              setState(() {
+                _dragDx = 0;
+              });
+            }
+          },
+          behavior: HitTestBehavior.translucent,
+          child: AnimatedSlide(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            offset: Offset(_dragDx / 360, 0),
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 180),
+              scale: _queuedFlash ? 0.985 : 1,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+                  boxShadow: _queuedFlash
+                      ? [
+                          BoxShadow(
+                            color: AppColors.accent.withValues(alpha: 0.22),
+                            blurRadius: 18,
+                            spreadRadius: 1,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: widget.child,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
