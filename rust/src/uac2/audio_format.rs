@@ -171,7 +171,12 @@ impl TryFrom<(&FormatTypeI, u16)> for AudioFormat {
         let sample_rates = parse_sample_rates(&f.sample_rates)?;
         let bit_depth = BitDepth::from_bits(f.b_bit_resolution)?;
         let channels = ChannelConfig::from_count(f.b_subslot_size as u16)?;
-        AudioFormat::new(sample_rates, bit_depth, channels, FormatType::from_tag(format_tag))
+        AudioFormat::new(
+            sample_rates,
+            bit_depth,
+            channels,
+            FormatType::from_tag(format_tag),
+        )
     }
 }
 
@@ -182,7 +187,12 @@ impl TryFrom<(&FormatTypeII, u16)> for AudioFormat {
         let sample_rates = parse_sample_rates(&f.sample_rates)?;
         let bit_depth = BitDepth::Bits16;
         let channels = ChannelConfig::from_count(f.w_samples_per_frame)?;
-        AudioFormat::new(sample_rates, bit_depth, channels, FormatType::from_tag(format_tag))
+        AudioFormat::new(
+            sample_rates,
+            bit_depth,
+            channels,
+            FormatType::from_tag(format_tag),
+        )
     }
 }
 
@@ -201,7 +211,9 @@ pub struct FormatNegotiator;
 
 impl FormatNegotiator {
     pub fn negotiate_best<'a>(&self, formats: &'a [AudioFormat]) -> Option<&'a AudioFormat> {
-        formats.iter().max_by(|a, b| self.rank(a).cmp(&self.rank(b)))
+        formats
+            .iter()
+            .max_by(|a, b| self.rank(a).cmp(&self.rank(b)))
     }
 
     pub fn negotiate_for_rate<'a>(
@@ -216,7 +228,9 @@ impl FormatNegotiator {
         if with_rate.is_empty() {
             return self.negotiate_best(formats);
         }
-        with_rate.into_iter().max_by(|a, b| self.rank(a).cmp(&self.rank(b)))
+        with_rate
+            .into_iter()
+            .max_by(|a, b| self.rank(a).cmp(&self.rank(b)))
     }
 
     fn rank(&self, fmt: &AudioFormat) -> u64 {

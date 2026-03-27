@@ -1,5 +1,5 @@
 use crate::uac2::control_requests::{
-    ControlRequest, ControlRequestBuilder, ControlRequestType, ControlSelector, ControlRecipient,
+    ControlRecipient, ControlRequest, ControlRequestBuilder, ControlRequestType, ControlSelector,
 };
 
 #[test]
@@ -41,7 +41,7 @@ fn test_control_request_builder_complete() {
         .entity_id(1)
         .channel(0)
         .build();
-    
+
     assert!(request.is_ok());
     let request = request.unwrap();
     assert_eq!(request.request_type(), ControlRequestType::GetCur);
@@ -55,7 +55,7 @@ fn test_control_request_builder_missing_request_type() {
         .interface(0)
         .entity_id(1)
         .build();
-    
+
     assert!(request.is_err());
 }
 
@@ -66,7 +66,7 @@ fn test_control_request_builder_missing_selector() {
         .interface(0)
         .entity_id(1)
         .build();
-    
+
     assert!(request.is_err());
 }
 
@@ -77,7 +77,7 @@ fn test_control_request_builder_missing_interface() {
         .selector(ControlSelector::Volume)
         .entity_id(1)
         .build();
-    
+
     assert!(request.is_err());
 }
 
@@ -90,7 +90,7 @@ fn test_control_request_builder_with_value() {
         .entity_id(1)
         .value(0x1000)
         .build();
-    
+
     assert!(request.is_ok());
 }
 
@@ -104,7 +104,7 @@ fn test_control_request_builder_with_data() {
         .entity_id(1)
         .data(data.clone())
         .build();
-    
+
     assert!(request.is_ok());
 }
 
@@ -116,7 +116,7 @@ fn test_control_request_builder_default_channel() {
         .interface(0)
         .entity_id(1)
         .build();
-    
+
     assert!(request.is_ok());
 }
 
@@ -129,7 +129,7 @@ fn test_control_request_builder_custom_channel() {
         .entity_id(1)
         .channel(2)
         .build();
-    
+
     assert!(request.is_ok());
 }
 
@@ -142,6 +142,6 @@ fn test_control_request_builder_endpoint_recipient() {
         .interface(0)
         .entity_id(0x81)
         .build();
-    
+
     assert!(request.is_ok());
 }

@@ -94,7 +94,8 @@ impl AudioCallbackData {
 
     #[inline]
     pub fn set_playback_speed(&self, speed: f32) {
-        self.playback_speed.store(speed.clamp(0.5, 2.0).to_bits(), Ordering::Relaxed);
+        self.playback_speed
+            .store(speed.clamp(0.5, 2.0).to_bits(), Ordering::Relaxed);
     }
 
     #[inline]
@@ -109,7 +110,7 @@ impl AudioCallbackData {
 }
 
 /// Handle for controlling the audio engine from any thread.
-/// 
+///
 /// This is the Send + Sync part that can be stored in a static.
 pub struct AudioEngineHandle {
     /// Shared callback data
@@ -258,7 +259,7 @@ impl AudioEngineHandle {
 }
 
 /// Initialize the audio engine and return a handle.
-/// 
+///
 /// The actual cpal stream runs in a dedicated thread.
 pub fn create_audio_engine() -> Result<AudioEngineHandle, String> {
     // Get the default audio device
@@ -292,7 +293,11 @@ pub fn create_audio_engine() -> Result<AudioEngineHandle, String> {
     let (finished_tx, finished_rx) = bounded::<AudioSource>(32);
 
     // Create shared data
-    let callback_data = Arc::new(AudioCallbackData::new(target_sample_rate, channels, finished_tx));
+    let callback_data = Arc::new(AudioCallbackData::new(
+        target_sample_rate,
+        channels,
+        finished_tx,
+    ));
     let callback_data_clone = Arc::clone(&callback_data);
 
     // Create event channel
@@ -380,11 +385,7 @@ pub fn create_audio_engine() -> Result<AudioEngineHandle, String> {
 /// - Block on mutexes (we use try_lock where possible)
 /// - Perform I/O
 #[inline]
-fn audio_callback(
-    output: &mut [f32],
-    data: &AudioCallbackData,
-    _event_tx: &Sender<AudioEvent>,
-) {
+fn audio_callback(output: &mut [f32], data: &AudioCallbackData, _event_tx: &Sender<AudioEvent>) {
     // Check if paused
     if data.is_paused() {
         output.fill(0.0);
@@ -411,11 +412,11 @@ fn audio_callback(
         None => {
             // Couldn't get lock - just read from current source without speed processing
             let (read, old_source) = sources.read(output);
-            
+
             if let Some(source) = old_source {
                 let _ = data.finished_tracks.try_send(source);
             }
-            
+
             if read < output.len() {
                 output[read..].fill(0.0);
             }
@@ -454,8 +455,14 @@ fn audio_callback(
         }
 
         // Read from both sources
-        let read_a = sources.current_mut().map(|s| s.read(&mut buf_a[..needed])).unwrap_or(0);
-        let read_b = sources.next_mut().map(|s| s.read(&mut buf_b[..needed])).unwrap_or(0);
+        let read_a = sources
+            .current_mut()
+            .map(|s| s.read(&mut buf_a[..needed]))
+            .unwrap_or(0);
+        let read_b = sources
+            .next_mut()
+            .map(|s| s.read(&mut buf_b[..needed]))
+            .unwrap_or(0);
 
         if read_a < needed {
             buf_a[read_a..needed].fill(0.0);
@@ -478,7 +485,7 @@ fn audio_callback(
         if (speed - 1.0).abs() < 0.001 {
             // Speed is 1.0 - direct read
             let (read, old_source) = sources.read(output);
-            
+
             if let Some(source) = old_source {
                 let _ = data.finished_tracks.try_send(source);
             }
@@ -505,8 +512,9 @@ fn audio_callback(
 
             let output_frames = output.len() / channels;
             // Calculate how many input samples we need
-            let input_samples_needed = ((output_frames as f64 * speed as f64) + 2.0) as usize * channels;
-            
+            let input_samples_needed =
+                ((output_frames as f64 * speed as f64) + 2.0) as usize * channels;
+
             if speed_buf.len() < input_samples_needed {
                 output.fill(0.0);
                 return;
@@ -514,7 +522,7 @@ fn audio_callback(
 
             // Read source samples
             let (read, old_source) = sources.read(&mut speed_buf[..input_samples_needed]);
-            
+
             if let Some(source) = old_source {
                 let _ = data.finished_tracks.try_send(source);
             }
@@ -601,13 +609,7 @@ fn command_processing_loop(
                         );
                     }
                     AudioCommand::QueueNext { path } => {
-                        handle_queue_next(
-                            path,
-                            &callback_data,
-                            &decoders,
-                            &event_tx,
-                            sample_rate,
-                        );
+                        handle_queue_next(path, &callback_data, &decoders, &event_tx, sample_rate);
                     }
                     AudioCommand::Pause => {
                         callback_data.set_paused(true);
@@ -638,7 +640,10 @@ fn command_processing_loop(
                     AudioCommand::SetVolume { volume } => {
                         callback_data.set_volume(volume.clamp(0.0, 1.0));
                     }
-                    AudioCommand::SetCrossfade { enabled, duration_secs } => {
+                    AudioCommand::SetCrossfade {
+                        enabled,
+                        duration_secs,
+                    } => {
                         let mut crossfader = callback_data.crossfader.lock();
                         crossfader.set_enabled(enabled);
                         crossfader.set_duration(duration_secs);

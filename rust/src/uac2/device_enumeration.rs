@@ -72,4 +72,3 @@ pub fn is_uac2_audio_device<T: UsbContext>(device: &Device<T>) -> Result<bool, U
     }
     Ok(false)
 }
-

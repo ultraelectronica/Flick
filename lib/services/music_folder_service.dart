@@ -4,6 +4,53 @@ import 'permission_service.dart';
 import '../data/repositories/folder_repository.dart';
 import '../data/entities/folder_entity.dart';
 
+String normalizeFolderIdentifier(String uri) {
+  final parsed = Uri.tryParse(uri);
+  if (parsed != null && parsed.scheme == 'content') {
+    final treeSegments = parsed.pathSegments;
+    final treeIndex = treeSegments.indexOf('tree');
+    if (treeIndex >= 0 && treeIndex + 1 < treeSegments.length) {
+      final treeId = Uri.decodeComponent(
+        treeSegments[treeIndex + 1],
+      ).replaceAll('\\', '/').replaceAll(RegExp(r'/+'), '/').toLowerCase();
+      if (treeId == '/' || treeId.endsWith(':')) {
+        return treeId;
+      }
+      return treeId.replaceFirst(RegExp(r'/+$'), '');
+    }
+  }
+
+  final normalized = uri
+      .replaceAll('\\', '/')
+      .replaceAll(RegExp(r'/+'), '/')
+      .trim();
+  if (normalized == '/') {
+    return normalized;
+  }
+  return normalized.replaceFirst(RegExp(r'/$'), '').toLowerCase();
+}
+
+bool isSameOrDescendantFolder(String candidateUri, String rootUri) {
+  final candidate = normalizeFolderIdentifier(candidateUri);
+  final root = normalizeFolderIdentifier(rootUri);
+
+  if (candidate == root) {
+    return true;
+  }
+  if (root.isEmpty) {
+    return false;
+  }
+  if (root == '/' || root.endsWith(':')) {
+    return candidate.startsWith(root);
+  }
+  return candidate.startsWith('$root/');
+}
+
+bool foldersOverlap(String firstUri, String secondUri) {
+  return isSameOrDescendantFolder(firstUri, secondUri) ||
+      isSameOrDescendantFolder(secondUri, firstUri);
+}
+
 /// Represents an audio file discovered during folder scanning.
 class AudioFileInfo {
   final String uri;
@@ -126,9 +173,17 @@ class MusicFolderService {
 
     // Check if folder already exists
     final existingFolders = await getSavedFolders();
-    final alreadyExists = existingFolders.any((f) => f.uri == uri);
-    if (alreadyExists) {
-      throw FolderAlreadyExistsException('This folder has already been added');
+    for (final folder in existingFolders) {
+      if (folder.uri == uri) {
+        throw FolderAlreadyExistsException(
+          'This folder has already been added',
+        );
+      }
+      if (foldersOverlap(folder.uri, uri)) {
+        throw FolderAlreadyExistsException(
+          'This folder overlaps with "${folder.displayName}". Keep only one root to avoid duplicate scans.',
+        );
+      }
     }
 
     // Take persistable permission
@@ -223,7 +278,18 @@ class MusicFolderService {
   /// Scan all saved folders for audio files.
   Stream<AudioFileInfo> scanAllFolders() async* {
     final folders = await getSavedFolders();
+    final scheduledRoots = <String>{};
     for (final folder in folders) {
+      final normalized = normalizeFolderIdentifier(folder.uri);
+      final overlapsExisting = scheduledRoots.any(
+        (root) =>
+            isSameOrDescendantFolder(normalized, root) ||
+            isSameOrDescendantFolder(root, normalized),
+      );
+      if (overlapsExisting) {
+        continue;
+      }
+      scheduledRoots.add(normalized);
       final files = await scanFolder(folder.uri);
       for (final file in files) {
         yield file;

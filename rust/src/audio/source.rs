@@ -184,7 +184,7 @@ impl AudioSource {
     #[inline]
     pub fn read(&mut self, output: &mut [f32]) -> usize {
         let read = self.consumer.pop_slice(output);
-        
+
         if read > 0 {
             self.position.fetch_add(read as u64, Ordering::Relaxed);
         }
@@ -204,7 +204,10 @@ impl AudioSource {
 
     /// Get remaining duration in seconds.
     pub fn remaining_secs(&self) -> f64 {
-        let remaining_samples = self.info.total_samples.saturating_sub(self.position_samples());
+        let remaining_samples = self
+            .info
+            .total_samples
+            .saturating_sub(self.position_samples());
         let remaining_frames = remaining_samples / self.info.channels as u64;
         remaining_frames as f64 / self.info.output_sample_rate as f64
     }
@@ -388,11 +391,11 @@ impl SourceProvider {
                 // Gapless transition!
                 // Swap current with next, keeping the old current to return
                 let old_source = self.current.replace(self.next.take().unwrap());
-                
+
                 let remaining = &mut output[read..];
                 // Read from new current (which was next)
                 let next_read = self.current.as_mut().unwrap().read(remaining);
-                
+
                 return (read + next_read, old_source);
             } else {
                 // No next track - fill with silence
@@ -408,7 +411,7 @@ impl SourceProvider {
         if self.next.is_some() {
             return false; // Already have next queued
         }
-        
+
         if let Some(ref current) = self.current {
             current.remaining_secs() < lookahead_secs
         } else {

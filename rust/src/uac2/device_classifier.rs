@@ -47,13 +47,11 @@ impl DeviceClassifier {
             return FormatClass::Unknown;
         }
 
-        let has_hi_res = formats.iter().any(|f| {
-            f.sample_rates.iter().any(|r| r.hz() >= 96_000) && f.bit_depth.bits() >= 24
-        });
-
-        let has_dsd = formats
+        let has_hi_res = formats
             .iter()
-            .any(|f| f.format_type == FormatType::Dsd);
+            .any(|f| f.sample_rates.iter().any(|r| r.hz() >= 96_000) && f.bit_depth.bits() >= 24);
+
+        let has_dsd = formats.iter().any(|f| f.format_type == FormatType::Dsd);
 
         let format_class = if has_dsd {
             FormatClass::Dsd
@@ -131,7 +129,9 @@ impl DeviceMatchingLogic {
             return None;
         }
 
-        candidates.sort_by(|a, b| Self::rank_device(b, requirements).cmp(&Self::rank_device(a, requirements)));
+        candidates.sort_by(|a, b| {
+            Self::rank_device(b, requirements).cmp(&Self::rank_device(a, requirements))
+        });
         let best = candidates.first().copied();
 
         if let Some(device) = best {

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../data/database.dart';
-import '../data/entities/song_entity.dart';
 import '../data/repositories/song_repository.dart';
 import '../data/repositories/folder_repository.dart';
 import '../services/music_folder_service.dart';
@@ -48,13 +47,15 @@ class LibraryScannerService {
 
   /// Scan a single folder using appropriate method for platform.
   Stream<ScanProgress> scanFolder(String folderUri, String displayName) async* {
+    final scanKey = normalizeFolderIdentifier(folderUri);
+
     // Prevent concurrent scans of the same folder
-    if (_currentlyScanning.contains(folderUri)) {
+    if (_currentlyScanning.contains(scanKey)) {
       debugPrint('Folder $displayName is already being scanned, skipping...');
       return;
     }
 
-    _currentlyScanning.add(folderUri);
+    _currentlyScanning.add(scanKey);
     try {
       if (Platform.isAndroid) {
         yield* _scanFolderAndroid(folderUri, displayName);
@@ -62,7 +63,7 @@ class LibraryScannerService {
         yield* _scanFolderRust(folderUri, displayName);
       }
     } finally {
-      _currentlyScanning.remove(folderUri);
+      _currentlyScanning.remove(scanKey);
     }
   }
 
@@ -163,84 +164,92 @@ class LibraryScannerService {
       isComplete: false,
     );
 
-    const chunkSize = 50;
-    for (var i = 0; i < urisToProcess.length; i += chunkSize) {
+    final metadataBatchSize = _recommendedMetadataBatchSize(
+      urisToProcess.length,
+    );
+    final metadataConcurrency = _recommendedMetadataConcurrency();
+    final metadataChunks = _chunkList(urisToProcess, metadataBatchSize);
+
+    for (
+      var waveStart = 0;
+      waveStart < metadataChunks.length;
+      waveStart += metadataConcurrency
+    ) {
       if (_isCancelled) break;
 
-      final end = (i + chunkSize < urisToProcess.length)
-          ? i + chunkSize
-          : urisToProcess.length;
-      final chunkUris = urisToProcess.sublist(i, end);
+      final waveEnd = (waveStart + metadataConcurrency < metadataChunks.length)
+          ? waveStart + metadataConcurrency
+          : metadataChunks.length;
+      final chunkWave = metadataChunks.sublist(waveStart, waveEnd);
 
-      // Fetch Metadata for chunk
-      List<AudioFileInfo> metadataList = [];
-      try {
-        metadataList = await _musicFolderService.fetchMetadata(chunkUris);
-      } catch (e) {
-        debugPrint("Error fetching metadata chunk: $e");
-        continue;
-      }
-
-      for (var meta in metadataList) {
-        if (meta.albumArtPath != null && meta.albumArtPath!.isNotEmpty) {
-          debugPrint(
-            "Successfully found album cover for ${meta.title}: ${meta.albumArtPath}",
-          );
-        }
-      }
-
-      final batch = <SongEntity>[];
-      for (final meta in metadataList) {
-        // Merge with basic info
-        final basic = fastScanMap[meta.uri];
-        if (basic == null) continue; // Should not happen
-
-        final song = SongEntity()
-          ..filePath = basic.uri
-          ..title = meta.title ?? basic.name
-          ..artist = meta.artist ?? 'Unknown Artist'
-          ..album = meta.album ?? 'Unknown Album'
-          ..albumArtist = (meta.albumArtist?.trim().isNotEmpty ?? false)
-              ? meta.albumArtist!.trim()
-              : (meta.artist ?? 'Unknown Artist')
-          // 0 is used as a persisted sentinel for "unknown track" so we can
-          // migrate old rows once without forcing rescans forever.
-          ..trackNumber = meta.trackNumber ?? 0
-          ..discNumber = meta.discNumber ?? 1
-          ..durationMs = meta.duration ?? 0
-          ..fileType = basic.extension.toUpperCase()
-          ..dateAdded = existingMap[basic.uri]?.dateAdded ?? DateTime.now()
-          ..lastModified = DateTime.fromMillisecondsSinceEpoch(
-            basic.lastModified,
-          )
-          ..folderUri = folderUri
-          ..fileSize = basic.size
-          ..albumArtPath = meta.albumArtPath
-          ..bitrate = meta.bitrate != null ? int.tryParse(meta.bitrate!) : null
-          ..bitDepth = meta.bitDepth
-          ..sampleRate = meta.sampleRate;
-
-        // Restore ID if updating
-        if (existingMap.containsKey(basic.uri)) {
-          song.id = existingMap[basic.uri]!.id;
-        }
-
-        batch.add(song);
-      }
-
-      if (batch.isNotEmpty) {
-        await _songRepository.upsertSongs(batch);
-      }
-
-      processed += chunkUris.length;
-
-      yield ScanProgress(
-        songsFound: initialSongCount + processed,
-        totalFiles: totalFiles,
-        currentFile: batch.isNotEmpty ? batch.last.title : null,
-        currentFolder: displayName,
-        isComplete: false,
+      final metadataResults = await Future.wait(
+        chunkWave.map(_fetchMetadataChunk),
       );
+
+      for (var waveIndex = 0; waveIndex < chunkWave.length; waveIndex++) {
+        if (_isCancelled) break;
+
+        final chunkUris = chunkWave[waveIndex];
+        final metadataList = metadataResults[waveIndex];
+        if (metadataList == null) {
+          continue;
+        }
+
+        final batch = <SongEntity>[];
+        for (final meta in metadataList) {
+          // Merge with basic info
+          final basic = fastScanMap[meta.uri];
+          if (basic == null) continue; // Should not happen
+
+          final song = SongEntity()
+            ..filePath = basic.uri
+            ..title = meta.title ?? basic.name
+            ..artist = meta.artist ?? 'Unknown Artist'
+            ..album = meta.album ?? 'Unknown Album'
+            ..albumArtist = (meta.albumArtist?.trim().isNotEmpty ?? false)
+                ? meta.albumArtist!.trim()
+                : (meta.artist ?? 'Unknown Artist')
+            // 0 is used as a persisted sentinel for "unknown track" so we can
+            // migrate old rows once without forcing rescans forever.
+            ..trackNumber = meta.trackNumber ?? 0
+            ..discNumber = meta.discNumber ?? 1
+            ..durationMs = meta.duration ?? 0
+            ..fileType = basic.extension.toUpperCase()
+            ..dateAdded = existingMap[basic.uri]?.dateAdded ?? DateTime.now()
+            ..lastModified = DateTime.fromMillisecondsSinceEpoch(
+              basic.lastModified,
+            )
+            ..folderUri = folderUri
+            ..fileSize = basic.size
+            ..albumArtPath = meta.albumArtPath
+            ..bitrate = meta.bitrate != null
+                ? int.tryParse(meta.bitrate!)
+                : null
+            ..bitDepth = meta.bitDepth
+            ..sampleRate = meta.sampleRate;
+
+          // Restore ID if updating
+          if (existingMap.containsKey(basic.uri)) {
+            song.id = existingMap[basic.uri]!.id;
+          }
+
+          batch.add(song);
+        }
+
+        if (batch.isNotEmpty) {
+          await _songRepository.upsertSongs(batch);
+        }
+
+        processed += chunkUris.length;
+
+        yield ScanProgress(
+          songsFound: initialSongCount + processed,
+          totalFiles: totalFiles,
+          currentFile: batch.isNotEmpty ? batch.last.title : null,
+          currentFolder: displayName,
+          isComplete: false,
+        );
+      }
     }
 
     // Update folder stats
@@ -274,7 +283,9 @@ class LibraryScannerService {
     );
 
     // 1. Fetch existing file state from DB
-    final existingSongs = await _songRepository.getAllSongEntities();
+    final existingSongs = await _songRepository.getSongEntitiesByFolder(
+      folderUri,
+    );
     final knownFiles = <String, int>{};
     final existingMap = <String, SongEntity>{};
 
@@ -315,7 +326,7 @@ class LibraryScannerService {
 
     // Batch insert
     final batch = <SongEntity>[];
-    const batchSize = 100;
+    final batchSize = _recommendedWriteBatchSize(total);
 
     for (final metadata in result.newOrModified) {
       if (_isCancelled) break;
@@ -382,15 +393,50 @@ class LibraryScannerService {
 
   Stream<ScanProgress> scanAllFolders() async* {
     _isCancelled = false;
-    final folders = await _folderRepository
-        .getAllFolders(); // Assuming repository has this
+    final folders = await _folderRepository.getAllFolders();
+    final scanPlan = _deduplicateFoldersForScan(folders);
 
-    for (final folder in folders) {
+    for (final folder in scanPlan) {
       if (_isCancelled) break;
       await for (final progress in scanFolder(folder.uri, folder.displayName)) {
         yield progress;
       }
     }
+  }
+
+  List<FolderEntity> _deduplicateFoldersForScan(List<FolderEntity> folders) {
+    final sortedFolders = List<FolderEntity>.from(folders)
+      ..sort((a, b) {
+        final normalizedA = normalizeFolderIdentifier(a.uri);
+        final normalizedB = normalizeFolderIdentifier(b.uri);
+        final lengthCompare = normalizedA.length.compareTo(normalizedB.length);
+        if (lengthCompare != 0) {
+          return lengthCompare;
+        }
+        return normalizedA.compareTo(normalizedB);
+      });
+
+    final scheduledRoots = <String>{};
+    final scanPlan = <FolderEntity>[];
+
+    for (final folder in sortedFolders) {
+      final normalized = normalizeFolderIdentifier(folder.uri);
+      final overlapsExisting = scheduledRoots.any(
+        (root) =>
+            isSameOrDescendantFolder(normalized, root) ||
+            isSameOrDescendantFolder(root, normalized),
+      );
+      if (overlapsExisting) {
+        debugPrint(
+          'Skipping overlapping scan root ${folder.displayName} (${folder.uri})',
+        );
+        continue;
+      }
+      scheduledRoots.add(normalized);
+      scanPlan.add(folder);
+    }
+
+    return scanPlan;
   }
 
   String _extractTitleFromFilename(String filename) {
@@ -399,5 +445,58 @@ class LibraryScannerService {
     name = name.replaceFirst(RegExp(r'^\d{1,3}[\s._-]+'), '');
     name = name.replaceAll('_', ' ');
     return name.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  Future<List<AudioFileInfo>?> _fetchMetadataChunk(
+    List<String> chunkUris,
+  ) async {
+    try {
+      return await _musicFolderService.fetchMetadata(chunkUris);
+    } catch (e) {
+      debugPrint(
+        'Error fetching metadata chunk (${chunkUris.length} files): $e',
+      );
+      return null;
+    }
+  }
+
+  int _recommendedMetadataBatchSize(int pendingFiles) {
+    final workers = _recommendedMetadataConcurrency();
+    final targetBatchSize = (pendingFiles / (workers * 2)).ceil();
+    return _clampInt(targetBatchSize, 64, 256);
+  }
+
+  int _recommendedMetadataConcurrency() {
+    final cores = Platform.numberOfProcessors;
+    if (cores >= 8) {
+      return 4;
+    }
+    if (cores >= 6) {
+      return 3;
+    }
+    return 2;
+  }
+
+  int _recommendedWriteBatchSize(int totalItems) {
+    return _clampInt(totalItems ~/ 4, 100, 400);
+  }
+
+  int _clampInt(int value, int min, int max) {
+    if (value < min) {
+      return min;
+    }
+    if (value > max) {
+      return max;
+    }
+    return value;
+  }
+
+  List<List<T>> _chunkList<T>(List<T> items, int chunkSize) {
+    final chunks = <List<T>>[];
+    for (var i = 0; i < items.length; i += chunkSize) {
+      final end = (i + chunkSize < items.length) ? i + chunkSize : items.length;
+      chunks.add(items.sublist(i, end));
+    }
+    return chunks;
   }
 }

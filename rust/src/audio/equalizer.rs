@@ -5,8 +5,9 @@ use std::f32::consts::PI;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 /// Fixed center frequencies (Hz) matching Dart EqualizerState.defaultGraphicFrequenciesHz.
-pub const BAND_FREQS_HZ: [f32; 10] =
-    [32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0];
+pub const BAND_FREQS_HZ: [f32; 10] = [
+    32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+];
 
 const Q: f32 = 1.0;
 const NUM_BANDS: usize = 10;
@@ -36,7 +37,10 @@ impl EqParams {
             let (b0, b1, b2, a1, a2) = peaking_coeffs(f0, gain_db, Q, fs);
             coeffs[i] = [b0, b1, b2, a1, a2];
         }
-        Self { enabled: true, coeffs }
+        Self {
+            enabled: true,
+            coeffs,
+        }
     }
 }
 
@@ -140,4 +144,3 @@ fn process_sample_chain(
     }
     x
 }
-

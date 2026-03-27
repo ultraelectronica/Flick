@@ -70,10 +70,7 @@ impl ConversionSession {
 
         // Extract metadata
         let sample_rate = codec_params.sample_rate.context("No sample rate")?;
-        let channels = codec_params
-            .channels
-            .context("No channel info")?
-            .count() as u16;
+        let channels = codec_params.channels.context("No channel info")?.count() as u16;
         let bit_depth = codec_params.bits_per_sample.unwrap_or(16) as u16;
         let duration_samples = codec_params.n_frames.unwrap_or(0);
         let duration_seconds = duration_samples as f64 / sample_rate as f64;
@@ -145,10 +142,7 @@ impl ConversionSession {
     pub fn seek(&mut self, time_seconds: f64) -> Result<()> {
         let sample_pos = (time_seconds * self.metadata.sample_rate as f64) as u64;
         let seek_to = SeekTo::Time {
-            time: symphonia::core::units::Time::new(
-                sample_pos,
-                self.metadata.sample_rate as f64,
-            ),
+            time: symphonia::core::units::Time::new(sample_pos, self.metadata.sample_rate as f64),
             track_id: Some(self.track_id),
         };
 
@@ -331,7 +325,8 @@ fn audio_buffer_to_pcm_bytes(buffer: AudioBufferRef, bit_depth: u16) -> Result<V
 fn generate_wav_header(metadata: &AudioMetadata) -> Vec<u8> {
     let mut header = Vec::with_capacity(44);
 
-    let byte_rate = metadata.sample_rate * metadata.channels as u32 * (metadata.bit_depth / 8) as u32;
+    let byte_rate =
+        metadata.sample_rate * metadata.channels as u32 * (metadata.bit_depth / 8) as u32;
     let block_align = metadata.channels * (metadata.bit_depth / 8);
     let data_size = metadata.duration_samples * block_align as u64;
 

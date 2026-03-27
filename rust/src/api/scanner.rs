@@ -2,6 +2,7 @@ use lofty::prelude::*;
 use lofty::probe::Probe;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
@@ -24,72 +25,75 @@ pub struct ScanResult {
     pub deleted_paths: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+struct FileScanEntry {
+    path: String,
+    last_modified: i64,
+}
+
+fn is_supported_audio_path(path: &Path) -> bool {
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    matches!(
+        ext.as_str(),
+        "mp3" | "flac" | "ogg" | "m4a" | "wav" | "aif" | "aiff" | "alac"
+    )
+}
+
 pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> ScanResult {
-    let files_on_disk: Vec<walkdir::DirEntry> = WalkDir::new(&root_path)
+    let files_on_disk: Vec<FileScanEntry> = WalkDir::new(&root_path)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
+        .filter_map(|entry| {
+            let path = entry.into_path();
+            if !is_supported_audio_path(&path) {
+                return None;
+            }
+
+            let last_modified = std::fs::metadata(&path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+
+            Some(FileScanEntry {
+                path: path.to_string_lossy().to_string(),
+                last_modified,
+            })
+        })
         .collect();
 
-    let (to_process, found_paths_vec): (Vec<walkdir::DirEntry>, Vec<String>) = files_on_disk
-        .into_par_iter()
-        .fold(
-            || (Vec::new(), Vec::new()),
-            |(mut to_process, mut found_paths), entry| {
-                let path_str = entry.path().to_string_lossy().to_string();
-                let metadata = entry.metadata().ok();
-                let modified = metadata
-                    .and_then(|m| m.modified().ok())
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0);
+    let mut found_paths_vec = Vec::with_capacity(files_on_disk.len());
+    let mut to_process = Vec::new();
 
-                let needs_processing = match known_files.get(&path_str) {
-                    Some(&known_timestamp) => modified > known_timestamp,
-                    None => true,
-                };
+    for file in files_on_disk {
+        let needs_processing = match known_files.get(&file.path) {
+            Some(&known_timestamp) => file.last_modified > known_timestamp,
+            None => true,
+        };
 
-                if needs_processing {
-                    to_process.push(entry);
-                }
-                found_paths.push(path_str);
-                (to_process, found_paths)
-            },
-        )
-        .reduce(
-            || (Vec::new(), Vec::new()),
-            |(mut a_proc, mut a_paths), (b_proc, b_paths)| {
-                a_proc.extend(b_proc);
-                a_paths.extend(b_paths);
-                (a_proc, a_paths)
-            },
-        );
+        found_paths_vec.push(file.path.clone());
+        if needs_processing {
+            to_process.push(file);
+        }
+    }
 
     let new_or_modified: Vec<AudioFileMetadata> = to_process
         .par_iter()
-        .filter_map(|entry: &walkdir::DirEntry| {
-            let path = entry.path();
-            let path_str = path.to_string_lossy().to_string();
+        .filter_map(|entry| {
+            let path = Path::new(&entry.path);
 
             let ext = path
                 .extension()
-                .and_then(|s: &std::ffi::OsStr| s.to_str())
+                .and_then(|s| s.to_str())
                 .unwrap_or("")
-                .to_lowercase();
-            if ![
-                "mp3",
-                "flac",
-                "ogg",
-                "m4a",
-                "wav",
-                "aif",
-                "aiff",
-                "alac",
-            ]
-            .contains(&ext.as_str())
-            {
-                return None;
-            }
+                .to_ascii_lowercase();
 
             let tagged_file = Probe::open(path).ok()?.read().ok()?;
             let tag = tagged_file.primary_tag();
@@ -104,22 +108,14 @@ pub fn scan_root_dir(root_path: String, known_files: HashMap<String, i64>) -> Sc
             let sample_rate = properties.sample_rate();
             let bitrate = properties.audio_bitrate();
 
-            let modified = entry
-                .metadata()
-                .ok()
-                .and_then(|m: std::fs::Metadata| m.modified().ok())
-                .and_then(|t: std::time::SystemTime| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d: std::time::Duration| d.as_secs() as i64)
-                .unwrap_or(0);
-
             Some(AudioFileMetadata {
-                path: path_str,
+                path: entry.path.clone(),
                 title,
                 artist,
                 album,
                 duration_secs,
                 format: ext,
-                last_modified: modified,
+                last_modified: entry.last_modified,
                 bit_depth,
                 sample_rate,
                 bitrate,

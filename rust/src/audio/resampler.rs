@@ -57,13 +57,13 @@ impl AudioResampler {
         }
 
         let resample_ratio = output_rate as f64 / input_rate as f64;
-        
+
         // Calculate output size based on ratio
         let max_output_frames = (chunk_size as f64 * resample_ratio * 1.1) as usize + 10;
 
         let resampler = FastFixedIn::new(
             resample_ratio,
-            1.0, // No additional ratio adjustment
+            1.0,                      // No additional ratio adjustment
             PolynomialDegree::Septic, // High quality interpolation
             chunk_size,
             channels,
@@ -126,7 +126,7 @@ impl AudioResampler {
         }
 
         let input_frames = input.len() / self.channels;
-        
+
         if input_frames == 0 {
             return Ok(0);
         }

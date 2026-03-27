@@ -1,4 +1,4 @@
-use crate::uac2::transfer::{TransferContext, TransferStats, TransferStatus, TransferError};
+use crate::uac2::transfer::{TransferContext, TransferError, TransferStats, TransferStatus};
 use std::time::Duration;
 
 #[test]
@@ -19,13 +19,13 @@ fn test_transfer_context_elapsed() {
 fn test_transfer_context_should_retry() {
     let mut context = TransferContext::new(0);
     assert!(context.should_retry());
-    
+
     context.increment_retry();
     assert!(context.should_retry());
-    
+
     context.increment_retry();
     assert!(context.should_retry());
-    
+
     context.increment_retry();
     assert!(!context.should_retry());
 }
@@ -34,10 +34,10 @@ fn test_transfer_context_should_retry() {
 fn test_transfer_context_increment_retry() {
     let mut context = TransferContext::new(0);
     assert_eq!(context.retry_count, 0);
-    
+
     context.increment_retry();
     assert_eq!(context.retry_count, 1);
-    
+
     context.increment_retry();
     assert_eq!(context.retry_count, 2);
 }
@@ -56,22 +56,22 @@ fn test_transfer_stats_creation() {
 #[test]
 fn test_transfer_stats_record_operations() {
     let mut stats = TransferStats::new();
-    
+
     stats.record_submit();
     assert_eq!(stats.total_submitted, 1);
-    
+
     stats.record_completion();
     assert_eq!(stats.total_completed, 1);
-    
+
     stats.record_failure();
     assert_eq!(stats.total_failed, 1);
-    
+
     stats.record_retry();
     assert_eq!(stats.total_retried, 1);
-    
+
     stats.record_underrun();
     assert_eq!(stats.underruns, 1);
-    
+
     stats.record_overrun();
     assert_eq!(stats.overruns, 1);
 }
@@ -80,15 +80,15 @@ fn test_transfer_stats_record_operations() {
 fn test_transfer_stats_success_rate() {
     let mut stats = TransferStats::new();
     assert_eq!(stats.success_rate(), 0.0);
-    
+
     stats.record_submit();
     stats.record_completion();
     assert_eq!(stats.success_rate(), 1.0);
-    
+
     stats.record_submit();
     stats.record_failure();
     assert_eq!(stats.success_rate(), 0.5);
-    
+
     stats.record_submit();
     stats.record_submit();
     stats.record_completion();
@@ -117,15 +117,15 @@ fn test_transfer_error_from_rusb_error() {
     let timeout_err = rusb::Error::Timeout;
     let transfer_err = TransferError::from(timeout_err);
     assert_eq!(transfer_err, TransferError::Timeout);
-    
+
     let overflow_err = rusb::Error::Overflow;
     let transfer_err = TransferError::from(overflow_err);
     assert_eq!(transfer_err, TransferError::Overflow);
-    
+
     let pipe_err = rusb::Error::Pipe;
     let transfer_err = TransferError::from(pipe_err);
     assert_eq!(transfer_err, TransferError::Stall);
-    
+
     let no_device_err = rusb::Error::NoDevice;
     let transfer_err = TransferError::from(no_device_err);
     assert_eq!(transfer_err, TransferError::NoDevice);
@@ -134,19 +134,19 @@ fn test_transfer_error_from_rusb_error() {
 #[test]
 fn test_transfer_stats_multiple_operations() {
     let mut stats = TransferStats::new();
-    
+
     for _ in 0..100 {
         stats.record_submit();
     }
-    
+
     for _ in 0..90 {
         stats.record_completion();
     }
-    
+
     for _ in 0..10 {
         stats.record_failure();
     }
-    
+
     assert_eq!(stats.total_submitted, 100);
     assert_eq!(stats.total_completed, 90);
     assert_eq!(stats.total_failed, 10);

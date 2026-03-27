@@ -39,7 +39,11 @@ impl RingBuffer {
         })
     }
 
-    pub fn with_latency(sample_rate: u32, latency_ms: u32, frame_size: usize) -> Result<Self, Uac2Error> {
+    pub fn with_latency(
+        sample_rate: u32,
+        latency_ms: u32,
+        frame_size: usize,
+    ) -> Result<Self, Uac2Error> {
         let samples = (sample_rate * latency_ms) / 1000;
         let capacity = (samples as usize * frame_size).max(MIN_BUFFER_SIZE);
         Self::new(capacity)
@@ -195,7 +199,8 @@ impl AudioBuffer for LockFreeRingBuffer {
             self.buffer[..second_chunk].copy_from_slice(&data[first_chunk..to_write]);
         }
 
-        self.write_pos.store(write_pos.wrapping_add(to_write), Ordering::Release);
+        self.write_pos
+            .store(write_pos.wrapping_add(to_write), Ordering::Release);
 
         Ok(to_write)
     }
@@ -226,7 +231,8 @@ impl AudioBuffer for LockFreeRingBuffer {
             output[first_chunk..to_read].copy_from_slice(&self.buffer[..second_chunk]);
         }
 
-        self.read_pos.store(read_pos.wrapping_add(to_read), Ordering::Release);
+        self.read_pos
+            .store(read_pos.wrapping_add(to_read), Ordering::Release);
 
         Ok(to_read)
     }
@@ -260,7 +266,11 @@ impl AdaptiveBuffer {
         frame_size: usize,
         initial_latency_ms: u32,
     ) -> Result<Self, Uac2Error> {
-        let inner = Box::new(RingBuffer::with_latency(sample_rate, initial_latency_ms, frame_size)?);
+        let inner = Box::new(RingBuffer::with_latency(
+            sample_rate,
+            initial_latency_ms,
+            frame_size,
+        )?);
 
         Ok(Self {
             inner,

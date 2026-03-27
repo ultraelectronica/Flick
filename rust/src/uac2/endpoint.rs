@@ -57,7 +57,7 @@ impl EndpointManager {
                             TransferType::Isochronous => ENDPOINT_TYPE_ISOCHRONOUS,
                             _ => 0,
                         };
-                        
+
                         return Ok(EndpointDescriptor {
                             address: endpoint.address(),
                             attributes,
@@ -128,7 +128,7 @@ impl EndpointSelector {
                             TransferType::Isochronous => ENDPOINT_TYPE_ISOCHRONOUS,
                             _ => 0,
                         };
-                        
+
                         let ep_desc = EndpointDescriptor {
                             address: endpoint.address(),
                             attributes,

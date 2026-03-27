@@ -66,10 +66,7 @@ pub fn uac2_list_devices() -> Result<Vec<Uac2DeviceInfo>, String> {
     #[cfg(feature = "uac2")]
     {
         match uac2::enumerate_uac2_devices() {
-            Ok(devices) => Ok(devices
-                .into_iter()
-                .map(|d| d.to_device_info())
-                .collect()),
+            Ok(devices) => Ok(devices.into_iter().map(|d| d.to_device_info()).collect()),
             Err(err) => {
                 log::error!("UAC2 enumeration failed: {}", err);
                 Err(err.user_message())
@@ -97,11 +94,11 @@ pub fn uac2_get_device_capabilities(
 
         if let Some(dev) = found {
             let caps = dev.capabilities();
-            
+
             let mut all_sample_rates = std::collections::HashSet::new();
             let mut all_bit_depths = std::collections::HashSet::new();
             let mut all_channels = std::collections::HashSet::new();
-            
+
             for format in &caps.supported_formats {
                 for rate in &format.sample_rates {
                     all_sample_rates.insert(rate.hz());
@@ -109,7 +106,7 @@ pub fn uac2_get_device_capabilities(
                 all_bit_depths.insert(format.bit_depth.bits());
                 all_channels.insert(format.channels.count());
             }
-            
+
             Ok(Uac2DeviceCapabilities {
                 supported_sample_rates: all_sample_rates.into_iter().collect(),
                 supported_bit_depths: all_bit_depths.into_iter().collect(),

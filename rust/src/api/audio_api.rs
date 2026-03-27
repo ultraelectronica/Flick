@@ -29,12 +29,27 @@ pub struct AudioProgress {
 /// Audio event types for Dart.
 #[derive(Debug, Clone)]
 pub enum AudioEventType {
-    StateChanged { state: String },
-    Progress { position_secs: f64, duration_secs: Option<f64>, buffer_level: f32 },
-    TrackEnded { path: String },
-    CrossfadeStarted { from_path: String, to_path: String },
-    Error { message: String },
-    NextTrackReady { path: String },
+    StateChanged {
+        state: String,
+    },
+    Progress {
+        position_secs: f64,
+        duration_secs: Option<f64>,
+        buffer_level: f32,
+    },
+    TrackEnded {
+        path: String,
+    },
+    CrossfadeStarted {
+        from_path: String,
+        to_path: String,
+    },
+    Error {
+        message: String,
+    },
+    NextTrackReady {
+        path: String,
+    },
 }
 
 /// Crossfade curve type for Dart.

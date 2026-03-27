@@ -9,7 +9,7 @@ fn test_stream_config_builder() {
         .channels(ChannelConfig::Stereo)
         .endpoint_address(0x01)
         .build();
-    
+
     assert!(config.is_ok());
     let config = config.unwrap();
     assert_eq!(config.sample_rate.hz(), 48000);
@@ -23,7 +23,7 @@ fn test_stream_config_builder_missing_fields() {
     let config = StreamConfigBuilder::new()
         .sample_rate(SampleRate::new(48000).unwrap())
         .build();
-    
+
     assert!(config.is_err());
 }
 
@@ -37,7 +37,7 @@ fn test_stream_config_bytes_per_frame() {
         packet_size: 192,
         interval: 1,
     };
-    
+
     assert_eq!(config.bytes_per_frame(), 4);
 }
 
@@ -51,14 +51,14 @@ fn test_stream_config_bytes_per_frame_24bit() {
         packet_size: 288,
         interval: 1,
     };
-    
+
     assert_eq!(config.bytes_per_frame(), 6);
 }
 
 #[test]
 fn test_stream_config_different_sample_rates() {
     let rates = vec![44100, 48000, 96000, 192000];
-    
+
     for rate in rates {
         let config = StreamConfigBuilder::new()
             .sample_rate(SampleRate::new(rate).unwrap())
@@ -66,7 +66,7 @@ fn test_stream_config_different_sample_rates() {
             .channels(ChannelConfig::Stereo)
             .endpoint_address(0x01)
             .build();
-        
+
         assert!(config.is_ok());
         assert_eq!(config.unwrap().sample_rate.hz(), rate);
     }
@@ -75,7 +75,7 @@ fn test_stream_config_different_sample_rates() {
 #[test]
 fn test_stream_config_different_bit_depths() {
     let depths = vec![BitDepth::Bits16, BitDepth::Bits24, BitDepth::Bits32];
-    
+
     for depth in depths {
         let config = StreamConfigBuilder::new()
             .sample_rate(SampleRate::new(48000).unwrap())
@@ -83,7 +83,7 @@ fn test_stream_config_different_bit_depths() {
             .channels(ChannelConfig::Stereo)
             .endpoint_address(0x01)
             .build();
-        
+
         assert!(config.is_ok());
         assert_eq!(config.unwrap().bit_depth, depth);
     }
@@ -97,7 +97,7 @@ fn test_stream_config_different_channels() {
         ChannelConfig::MultiChannel(6),
         ChannelConfig::MultiChannel(8),
     ];
-    
+
     for channel in channels {
         let config = StreamConfigBuilder::new()
             .sample_rate(SampleRate::new(48000).unwrap())
@@ -105,7 +105,7 @@ fn test_stream_config_different_channels() {
             .channels(channel)
             .endpoint_address(0x01)
             .build();
-        
+
         assert!(config.is_ok());
         assert_eq!(config.unwrap().channels, channel);
     }

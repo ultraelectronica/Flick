@@ -67,7 +67,10 @@ impl FormatConverter for BitDepthConverter {
         for i in 0..sample_count {
             let sample = self.read_sample(&input[i * source_bytes..(i + 1) * source_bytes]);
             let converted = self.convert_sample(sample);
-            self.write_sample(converted, &mut output[i * target_bytes..(i + 1) * target_bytes]);
+            self.write_sample(
+                converted,
+                &mut output[i * target_bytes..(i + 1) * target_bytes],
+            );
         }
 
         Ok(output_len)
@@ -221,7 +224,10 @@ impl AudioPipeline {
     fn is_bit_perfect(source: &AudioFormat, target: &AudioFormat) -> bool {
         source.bit_depth == target.bit_depth
             && source.channels.count() == target.channels.count()
-            && source.sample_rates.iter().any(|r| target.sample_rates.contains(r))
+            && source
+                .sample_rates
+                .iter()
+                .any(|r| target.sample_rates.contains(r))
             && source.format_type == target.format_type
     }
 
@@ -246,7 +252,11 @@ impl AudioPipeline {
             )));
         }
 
-        if !source.sample_rates.iter().any(|r| target.sample_rates.contains(r)) {
+        if !source
+            .sample_rates
+            .iter()
+            .any(|r| target.sample_rates.contains(r))
+        {
             let source_rate = source.sample_rates[0];
             let target_rate = target.sample_rates[0];
             info!(

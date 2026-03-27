@@ -56,7 +56,7 @@ fn test_audio_format_creation() {
         ChannelConfig::Stereo,
         FormatType::Pcm,
     );
-    
+
     assert!(format.is_ok());
     let format = format.unwrap();
     assert_eq!(format.format_type, FormatType::Pcm);
@@ -73,7 +73,7 @@ fn test_audio_format_empty_sample_rates() {
         ChannelConfig::Stereo,
         FormatType::Pcm,
     );
-    
+
     assert!(format.is_err());
 }
 
@@ -87,8 +87,9 @@ fn test_audio_format_supports_sample_rate() {
         BitDepth::Bits16,
         ChannelConfig::Stereo,
         FormatType::Pcm,
-    ).unwrap();
-    
+    )
+    .unwrap();
+
     assert!(format.supports_sample_rate(SampleRate::new(44100).unwrap()));
     assert!(format.supports_sample_rate(SampleRate::new(48000).unwrap()));
     assert!(!format.supports_sample_rate(SampleRate::new(96000).unwrap()));

@@ -70,17 +70,16 @@ impl<T: UsbContext + Send + 'static> AudioBackend for Uac2Backend<T> {
         )
         .map_err(|e| format!("Failed to create UAC2 sink: {:?}", e))?;
 
-        sink.start(source_provider)
-            .map_err(|e| {
-                error!("Failed to start UAC2 sink: {:?}", e);
-                if e.requires_reconnection() {
-                    let mut fallback = self.fallback_handler.lock();
-                    if let Err(fb_err) = fallback.activate_fallback() {
-                        error!("Failed to activate fallback: {:?}", fb_err);
-                    }
+        sink.start(source_provider).map_err(|e| {
+            error!("Failed to start UAC2 sink: {:?}", e);
+            if e.requires_reconnection() {
+                let mut fallback = self.fallback_handler.lock();
+                if let Err(fb_err) = fallback.activate_fallback() {
+                    error!("Failed to activate fallback: {:?}", fb_err);
                 }
-                format!("Failed to start UAC2 sink: {:?}", e)
-            })?;
+            }
+            format!("Failed to start UAC2 sink: {:?}", e)
+        })?;
 
         self.sink = Some(sink);
         self.active = true;
@@ -110,4 +109,3 @@ impl<T: UsbContext + Send + 'static> AudioBackend for Uac2Backend<T> {
         "UAC2"
     }
 }
-

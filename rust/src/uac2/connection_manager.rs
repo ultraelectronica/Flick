@@ -110,7 +110,10 @@ impl<T: UsbContext> ConnectionManager<T> {
     fn set_state(&self, state: ConnectionState) {
         let mut current_state = self.state.lock().unwrap();
         if *current_state != state {
-            debug!("Connection state changed: {:?} -> {:?}", *current_state, state);
+            debug!(
+                "Connection state changed: {:?} -> {:?}",
+                *current_state, state
+            );
             *current_state = state;
         }
     }

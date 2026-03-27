@@ -235,7 +235,10 @@ impl<T: UsbContext> IsochronousTransfer<T> {
         status: TransferStatus,
     ) -> Result<(), Uac2Error> {
         let mut active = self.active_transfers.lock().unwrap();
-        if let Some(pos) = active.iter().position(|ctx| ctx.buffer_index == buffer_index) {
+        if let Some(pos) = active
+            .iter()
+            .position(|ctx| ctx.buffer_index == buffer_index)
+        {
             active.remove(pos);
         }
 
@@ -251,11 +254,7 @@ impl<T: UsbContext> IsochronousTransfer<T> {
         Ok(())
     }
 
-    fn handle_error(
-        &self,
-        buffer_index: usize,
-        error: TransferError,
-    ) -> Result<(), Uac2Error> {
+    fn handle_error(&self, buffer_index: usize, error: TransferError) -> Result<(), Uac2Error> {
         let mut active = self.active_transfers.lock().unwrap();
         let context_pos = active
             .iter()

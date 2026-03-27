@@ -11,7 +11,7 @@ mod backend;
 #[cfg(feature = "uac2")]
 mod capabilities;
 #[cfg(feature = "uac2")]
-mod format_negotiation;
+mod connection_manager;
 #[cfg(feature = "uac2")]
 pub mod constants;
 #[cfg(feature = "uac2")]
@@ -29,13 +29,13 @@ mod device_info_extractor;
 #[cfg(feature = "uac2")]
 mod endpoint;
 #[cfg(feature = "uac2")]
-mod connection_manager;
-#[cfg(feature = "uac2")]
 mod error;
 #[cfg(feature = "uac2")]
 mod error_recovery;
 #[cfg(feature = "uac2")]
 mod fallback_handler;
+#[cfg(feature = "uac2")]
+mod format_negotiation;
 #[cfg(feature = "uac2")]
 mod logging;
 #[cfg(feature = "uac2")]
@@ -74,15 +74,7 @@ pub use capabilities::{
     PowerCapabilities,
 };
 #[cfg(feature = "uac2")]
-pub use format_negotiation::{
-    FormatMismatchHandler, FormatNegotiationEngine, FormatNegotiationStrategy,
-};
-#[cfg(feature = "uac2")]
-pub use device_classifier::{
-    AudioRequirements, DeviceClassifier, DeviceMatchingLogic, FormatClass, PowerClass,
-};
-#[cfg(feature = "uac2")]
-pub use device_info_extractor::{DeviceInfoExtractor, StringDescriptorCache};
+pub use connection_manager::{ConnectionManager, ConnectionState};
 #[cfg(feature = "uac2")]
 pub use control_requests::{
     ControlRequest, ControlRequestBuilder, ControlRequestType, ControlSelector, MuteControl,
@@ -101,15 +93,23 @@ pub use descriptors::{
 #[cfg(feature = "uac2")]
 pub use device::{DeviceIdentification, DeviceInfo, DeviceMetadata, Uac2Device};
 #[cfg(feature = "uac2")]
+pub use device_classifier::{
+    AudioRequirements, DeviceClassifier, DeviceMatchingLogic, FormatClass, PowerClass,
+};
+#[cfg(feature = "uac2")]
 pub use device_enumeration::enumerate_uac2_devices;
 #[cfg(feature = "uac2")]
-pub use connection_manager::{ConnectionManager, ConnectionState};
+pub use device_info_extractor::{DeviceInfoExtractor, StringDescriptorCache};
 #[cfg(feature = "uac2")]
 pub use error::Uac2Error;
 #[cfg(feature = "uac2")]
-pub use error_recovery::{ErrorRecovery, Recoverable, RecoveryStrategy, ReconnectionManager};
+pub use error_recovery::{ErrorRecovery, ReconnectionManager, Recoverable, RecoveryStrategy};
 #[cfg(feature = "uac2")]
 pub use fallback_handler::{FallbackAudioOutput, FallbackHandler};
+#[cfg(feature = "uac2")]
+pub use format_negotiation::{
+    FormatMismatchHandler, FormatNegotiationEngine, FormatNegotiationStrategy,
+};
 #[cfg(feature = "uac2")]
 pub use logging::{init_logging, LogConfig, LogContext, LogLevel};
 #[cfg(feature = "uac2")]

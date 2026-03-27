@@ -98,7 +98,7 @@ impl CapabilityDetector {
         Self::extract_terminals(&descriptors, &mut capabilities);
         Self::extract_feature_units(&descriptors, &mut capabilities);
         Self::extract_formats(&descriptors, &mut capabilities)?;
-        
+
         capabilities.device_type = DeviceClassifier::classify(&capabilities);
 
         info!(
@@ -111,8 +111,6 @@ impl CapabilityDetector {
 
         Ok(capabilities)
     }
-
-
 
     fn parse_all_descriptors<T: UsbContext>(
         _device: &Device<T>,
@@ -142,14 +140,18 @@ impl CapabilityDetector {
         );
     }
 
-    fn extract_feature_units(descriptors: &[DescriptorKind], capabilities: &mut DeviceCapabilities) {
+    fn extract_feature_units(
+        descriptors: &[DescriptorKind],
+        capabilities: &mut DeviceCapabilities,
+    ) {
         for desc in descriptors {
             if let DescriptorKind::AudioControl(AudioControlDescriptor::FeatureUnit(fu)) = desc {
                 capabilities.feature_units.push(fu.clone());
             }
         }
-        
-        capabilities.controls = DeviceInfoExtractor::extract_control_capabilities(&capabilities.feature_units);
+
+        capabilities.controls =
+            DeviceInfoExtractor::extract_control_capabilities(&capabilities.feature_units);
 
         debug!(
             feature_units = capabilities.feature_units.len(),
@@ -220,8 +222,6 @@ impl CapabilityDetector {
         capabilities.max_bit_depth = BitDepth::from_bits(max_depth).ok();
         capabilities.max_channels = ChannelConfig::from_count(max_channels).ok();
     }
-
-
 }
 
 pub struct FormatMatcher;
@@ -267,9 +267,7 @@ impl FormatMatcher {
             }
         }
 
-        let result = candidates
-            .into_iter()
-            .max_by_key(|f| Self::rank_format(f));
+        let result = candidates.into_iter().max_by_key(|f| Self::rank_format(f));
 
         if let Some(format) = result {
             info!(
@@ -306,14 +304,17 @@ impl FormatMatcher {
         formats: &'a [AudioFormat],
         source_format: &AudioFormat,
     ) -> Vec<&'a AudioFormat> {
-        let source_rates: HashSet<u32> = source_format.sample_rates.iter().map(|r| r.hz()).collect();
+        let source_rates: HashSet<u32> =
+            source_format.sample_rates.iter().map(|r| r.hz()).collect();
 
         formats
             .iter()
             .filter(|f| {
                 f.bit_depth >= source_format.bit_depth
                     && f.channels.count() >= source_format.channels.count()
-                    && f.sample_rates.iter().any(|r| source_rates.contains(&r.hz()))
+                    && f.sample_rates
+                        .iter()
+                        .any(|r| source_rates.contains(&r.hz()))
             })
             .collect()
     }

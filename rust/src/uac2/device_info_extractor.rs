@@ -41,9 +41,7 @@ impl DeviceInfoExtractor {
         }
     }
 
-    pub fn extract_control_capabilities(
-        feature_units: &[FeatureUnit],
-    ) -> ControlCapabilities {
+    pub fn extract_control_capabilities(feature_units: &[FeatureUnit]) -> ControlCapabilities {
         let mut capabilities = ControlCapabilities {
             has_volume: false,
             has_mute: false,

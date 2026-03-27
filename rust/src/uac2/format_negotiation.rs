@@ -10,11 +10,15 @@ impl FormatNegotiationStrategy {
     }
 
     pub fn quality_first() -> Self {
-        Self { prefer_quality: true }
+        Self {
+            prefer_quality: true,
+        }
     }
 
     pub fn compatibility_first() -> Self {
-        Self { prefer_quality: false }
+        Self {
+            prefer_quality: false,
+        }
     }
 }
 
@@ -49,8 +53,12 @@ impl FormatNegotiationEngine {
         source: &AudioFormat,
         caps: &DeviceCapabilities,
     ) -> Result<SampleRate, Uac2Error> {
-        let source_rate = source.sample_rates.first()
-            .ok_or(Uac2Error::InvalidDescriptor("No sample rates in source format".to_string()))?;
+        let source_rate = source
+            .sample_rates
+            .first()
+            .ok_or(Uac2Error::InvalidDescriptor(
+                "No sample rates in source format".to_string(),
+            ))?;
 
         // Check if any supported format contains the source rate
         for format in &caps.supported_formats {
@@ -60,7 +68,8 @@ impl FormatNegotiationEngine {
         }
 
         // Collect all available sample rates from supported formats
-        let mut available_rates: Vec<SampleRate> = caps.supported_formats
+        let mut available_rates: Vec<SampleRate> = caps
+            .supported_formats
             .iter()
             .flat_map(|f| f.sample_rates.iter().copied())
             .collect();
@@ -101,10 +110,8 @@ impl FormatNegotiationEngine {
         }
 
         // Collect all available bit depths from supported formats
-        let mut available_depths: Vec<BitDepth> = caps.supported_formats
-            .iter()
-            .map(|f| f.bit_depth)
-            .collect();
+        let mut available_depths: Vec<BitDepth> =
+            caps.supported_formats.iter().map(|f| f.bit_depth).collect();
         available_depths.sort();
         available_depths.dedup();
 
@@ -115,16 +122,24 @@ impl FormatNegotiationEngine {
         if self.strategy.prefer_quality {
             available_depths
                 .iter()
-                .filter(|&&depth| Self::bit_depth_value(depth) >= Self::bit_depth_value(source.bit_depth))
+                .filter(|&&depth| {
+                    Self::bit_depth_value(depth) >= Self::bit_depth_value(source.bit_depth)
+                })
                 .min_by_key(|depth| Self::bit_depth_value(**depth))
-                .or_else(|| available_depths.iter().max_by_key(|depth| Self::bit_depth_value(**depth)))
+                .or_else(|| {
+                    available_depths
+                        .iter()
+                        .max_by_key(|depth| Self::bit_depth_value(**depth))
+                })
                 .copied()
                 .ok_or(Uac2Error::NoSupportedFormat)
         } else {
             available_depths
                 .iter()
                 .min_by_key(|depth| {
-                    (Self::bit_depth_value(**depth) as i32 - Self::bit_depth_value(source.bit_depth) as i32).abs()
+                    (Self::bit_depth_value(**depth) as i32
+                        - Self::bit_depth_value(source.bit_depth) as i32)
+                        .abs()
                 })
                 .copied()
                 .ok_or(Uac2Error::NoSupportedFormat)
@@ -144,10 +159,8 @@ impl FormatNegotiationEngine {
         }
 
         // Collect all available channel configs from supported formats
-        let mut available_channels: Vec<crate::uac2::ChannelConfig> = caps.supported_formats
-            .iter()
-            .map(|f| f.channels)
-            .collect();
+        let mut available_channels: Vec<crate::uac2::ChannelConfig> =
+            caps.supported_formats.iter().map(|f| f.channels).collect();
         available_channels.sort_by_key(|ch| ch.count());
         available_channels.dedup();
 
@@ -191,7 +204,7 @@ impl FormatMismatchHandler {
     pub fn requires_conversion(source: &AudioFormat, target: &AudioFormat) -> bool {
         let source_rate = source.sample_rates.first();
         let target_rate = target.sample_rates.first();
-        
+
         source_rate != target_rate
             || source.bit_depth != target.bit_depth
             || source.channels != target.channels
@@ -200,7 +213,7 @@ impl FormatMismatchHandler {
     fn can_convert_sample_rate(source: &AudioFormat, target: &AudioFormat) -> bool {
         let source_rate = source.sample_rates.first();
         let target_rate = target.sample_rates.first();
-        
+
         match (source_rate, target_rate) {
             (Some(src), Some(tgt)) => {
                 let ratio = src.hz() as f64 / tgt.hz() as f64;
@@ -216,7 +229,7 @@ impl FormatMismatchHandler {
 
     fn can_convert_channels(source: &AudioFormat, target: &AudioFormat) -> bool {
         use crate::uac2::ChannelConfig;
-        
+
         matches!(
             (source.channels, target.channels),
             (ChannelConfig::Mono, ChannelConfig::Stereo)

@@ -40,16 +40,16 @@ impl StreamConfig {
         let bytes_per_sample = (bit_depth.bits() / 8) as usize;
         let channel_count = channels.count() as usize;
         let samples_per_ms = sample_rate.hz() as usize / 1000;
-        
+
         let packet_size = samples_per_ms * bytes_per_sample * channel_count;
-        
+
         if packet_size == 0 || packet_size > 1024 * 1024 {
             return Err(Uac2Error::InvalidConfiguration(format!(
                 "invalid packet size: {}",
                 packet_size
             )));
         }
-        
+
         Ok(packet_size)
     }
 
@@ -106,15 +106,15 @@ impl StreamConfigBuilder {
     }
 
     pub fn build(self) -> Result<StreamConfig, Uac2Error> {
-        let sample_rate = self.sample_rate.ok_or_else(|| {
-            Uac2Error::InvalidConfiguration("sample rate not set".to_string())
-        })?;
-        let bit_depth = self.bit_depth.ok_or_else(|| {
-            Uac2Error::InvalidConfiguration("bit depth not set".to_string())
-        })?;
-        let channels = self.channels.ok_or_else(|| {
-            Uac2Error::InvalidConfiguration("channels not set".to_string())
-        })?;
+        let sample_rate = self
+            .sample_rate
+            .ok_or_else(|| Uac2Error::InvalidConfiguration("sample rate not set".to_string()))?;
+        let bit_depth = self
+            .bit_depth
+            .ok_or_else(|| Uac2Error::InvalidConfiguration("bit depth not set".to_string()))?;
+        let channels = self
+            .channels
+            .ok_or_else(|| Uac2Error::InvalidConfiguration("channels not set".to_string()))?;
         let endpoint_address = self.endpoint_address.ok_or_else(|| {
             Uac2Error::InvalidConfiguration("endpoint address not set".to_string())
         })?;
@@ -141,11 +141,13 @@ impl FormatSelector {
         }
 
         if let Some(source) = source_format {
-            if let Some(matching) = Self::find_exact_match(&capabilities.supported_formats, source) {
+            if let Some(matching) = Self::find_exact_match(&capabilities.supported_formats, source)
+            {
                 return Ok(matching.clone());
             }
-            
-            if let Some(compatible) = Self::find_compatible(&capabilities.supported_formats, source) {
+
+            if let Some(compatible) = Self::find_compatible(&capabilities.supported_formats, source)
+            {
                 return Ok(compatible.clone());
             }
         }
@@ -160,7 +162,9 @@ impl FormatSelector {
         formats.iter().find(|f| {
             f.bit_depth == source.bit_depth
                 && f.channels.count() == source.channels.count()
-                && f.sample_rates.iter().any(|r| source.sample_rates.contains(r))
+                && f.sample_rates
+                    .iter()
+                    .any(|r| source.sample_rates.contains(r))
         })
     }
 
@@ -171,8 +175,7 @@ impl FormatSelector {
         formats
             .iter()
             .filter(|f| {
-                f.bit_depth >= source.bit_depth
-                    && f.channels.count() >= source.channels.count()
+                f.bit_depth >= source.bit_depth && f.channels.count() >= source.channels.count()
             })
             .min_by_key(|f| {
                 let depth_diff = f.bit_depth.bits() as i32 - source.bit_depth.bits() as i32;
@@ -198,7 +201,7 @@ impl FormatSelector {
             .max()
             .unwrap_or(0) as u64;
         let channel_score = format.channels.count() as u64;
-        
+
         (depth_score << 48) | (rate_score << 16) | channel_score
     }
 }

@@ -39,8 +39,6 @@ pub struct DeviceMetadata {
     pub manufacturer: String,
 }
 
-
-
 impl<T: UsbContext> Uac2Device<T> {
     /// Creates a new UAC2 device from USB device.
     pub fn from_usb_device(device: &Device<T>) -> Result<Self, Uac2Error> {

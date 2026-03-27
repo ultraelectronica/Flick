@@ -179,10 +179,7 @@ impl ControlRequest {
                 std::time::Duration::from_secs(1),
             )?;
             buf.truncate(transferred);
-            debug!(
-                bytes_read = transferred,
-                "Control request read completed"
-            );
+            debug!(bytes_read = transferred, "Control request read completed");
             buf
         } else {
             handle.write_control(
@@ -369,11 +366,7 @@ impl VolumeControl {
     }
 
     pub fn set_volume(&self, volume: i32) -> Result<(), Uac2Error> {
-        info!(
-            volume = volume,
-            channel = self.channel,
-            "Setting volume"
-        );
+        info!(volume = volume, channel = self.channel, "Setting volume");
 
         let request = ControlRequest::builder()
             .request_type(ControlRequestType::SetCur)
@@ -389,10 +382,7 @@ impl VolumeControl {
     }
 
     pub fn get_volume_range(&self) -> Result<(i32, i32, i32), Uac2Error> {
-        debug!(
-            channel = self.channel,
-            "Getting volume range"
-        );
+        debug!(channel = self.channel, "Getting volume range");
 
         let min_request = ControlRequest::builder()
             .request_type(ControlRequestType::GetMin)
@@ -473,11 +463,7 @@ impl MuteControl {
     }
 
     pub fn set_mute(&self, mute: bool) -> Result<(), Uac2Error> {
-        info!(
-            mute = mute,
-            channel = self.channel,
-            "Setting mute"
-        );
+        info!(mute = mute, channel = self.channel, "Setting mute");
 
         let request = ControlRequest::builder()
             .request_type(ControlRequestType::SetCur)

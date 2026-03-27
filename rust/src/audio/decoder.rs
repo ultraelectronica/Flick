@@ -92,10 +92,7 @@ pub fn probe_file(path: &Path) -> Result<ProbeResult, DecoderError> {
     let codec_params = &track.codec_params;
 
     let sample_rate = codec_params.sample_rate.unwrap_or(44100);
-    let channels = codec_params
-        .channels
-        .map(|c| c.count())
-        .unwrap_or(2);
+    let channels = codec_params.channels.map(|c| c.count()).unwrap_or(2);
 
     // Calculate duration
     let duration_secs = if let Some(n_frames) = codec_params.n_frames {
@@ -111,7 +108,8 @@ pub fn probe_file(path: &Path) -> Result<ProbeResult, DecoderError> {
     };
 
     // Total samples at output sample rate
-    let total_samples = (duration_secs * DEFAULT_OUTPUT_SAMPLE_RATE as f64 * channels as f64) as u64;
+    let total_samples =
+        (duration_secs * DEFAULT_OUTPUT_SAMPLE_RATE as f64 * channels as f64) as u64;
 
     let decoder_opts = DecoderOptions::default();
     let decoder = symphonia::default::get_codecs()
@@ -145,7 +143,10 @@ impl DecoderThread {
     /// Spawn a new decoder thread for the given file.
     ///
     /// Returns the audio source (for the audio thread) and the decoder thread handle.
-    pub fn spawn(path: PathBuf, output_sample_rate: u32) -> Result<(AudioSource, Self), DecoderError> {
+    pub fn spawn(
+        path: PathBuf,
+        output_sample_rate: u32,
+    ) -> Result<(AudioSource, Self), DecoderError> {
         Self::spawn_with_seek(path, output_sample_rate, None)
     }
 
@@ -272,9 +273,12 @@ fn decode_thread(
     };
 
     // Pre-allocated buffers (avoid allocations in the loop)
-    let mut decode_buffer: Vec<f32> = Vec::with_capacity(DECODE_CHUNK_SIZE * source_info.channels * 2);
+    let mut decode_buffer: Vec<f32> =
+        Vec::with_capacity(DECODE_CHUNK_SIZE * source_info.channels * 2);
     let mut resample_buffer: Vec<f32> = Vec::with_capacity(
-        (DECODE_CHUNK_SIZE as f64 * output_sample_rate as f64 / source_info.original_sample_rate as f64 * 1.2) as usize
+        (DECODE_CHUNK_SIZE as f64 * output_sample_rate as f64
+            / source_info.original_sample_rate as f64
+            * 1.2) as usize
             * source_info.channels
             + 256,
     );
@@ -289,7 +293,9 @@ fn decode_thread(
         // Get the next packet
         let packet = match format.next_packet() {
             Ok(packet) => packet,
-            Err(SymphoniaError::IoError(ref e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+            Err(SymphoniaError::IoError(ref e))
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
                 // End of stream
                 break;
             }
@@ -329,7 +335,10 @@ fn decode_thread(
         let output_samples = if let Some(ref mut resampler) = resampler {
             resample_buffer.clear();
             resample_buffer.resize(
-                (decode_buffer.len() as f64 * output_sample_rate as f64 / source_info.original_sample_rate as f64 * 1.2) as usize + 256,
+                (decode_buffer.len() as f64 * output_sample_rate as f64
+                    / source_info.original_sample_rate as f64
+                    * 1.2) as usize
+                    + 256,
                 0.0,
             );
 

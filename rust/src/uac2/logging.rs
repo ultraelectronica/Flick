@@ -106,10 +106,9 @@ impl Default for LogConfig {
 
 pub fn init_logging(config: &LogConfig) {
     INIT.call_once(|| {
-        let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| {
-                EnvFilter::new(format!("flick_player::uac2={}", level_to_str(config.level)))
-            });
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            EnvFilter::new(format!("flick_player::uac2={}", level_to_str(config.level)))
+        });
 
         let fmt_layer = fmt::layer()
             .with_target(true)
@@ -117,9 +116,7 @@ pub fn init_logging(config: &LogConfig) {
             .with_line_number(true)
             .with_filter(filter);
 
-        tracing_subscriber::registry()
-            .with(fmt_layer)
-            .init();
+        tracing_subscriber::registry().with(fmt_layer).init();
     });
 }
 

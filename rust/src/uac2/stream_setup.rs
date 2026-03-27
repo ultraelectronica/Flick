@@ -55,10 +55,8 @@ impl<'a, T: UsbContext> StreamSetupBuilder<'a, T> {
     }
 
     pub fn build(self) -> Result<StreamSetup, Uac2Error> {
-        let selected_format = FormatSelector::select_optimal(
-            self.capabilities,
-            self.source_format,
-        )?;
+        let selected_format =
+            FormatSelector::select_optimal(self.capabilities, self.source_format)?;
 
         let sample_rate = selected_format
             .sample_rates
@@ -115,11 +113,7 @@ impl StreamActivator {
         handle: &DeviceHandle<T>,
         setup: &StreamSetup,
     ) -> Result<(), Uac2Error> {
-        EndpointManager::configure_endpoint(
-            handle,
-            setup.interface_number,
-            setup.alt_setting,
-        )?;
+        EndpointManager::configure_endpoint(handle, setup.interface_number, setup.alt_setting)?;
 
         Ok(())
     }

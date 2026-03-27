@@ -250,7 +250,7 @@ impl Crossfader {
         // Process frame by frame for smooth gain transitions
         for frame in 0..frames {
             let (gain_a, gain_b) = self.current_gains();
-            
+
             for ch in 0..channels {
                 let idx = frame * channels + ch;
                 if idx < samples {
@@ -321,7 +321,7 @@ pub fn mix_buffers_with_gains(
     output: &mut [f32],
 ) {
     let len = source_a.len().min(source_b.len()).min(output.len());
-    
+
     // Process in chunks of 8 for potential SIMD optimization
     let chunks = len / 8;
     let remainder = len % 8;
@@ -349,10 +349,10 @@ mod tests {
     #[test]
     fn test_equal_power_at_midpoint() {
         let crossfader = Crossfader::new(48000, 1.0);
-        
+
         // At midpoint (progress = 0.5), both gains should be ~0.707
         let (gain_a, gain_b) = crossfader.calculate_gains(0.5);
-        
+
         // Equal power means A² + B² = 1
         let power_sum = gain_a * gain_a + gain_b * gain_b;
         assert!((power_sum - 1.0).abs() < 0.01, "Power sum: {}", power_sum);
@@ -361,12 +361,12 @@ mod tests {
     #[test]
     fn test_crossfade_start_end() {
         let crossfader = Crossfader::new(48000, 1.0);
-        
+
         // At start: A=1, B=0
         let (gain_a, gain_b) = crossfader.calculate_gains(0.0);
         assert!((gain_a - 1.0).abs() < 0.001);
         assert!(gain_b.abs() < 0.001);
-        
+
         // At end: A=0, B=1
         let (gain_a, gain_b) = crossfader.calculate_gains(1.0);
         assert!(gain_a.abs() < 0.001);
@@ -377,16 +377,16 @@ mod tests {
     fn test_crossfade_progression() {
         let mut crossfader = Crossfader::new(48000, 1.0);
         crossfader.start();
-        
+
         assert!(crossfader.is_active());
-        
+
         // Advance through the entire crossfade
         for _ in 0..48000 {
             if crossfader.advance() {
                 break;
             }
         }
-        
+
         assert!(!crossfader.is_active());
     }
 }

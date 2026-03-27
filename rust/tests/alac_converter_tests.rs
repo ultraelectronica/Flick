@@ -46,7 +46,7 @@ mod alac_converter_tests {
     //     let mut session = ConversionSession::new(file_bytes).unwrap();
     //     let metadata = session.metadata();
     //     assert_eq!(metadata.sample_rate, 44100);
-    //     
+    //
     //     let chunk = session.decode_next_chunk().unwrap();
     //     assert!(chunk.is_some());
     // }
