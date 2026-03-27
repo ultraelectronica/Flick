@@ -135,7 +135,10 @@ class LibraryScannerService {
             albumArtMissing ||
             existing.bitrate == null ||
             existing.sampleRate == null ||
-            existing.bitDepth == null;
+            existing.bitDepth == null ||
+            existing.trackNumber == null ||
+            existing.discNumber == null ||
+            existing.albumArtist == null;
 
         if (file.lastModified != existingTime || missingMetadata) {
           urisToProcess.add(file.uri);
@@ -197,6 +200,13 @@ class LibraryScannerService {
           ..title = meta.title ?? basic.name
           ..artist = meta.artist ?? 'Unknown Artist'
           ..album = meta.album ?? 'Unknown Album'
+          ..albumArtist = (meta.albumArtist?.trim().isNotEmpty ?? false)
+              ? meta.albumArtist!.trim()
+              : (meta.artist ?? 'Unknown Artist')
+          // 0 is used as a persisted sentinel for "unknown track" so we can
+          // migrate old rows once without forcing rescans forever.
+          ..trackNumber = meta.trackNumber ?? 0
+          ..discNumber = meta.discNumber ?? 1
           ..durationMs = meta.duration ?? 0
           ..fileType = basic.extension.toUpperCase()
           ..dateAdded = existingMap[basic.uri]?.dateAdded ?? DateTime.now()

@@ -3,6 +3,20 @@ import 'package:isar_community/isar.dart';
 import '../database.dart';
 import '../../models/song.dart';
 
+class AlbumGroup {
+  final String key;
+  final String albumName;
+  final String albumArtist;
+  final List<Song> songs;
+
+  const AlbumGroup({
+    required this.key,
+    required this.albumName,
+    required this.albumArtist,
+    required this.songs,
+  });
+}
+
 /// Repository for song CRUD operations.
 class SongRepository {
   final Isar _isar;
@@ -77,18 +91,18 @@ class SongRepository {
     await _isar.writeTxn(() async {
       // Batch query for all existing songs by file paths
       final filePaths = entities.map((e) => e.filePath).toList();
-      
+
       // Build a map of existing songs by file path for quick lookup
       final existingMap = <String, SongEntity>{};
-      
+
       // Query in chunks to avoid potential query size limits
       const chunkSize = 100;
       for (var i = 0; i < filePaths.length; i += chunkSize) {
-        final end = (i + chunkSize < filePaths.length) 
-            ? i + chunkSize 
+        final end = (i + chunkSize < filePaths.length)
+            ? i + chunkSize
             : filePaths.length;
         final chunkPaths = filePaths.sublist(i, end);
-        
+
         // Query for existing songs in this chunk
         for (final path in chunkPaths) {
           final existing = await _isar.songEntitys
@@ -100,7 +114,7 @@ class SongRepository {
           }
         }
       }
-      
+
       // Assign IDs to entities that already exist
       for (final entity in entities) {
         final existing = existingMap[entity.filePath];
@@ -108,7 +122,7 @@ class SongRepository {
           entity.id = existing.id;
         }
       }
-      
+
       await _isar.songEntitys.putAll(entities);
     });
   }
@@ -135,14 +149,6 @@ class SongRepository {
   /// Delete songs by their file paths.
   Future<void> deleteSongsByPath(List<String> paths) async {
     await _isar.writeTxn(() async {
-      // Isar doesn't support 'in' clause for string indexes easily in one go without query loop or huge generic 'or'
-      // Optimally, we delete by ID, but we have paths.
-      // Let's find IDs first.
-      // For large lists, chunking might be needed, but Isar is fast.
-      // Alternative: logical OR.
-
-      // If list is small, loop delete is fine. If large, batch.
-      // Let's do a simple loop for now as deletions are usually rare/few.
       for (final path in paths) {
         await _isar.songEntitys.filter().filePathEqualTo(path).deleteAll();
       }
@@ -169,7 +175,59 @@ class SongRepository {
       final album = song.album ?? 'Unknown Album';
       albumMap.putIfAbsent(album, () => []).add(song);
     }
+    for (final albumSongs in albumMap.values) {
+      albumSongs.sort(_compareAlbumSongs);
+    }
     return albumMap;
+  }
+
+  Future<List<AlbumGroup>> getAlbumGroups() async {
+    final songs = await getAllSongs();
+    final groupedSongs = <String, List<Song>>{};
+    final albumNames = <String, String>{};
+    final albumArtists = <String, String>{};
+
+    for (final song in songs) {
+      final albumName = _albumNameForSong(song);
+      final albumArtist = _albumArtistForSong(song);
+      final key = _albumGroupKey(albumName, albumArtist);
+
+      groupedSongs.putIfAbsent(key, () => []).add(song);
+      albumNames[key] = albumName;
+      albumArtists[key] = albumArtist;
+    }
+
+    final groups = groupedSongs.entries.map((entry) {
+      final songs = List<Song>.from(entry.value)..sort(_compareAlbumSongs);
+      return AlbumGroup(
+        key: entry.key,
+        albumName: albumNames[entry.key] ?? 'Unknown Album',
+        albumArtist: albumArtists[entry.key] ?? 'Unknown Artist',
+        songs: songs,
+      );
+    }).toList();
+
+    groups.sort((a, b) {
+      final artistCompare = a.albumArtist.compareTo(b.albumArtist);
+      if (artistCompare != 0) return artistCompare;
+      return a.albumName.compareTo(b.albumName);
+    });
+
+    return groups;
+  }
+
+  Future<AlbumGroup?> getAlbumGroupForSong(Song song) async {
+    final targetKey = _albumGroupKey(
+      _albumNameForSong(song),
+      _albumArtistForSong(song),
+    );
+    final groups = await getAlbumGroups();
+
+    for (final group in groups) {
+      if (group.key == targetKey) return group;
+    }
+
+    return null;
   }
 
   /// Get all unique artists with their songs.
@@ -206,9 +264,61 @@ class SongRepository {
       resolution: _buildResolutionString(entity),
       album: entity.album,
       albumArtist: entity.albumArtist,
+      trackNumber: entity.trackNumber,
+      discNumber: entity.discNumber,
       filePath: entity.filePath,
       dateAdded: entity.dateAdded,
     );
+  }
+
+  int _compareAlbumSongs(Song a, Song b) {
+    final discA = (a.discNumber != null && a.discNumber! > 0) ? a.discNumber! : 1;
+    final discB = (b.discNumber != null && b.discNumber! > 0) ? b.discNumber! : 1;
+    final discCompare = discA.compareTo(discB);
+    if (discCompare != 0) return discCompare;
+
+    final trackA = (a.trackNumber != null && a.trackNumber! > 0)
+        ? a.trackNumber
+        : null;
+    final trackB = (b.trackNumber != null && b.trackNumber! > 0)
+        ? b.trackNumber
+        : null;
+    final hasTrackA = trackA != null;
+    final hasTrackB = trackB != null;
+    if (hasTrackA && hasTrackB) {
+      final trackCompare = trackA.compareTo(trackB);
+      if (trackCompare != 0) return trackCompare;
+    } else if (hasTrackA != hasTrackB) {
+      return hasTrackA ? -1 : 1;
+    }
+
+    final titleCompare = a.title.compareTo(b.title);
+    if (titleCompare != 0) return titleCompare;
+
+    return a.artist.compareTo(b.artist);
+  }
+
+  String _albumNameForSong(Song song) {
+    final albumName = song.album?.trim();
+    if (albumName == null || albumName.isEmpty) {
+      return 'Unknown Album';
+    }
+    return albumName;
+  }
+
+  String _albumArtistForSong(Song song) {
+    final albumArtist = song.albumArtist?.trim();
+    if (albumArtist != null && albumArtist.isNotEmpty) {
+      return albumArtist;
+    }
+
+    final artist = song.artist.trim();
+    if (artist.isNotEmpty) return artist;
+    return 'Unknown Artist';
+  }
+
+  String _albumGroupKey(String albumName, String albumArtist) {
+    return '$albumArtist\u0000$albumName';
   }
 
   /// Build a resolution string from entity properties.

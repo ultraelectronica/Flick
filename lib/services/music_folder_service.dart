@@ -15,6 +15,9 @@ class AudioFileInfo {
   final String? title;
   final String? artist;
   final String? album;
+  final String? albumArtist;
+  final int? trackNumber;
+  final int? discNumber;
   final int? duration;
   final String? albumArtPath;
   final String? bitrate;
@@ -31,6 +34,9 @@ class AudioFileInfo {
     this.title,
     this.artist,
     this.album,
+    this.albumArtist,
+    this.trackNumber,
+    this.discNumber,
     this.duration,
     this.albumArtPath,
     this.bitrate,
@@ -51,6 +57,9 @@ class AudioFileInfo {
       title: map['title'] as String?,
       artist: map['artist'] as String?,
       album: map['album'] as String?,
+      albumArtist: map['albumArtist'] as String?,
+      trackNumber: (map['trackNumber'] as num?)?.toInt(),
+      discNumber: (map['discNumber'] as num?)?.toInt(),
       duration: map['duration'] != null
           ? (map['duration'] as num).toInt()
           : null,

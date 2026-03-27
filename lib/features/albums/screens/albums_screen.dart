@@ -23,7 +23,7 @@ class AlbumsScreen extends StatefulWidget {
 class _AlbumsScreenState extends State<AlbumsScreen> {
   final SongRepository _songRepository = SongRepository();
   final PlayerService _playerService = PlayerService();
-  Map<String, List<Song>> _albums = {};
+  List<AlbumGroup> _albums = [];
   bool _isLoading = true;
 
   @override
@@ -36,7 +36,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   }
 
   Future<void> _loadAlbums() async {
-    final albums = await _songRepository.getSongsByAlbum();
+    final albums = await _songRepository.getAlbumGroups();
     if (mounted) {
       setState(() {
         _albums = albums;
@@ -54,14 +54,15 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     return null;
   }
 
-  void _openAlbumDetail(String albumName, List<Song> songs) {
+  void _openAlbumDetail(AlbumGroup album) {
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
             AlbumDetailScreen(
-              albumName: albumName,
-              songs: songs,
-              albumArt: _getAlbumArt(songs),
+              albumName: album.albumName,
+              albumArtist: album.albumArtist,
+              songs: album.songs,
+              albumArt: _getAlbumArt(album.songs),
               playerService: _playerService,
             ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -198,8 +199,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   }
 
   Widget _buildAlbumsGrid() {
-    final albumEntries = _albums.entries.toList();
-
     return GridView.builder(
       padding: EdgeInsets.only(
         left: AppConstants.spacingMd,
@@ -212,14 +211,15 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         crossAxisSpacing: AppConstants.spacingMd,
         mainAxisSpacing: AppConstants.spacingMd,
       ),
-      itemCount: albumEntries.length,
+      itemCount: _albums.length,
       itemBuilder: (context, index) {
-        final entry = albumEntries[index];
+        final album = _albums[index];
         return _AlbumCard(
-          albumName: entry.key,
-          songs: entry.value,
-          albumArt: _getAlbumArt(entry.value),
-          onTap: () => _openAlbumDetail(entry.key, entry.value),
+          albumName: album.albumName,
+          albumArtist: album.albumArtist,
+          songs: album.songs,
+          albumArt: _getAlbumArt(album.songs),
+          onTap: () => _openAlbumDetail(album),
         );
       },
     );
@@ -228,12 +228,14 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
 
 class _AlbumCard extends StatefulWidget {
   final String albumName;
+  final String albumArtist;
   final List<Song> songs;
   final String? albumArt;
   final VoidCallback onTap;
 
   const _AlbumCard({
     required this.albumName,
+    required this.albumArtist,
     required this.songs,
     required this.albumArt,
     required this.onTap,
@@ -276,9 +278,8 @@ class _AlbumCardState extends State<_AlbumCard>
   Widget build(BuildContext context) {
     final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
     final cardWidth = context.scaleSize(AppConstants.cardWidthMd);
-    final cardHeight = context.scaleSize(AppConstants.cardHeightMd);
     final artworkTargetWidth = (cardWidth * devicePixelRatio).round();
-    final artworkTargetHeight = (cardHeight * devicePixelRatio).round();
+    final artworkTargetHeight = artworkTargetWidth;
 
     return GestureDetector(
       onTapDown: (_) => _controller.forward(),
@@ -315,7 +316,8 @@ class _AlbumCardState extends State<_AlbumCard>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Album art
-                      Expanded(
+                      AspectRatio(
+                        aspectRatio: 1,
                         child: Container(
                           width: double.infinity,
                           decoration: const BoxDecoration(
@@ -361,6 +363,16 @@ class _AlbumCardState extends State<_AlbumCard>
                             ),
                             const SizedBox(height: 2),
                             Text(
+                              widget.albumArtist,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: context.adaptiveTextSecondary,
+                                  ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
                               '${widget.songs.length} ${widget.songs.length == 1 ? 'song' : 'songs'}',
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
@@ -395,6 +407,7 @@ class _AlbumCardState extends State<_AlbumCard>
 /// Album detail screen showing songs in the album.
 class AlbumDetailScreen extends StatelessWidget {
   final String albumName;
+  final String albumArtist;
   final List<Song> songs;
   final String? albumArt;
   final PlayerService playerService;
@@ -402,6 +415,7 @@ class AlbumDetailScreen extends StatelessWidget {
   const AlbumDetailScreen({
     super.key,
     required this.albumName,
+    required this.albumArtist,
     required this.songs,
     required this.albumArt,
     required this.playerService,
@@ -490,7 +504,7 @@ class AlbumDetailScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${songs.length} songs',
+                          '$albumArtist • ${songs.length} songs',
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: context.adaptiveTextSecondary),
                         ),

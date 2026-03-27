@@ -27,6 +27,12 @@ class Song {
   /// Album artist (optional, used for compilations)
   final String? albumArtist;
 
+  /// Track number within the album
+  final int? trackNumber;
+
+  /// Disc number within a multi-disc release
+  final int? discNumber;
+
   /// File path on device
   final String? filePath;
 
@@ -43,6 +49,8 @@ class Song {
     this.resolution,
     this.album,
     this.albumArtist,
+    this.trackNumber,
+    this.discNumber,
     this.filePath,
     this.dateAdded,
   });
@@ -70,6 +78,8 @@ class Song {
     String? resolution,
     String? album,
     String? albumArtist,
+    int? trackNumber,
+    int? discNumber,
     String? filePath,
     DateTime? dateAdded,
   }) {
@@ -83,6 +93,8 @@ class Song {
       resolution: resolution ?? this.resolution,
       album: album ?? this.album,
       albumArtist: albumArtist ?? this.albumArtist,
+      trackNumber: trackNumber ?? this.trackNumber,
+      discNumber: discNumber ?? this.discNumber,
       filePath: filePath ?? this.filePath,
       dateAdded: dateAdded ?? this.dateAdded,
     );

@@ -898,15 +898,10 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
   }
 
   Future<void> _openAlbumFromSong(BuildContext context, Song song) async {
-    final albumName = (song.album?.trim().isNotEmpty ?? false)
-        ? song.album!.trim()
-        : 'Unknown Album';
-
-    final albumMap = await _songRepository.getSongsByAlbum();
-    final albumSongs = albumMap[albumName];
+    final albumGroup = await _songRepository.getAlbumGroupForSong(song);
     if (!mounted) return;
 
-    if (albumSongs == null || albumSongs.isEmpty) {
+    if (albumGroup == null || albumGroup.songs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not load album songs')),
       );
@@ -916,9 +911,10 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => AlbumDetailScreen(
-          albumName: albumName,
-          songs: albumSongs,
-          albumArt: _firstArt(albumSongs),
+          albumName: albumGroup.albumName,
+          albumArtist: albumGroup.albumArtist,
+          songs: albumGroup.songs,
+          albumArt: _firstArt(albumGroup.songs),
           playerService: _playerService,
         ),
       ),

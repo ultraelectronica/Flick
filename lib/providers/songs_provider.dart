@@ -38,22 +38,26 @@ extension SongFileTypeFilterExtension on SongFileTypeFilter {
 
   bool matches(String fileType) {
     if (this == SongFileTypeFilter.all) return true;
-    
+
     // Normalize file type for comparison (remove dots, convert to uppercase)
     final normalized = fileType.replaceAll('.', '').toUpperCase().trim();
     final filterName = displayName.toUpperCase();
-    
+
     // Direct match
     if (normalized == filterName) return true;
-    
+
     // Handle common variations
     switch (this) {
       case SongFileTypeFilter.mp3:
         return normalized == 'MP3' || normalized == 'MPEG';
       case SongFileTypeFilter.aac:
-        return normalized == 'AAC' || normalized == 'M4A' || normalized == 'MP4';
+        return normalized == 'AAC' ||
+            normalized == 'M4A' ||
+            normalized == 'MP4';
       case SongFileTypeFilter.ogg:
-        return normalized == 'OGG' || normalized == 'VORBIS' || normalized == 'OGA';
+        return normalized == 'OGG' ||
+            normalized == 'VORBIS' ||
+            normalized == 'OGA';
       case SongFileTypeFilter.alac:
         return normalized == 'ALAC' || normalized == 'M4A';
       case SongFileTypeFilter.wav:
@@ -107,9 +111,32 @@ class SongsState {
           final artistB = b.albumArtist ?? b.artist;
           final artistCompare = artistA.compareTo(artistB);
           if (artistCompare != 0) return artistCompare;
-          // Secondary sort by album, then track number/title
+          // Secondary sort by album, then disc/track number, then title.
           final albumCompare = (a.album ?? '').compareTo(b.album ?? '');
           if (albumCompare != 0) return albumCompare;
+
+          final discA =
+              (a.discNumber != null && a.discNumber! > 0) ? a.discNumber! : 1;
+          final discB =
+              (b.discNumber != null && b.discNumber! > 0) ? b.discNumber! : 1;
+          final discCompare = discA.compareTo(discB);
+          if (discCompare != 0) return discCompare;
+
+          final trackA = (a.trackNumber != null && a.trackNumber! > 0)
+              ? a.trackNumber
+              : null;
+          final trackB = (b.trackNumber != null && b.trackNumber! > 0)
+              ? b.trackNumber
+              : null;
+          final hasTrackA = trackA != null;
+          final hasTrackB = trackB != null;
+          if (hasTrackA && hasTrackB) {
+            final trackCompare = trackA.compareTo(trackB);
+            if (trackCompare != 0) return trackCompare;
+          } else if (hasTrackA != hasTrackB) {
+            return hasTrackA ? -1 : 1;
+          }
+
           return a.title.compareTo(b.title);
         });
       case SongSortOption.title:
@@ -206,11 +233,12 @@ final songCountProvider = Provider.autoDispose<int>((ref) {
 // ============================================================================
 
 /// Songs grouped by album.
-final songsByAlbumProvider =
-    FutureProvider.autoDispose<Map<String, List<Song>>>((ref) async {
-      final repository = ref.watch(songRepositoryProvider);
-      return repository.getSongsByAlbum();
-    });
+final songsByAlbumProvider = FutureProvider.autoDispose<List<AlbumGroup>>((
+  ref,
+) async {
+  final repository = ref.watch(songRepositoryProvider);
+  return repository.getAlbumGroups();
+});
 
 /// Songs grouped by artist.
 final songsByArtistProvider =

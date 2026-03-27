@@ -746,6 +746,13 @@ class MainActivity: FlutterActivity() {
                 metadata["title"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
                 metadata["artist"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
                 metadata["album"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                metadata["albumArtist"] = extractMetadataByKeyName(retriever, "METADATA_KEY_ALBUMARTIST")
+                metadata["trackNumber"] = parseMetadataNumber(
+                    extractMetadataByKeyName(retriever, "METADATA_KEY_CD_TRACK_NUMBER")
+                )
+                metadata["discNumber"] = parseMetadataNumber(
+                    extractMetadataByKeyName(retriever, "METADATA_KEY_DISC_NUMBER")
+                )
                 metadata["bitrate"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
                 metadata["mimeType"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
                 
@@ -800,6 +807,25 @@ class MainActivity: FlutterActivity() {
         }
 
         return result
+    }
+
+    private fun extractMetadataByKeyName(
+        retriever: MediaMetadataRetriever,
+        keyName: String
+    ): String? {
+        return try {
+            val key = MediaMetadataRetriever::class.java.getField(keyName).getInt(null)
+            retriever.extractMetadata(key)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseMetadataNumber(rawValue: String?): Int? {
+        if (rawValue.isNullOrBlank()) return null
+        val match = Regex("""\d+""").find(rawValue) ?: return null
+        val value = match.value.toIntOrNull() ?: return null
+        return if (value > 0) value else null
     }
 
     private fun cacheUriForPlayback(uriString: String, extensionHint: String?): String? {
