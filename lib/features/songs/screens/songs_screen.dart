@@ -1,6 +1,8 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:math';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
@@ -632,28 +634,39 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   }
 
   Future<void> _favoriteSong(Song song) async {
-    final favoritesService = ref.read(favoritesServiceProvider);
-    final isFavorite = await favoritesService.isFavorite(song.id);
+    _showSongActionSnackBar('Added "${song.title}" to favorites');
+    unawaited(() async {
+      try {
+        await ref.read(favoritesServiceProvider).addFavorite(song.id);
+      } catch (error, stackTrace) {
+        debugPrint('Failed to add favorite for ${song.id}: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        if (!mounted) return;
+        _showSongActionSnackBar('Failed to add "${song.title}" to favorites');
+        return;
+      }
 
-    if (!isFavorite) {
-      await ref.read(favoritesProvider.notifier).addFavorite(song.id);
-    }
-
-    if (!mounted) return;
-    final label = isFavorite ? 'Already in favorites' : 'Added to favorites';
-    _showSongActionSnackBar('$label: "${song.title}"');
+      ref.invalidate(favoritesProvider);
+    }());
   }
 
   void _showSongActionSnackBar(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(milliseconds: 1800),
-      ),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.removeCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1600),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+          ),
+        ),
+      );
+    });
   }
 
   Widget _buildLoadingState() {
