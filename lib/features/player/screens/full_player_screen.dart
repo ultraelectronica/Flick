@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1653,43 +1654,141 @@ class _AnimatedSongScene extends StatelessWidget {
   }
 
   Widget _buildArtworkCardLayout(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        context.responsive(20.0, 28.0, 36.0),
-        context.responsive(10.0, 12.0, 16.0),
-        context.responsive(20.0, 28.0, 36.0),
-        0,
-      ),
-      child: Column(
-        children: [
-          if (lyricsMode) ...[
-            Expanded(
-              child: _InlineLyricsPanel(
-                song: song,
-                playerService: playerService,
-                lyricsService: lyricsService,
-              ),
-            ),
-            SizedBox(height: context.responsive(16.0, 18.0, 20.0)),
-          ] else ...[
-            const Spacer(),
-            _AlbumArtBox(song: song),
-            SizedBox(height: context.responsive(24.0, 28.0, 32.0)),
-            _buildSongIdentity(context),
-            SizedBox(height: context.responsive(20.0, 22.0, 24.0)),
-            const Spacer(),
-          ],
-          buildFileInfoRow(song, lyricsMode),
-          SizedBox(height: context.responsive(14.0, 16.0, 18.0)),
-          _buildPlaybackStack(context),
-          SizedBox(height: context.responsive(14.0, 18.0, 22.0)),
-          buildDirectoryInfo(song),
-        ],
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isShortHeight = constraints.maxHeight < 620;
+        final isVeryShortHeight = constraints.maxHeight < 540;
+        final horizontalPadding = constraints.maxWidth < 360
+            ? 16.0
+            : context.responsive(20.0, 28.0, 36.0);
+        final topPadding = isVeryShortHeight
+            ? 6.0
+            : context.responsive(10.0, 12.0, 16.0);
+        final maxArtworkSize = context.responsive(280.0, 320.0, 360.0);
+        final artworkSize = math
+            .min(
+              constraints.maxWidth - (horizontalPadding * 2),
+              isVeryShortHeight
+                  ? constraints.maxHeight * 0.30
+                  : isShortHeight
+                  ? constraints.maxHeight * 0.34
+                  : constraints.maxHeight * 0.40,
+            )
+            .clamp(isVeryShortHeight ? 160.0 : 180.0, maxArtworkSize)
+            .toDouble();
+        final artworkSpacing = isVeryShortHeight
+            ? 14.0
+            : isShortHeight
+            ? 18.0
+            : context.responsive(24.0, 28.0, 32.0);
+        final identitySpacing = isVeryShortHeight
+            ? 10.0
+            : isShortHeight
+            ? 14.0
+            : context.responsive(20.0, 22.0, 24.0);
+        final lyricsSpacing = isVeryShortHeight
+            ? 12.0
+            : context.responsive(16.0, 18.0, 20.0);
+        final playbackSpacing = isVeryShortHeight
+            ? 10.0
+            : context.responsive(14.0, 16.0, 18.0);
+        final directorySpacing = isVeryShortHeight
+            ? 8.0
+            : isShortHeight
+            ? 12.0
+            : context.responsive(14.0, 18.0, 22.0);
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            topPadding,
+            horizontalPadding,
+            0,
+          ),
+          child: Column(
+            children: [
+              if (lyricsMode) ...[
+                Expanded(
+                  child: _InlineLyricsPanel(
+                    song: song,
+                    playerService: playerService,
+                    lyricsService: lyricsService,
+                  ),
+                ),
+                SizedBox(height: lyricsSpacing),
+              ] else
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: isVeryShortHeight
+                        ? MainAxisAlignment.start
+                        : MainAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        flex: isVeryShortHeight ? 5 : 7,
+                        child: Center(
+                          child: _AlbumArtBox(song: song, size: artworkSize),
+                        ),
+                      ),
+                      SizedBox(height: artworkSpacing),
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isVeryShortHeight ? 8.0 : 0.0,
+                        ),
+                        child: _buildSongIdentity(
+                          context,
+                          compact: isShortHeight,
+                          veryCompact: isVeryShortHeight,
+                        ),
+                      ),
+                      SizedBox(height: identitySpacing),
+                    ],
+                  ),
+                ),
+              buildFileInfoRow(song, lyricsMode),
+              SizedBox(height: playbackSpacing),
+              _buildPlaybackStack(context),
+              SizedBox(height: directorySpacing),
+              buildDirectoryInfo(song),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildSongIdentity(BuildContext context) {
+  Widget _buildSongIdentity(
+    BuildContext context, {
+    bool compact = false,
+    bool veryCompact = false,
+  }) {
+    final titleSize = veryCompact
+        ? context.responsive(22.0, 24.0, 28.0)
+        : compact
+        ? context.responsive(24.0, 27.0, 30.0)
+        : context.responsive(28.0, 30.0, 34.0);
+    final artistSize = veryCompact
+        ? context.responsive(13.0, 14.0, 16.0)
+        : compact
+        ? context.responsive(14.0, 15.0, 17.0)
+        : context.responsive(15.0, 16.0, 18.0);
+    final titleToArtistSpacing = veryCompact
+        ? 6.0
+        : context.responsive(8.0, 9.0, 10.0);
+    final artistToAlbumSpacing = veryCompact
+        ? 8.0
+        : compact
+        ? 10.0
+        : context.responsive(12.0, 14.0, 16.0);
+    final albumHorizontalPadding = veryCompact
+        ? 10.0
+        : context.responsive(12.0, 14.0, 16.0);
+    final albumVerticalPadding = veryCompact
+        ? 5.0
+        : context.responsive(6.0, 7.0, 8.0);
+    final albumFontSize = veryCompact
+        ? context.responsive(11.0, 12.0, 13.0)
+        : context.responsive(12.0, 13.0, 14.0);
+
     return Column(
       children: [
         Text(
@@ -1699,15 +1798,13 @@ class _AnimatedSongScene extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontFamily: 'ProductSans',
-            fontSize: context.responsiveText(
-              context.responsive(28.0, 30.0, 34.0),
-            ),
+            fontSize: context.responsiveText(titleSize),
             fontWeight: FontWeight.w700,
             color: Colors.white,
             height: 1.08,
           ),
         ),
-        SizedBox(height: context.responsive(8.0, 9.0, 10.0)),
+        SizedBox(height: titleToArtistSpacing),
         Text(
           song.artist,
           textAlign: TextAlign.center,
@@ -1715,19 +1812,17 @@ class _AnimatedSongScene extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontFamily: 'ProductSans',
-            fontSize: context.responsiveText(
-              context.responsive(15.0, 16.0, 18.0),
-            ),
+            fontSize: context.responsiveText(artistSize),
             fontWeight: FontWeight.w500,
             color: Colors.white.withValues(alpha: 0.82),
           ),
         ),
         if (song.album != null && song.album!.trim().isNotEmpty) ...[
-          SizedBox(height: context.responsive(12.0, 14.0, 16.0)),
+          SizedBox(height: artistToAlbumSpacing),
           Container(
             padding: EdgeInsets.symmetric(
-              horizontal: context.responsive(12.0, 14.0, 16.0),
-              vertical: context.responsive(6.0, 7.0, 8.0),
+              horizontal: albumHorizontalPadding,
+              vertical: albumVerticalPadding,
             ),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.08),
@@ -1740,9 +1835,7 @@ class _AnimatedSongScene extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontFamily: 'ProductSans',
-                fontSize: context.responsiveText(
-                  context.responsive(12.0, 13.0, 14.0),
-                ),
+                fontSize: context.responsiveText(albumFontSize),
                 color: Colors.white.withValues(alpha: 0.74),
               ),
             ),
@@ -1753,7 +1846,8 @@ class _AnimatedSongScene extends StatelessWidget {
   }
 
   Widget _buildPlaybackStack(BuildContext context) {
-    final immersivePlaybackPadding = playerScreenMode == PlayerScreenMode.immersive
+    final immersivePlaybackPadding =
+        playerScreenMode == PlayerScreenMode.immersive
         ? context.responsive(18.0, 24.0, 30.0)
         : 0.0;
 
@@ -1785,20 +1879,28 @@ class _AnimatedSongScene extends StatelessWidget {
 
 class _AlbumArtBox extends StatelessWidget {
   final Song song;
+  final double? size;
 
-  const _AlbumArtBox({required this.song});
+  const _AlbumArtBox({required this.song, this.size});
 
   @override
   Widget build(BuildContext context) {
-    final size = context.responsive(280.0, 320.0, 360.0);
+    final double resolvedSize =
+        size ?? context.responsive(280.0, 320.0, 360.0);
+    final framePadding = resolvedSize < 220 ? 4.0 : 6.0;
+    final outerRadius = resolvedSize < 220 ? 26.0 : 32.0;
+    final innerRadius = math.max(outerRadius - 6.0, 18.0);
+    final iconSize = math.max(52.0, resolvedSize * 0.24);
+    final shadowBlur = resolvedSize < 220 ? 24.0 : 30.0;
+    final shadowOffsetY = resolvedSize < 220 ? 12.0 : 16.0;
 
     return Center(
       child: Container(
-        width: size,
-        height: size,
-        padding: const EdgeInsets.all(6),
+        width: resolvedSize,
+        height: resolvedSize,
+        padding: EdgeInsets.all(framePadding),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(32),
+          borderRadius: BorderRadius.circular(outerRadius),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -1811,20 +1913,20 @@ class _AlbumArtBox extends StatelessWidget {
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.28),
-              blurRadius: 30,
-              offset: const Offset(0, 16),
+              blurRadius: shadowBlur,
+              offset: Offset(0, shadowOffsetY),
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(26),
+          borderRadius: BorderRadius.circular(innerRadius),
           child: song.albumArt != null
               ? CachedImageWidget(imagePath: song.albumArt!, fit: BoxFit.cover)
               : Container(
                   color: Colors.white.withValues(alpha: 0.08),
                   child: Icon(
                     LucideIcons.music,
-                    size: context.responsive(72.0, 80.0, 88.0),
+                    size: iconSize,
                     color: Colors.white.withValues(alpha: 0.68),
                   ),
                 ),
