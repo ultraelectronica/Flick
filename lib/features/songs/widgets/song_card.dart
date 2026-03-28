@@ -25,6 +25,9 @@ class SongCard extends StatefulWidget {
   /// Callback when the card is swiped left.
   final VoidCallback? onSwipeLeft;
 
+  /// Callback when the card is swiped right.
+  final VoidCallback? onSwipeRight;
+
   const SongCard({
     super.key,
     required this.song,
@@ -33,6 +36,7 @@ class SongCard extends StatefulWidget {
     this.isSelected = false,
     this.onTap,
     this.onSwipeLeft,
+    this.onSwipeRight,
   });
 
   @override
@@ -42,6 +46,7 @@ class SongCard extends StatefulWidget {
 class _SongCardState extends State<SongCard> {
   double _dragDx = 0;
   bool _queuedFlash = false;
+  bool _favoriteFlash = false;
 
   @override
   Widget build(BuildContext context) {
@@ -51,13 +56,14 @@ class _SongCardState extends State<SongCard> {
 
     final cardWidth = MediaQuery.of(context).size.width * 0.68;
     final cardHeight = 130.0;
-    final revealProgress = (-_dragDx / 110).clamp(0.0, 1.0);
+    final queueRevealProgress = (-_dragDx / 110).clamp(0.0, 1.0);
+    final favoriteRevealProgress = (_dragDx / 110).clamp(0.0, 1.0);
 
     return RepaintBoundary(
       child: GestureDetector(
         onTap: widget.onTap,
         onHorizontalDragUpdate: (details) {
-          final nextDx = (_dragDx + details.delta.dx).clamp(-120.0, 0.0);
+          final nextDx = (_dragDx + details.delta.dx).clamp(-120.0, 120.0);
           if (nextDx != _dragDx) {
             setState(() {
               _dragDx = nextDx;
@@ -65,9 +71,27 @@ class _SongCardState extends State<SongCard> {
           }
         },
         onHorizontalDragEnd: (details) async {
+          final shouldFavorite =
+              _dragDx >= 80 ||
+              (details.primaryVelocity != null &&
+                  details.primaryVelocity! > 400);
           final shouldQueue =
               _dragDx <= -80 ||
-              (details.primaryVelocity != null && details.primaryVelocity! < -400);
+              (details.primaryVelocity != null &&
+                  details.primaryVelocity! < -400);
+          if (shouldFavorite) {
+            setState(() {
+              _dragDx = 0;
+              _favoriteFlash = true;
+            });
+            widget.onSwipeRight?.call();
+            await Future<void>.delayed(const Duration(milliseconds: 180));
+            if (!mounted) return;
+            setState(() {
+              _favoriteFlash = false;
+            });
+            return;
+          }
           if (shouldQueue) {
             setState(() {
               _dragDx = 0;
@@ -105,21 +129,32 @@ class _SongCardState extends State<SongCard> {
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusLg,
+                        ),
                         gradient: LinearGradient(
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
                           colors: [
-                            AppColors.accent.withValues(
-                              alpha: 0.14 + (revealProgress * 0.14),
+                            Colors.redAccent.withValues(
+                              alpha: 0.14 + (favoriteRevealProgress * 0.14),
                             ),
                             AppColors.surface,
+                            AppColors.accent.withValues(
+                              alpha: 0.14 + (queueRevealProgress * 0.14),
+                            ),
                           ],
                         ),
                         border: Border.all(
-                          color: AppColors.accent.withValues(
-                            alpha: 0.18 + (revealProgress * 0.26),
-                          ),
+                          color: Color.lerp(
+                            AppColors.accent.withValues(
+                              alpha: 0.18 + (queueRevealProgress * 0.26),
+                            ),
+                            Colors.redAccent.withValues(
+                              alpha: 0.18 + (favoriteRevealProgress * 0.26),
+                            ),
+                            favoriteRevealProgress,
+                          )!,
                         ),
                       ),
                       child: Padding(
@@ -128,9 +163,17 @@ class _SongCardState extends State<SongCard> {
                         ),
                         child: Row(
                           children: [
+                            Opacity(
+                              opacity: favoriteRevealProgress,
+                              child: const Icon(
+                                Icons.favorite_rounded,
+                                color: Colors.redAccent,
+                                size: 22,
+                              ),
+                            ),
                             const Spacer(),
                             Opacity(
-                              opacity: revealProgress,
+                              opacity: queueRevealProgress,
                               child: const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -161,17 +204,21 @@ class _SongCardState extends State<SongCard> {
                     offset: Offset(_dragDx / cardWidth, 0),
                     child: AnimatedScale(
                       duration: const Duration(milliseconds: 180),
-                      scale: _queuedFlash ? 0.98 : 1,
+                      scale: (_queuedFlash || _favoriteFlash) ? 0.98 : 1,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(
                             AppConstants.radiusLg,
                           ),
-                          boxShadow: _queuedFlash
+                          boxShadow: (_queuedFlash || _favoriteFlash)
                               ? [
                                   BoxShadow(
-                                    color: AppColors.accent.withValues(alpha: 0.25),
+                                    color:
+                                        (_favoriteFlash
+                                                ? Colors.redAccent
+                                                : AppColors.accent)
+                                            .withValues(alpha: 0.25),
                                     blurRadius: 18,
                                     spreadRadius: 1,
                                   ),
@@ -241,7 +288,11 @@ class _SongCardState extends State<SongCard> {
       fit: StackFit.expand,
       children: [
         if (widget.song.albumArt != null)
-          _buildRawImage(widget.song.albumArt!, fit: BoxFit.cover, artSize: size)
+          _buildRawImage(
+            widget.song.albumArt!,
+            fit: BoxFit.cover,
+            artSize: size,
+          )
         else
           _buildPlaceholderArt(),
         Container(

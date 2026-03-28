@@ -41,6 +41,9 @@ class OrbitScroll extends StatefulWidget {
   /// Callback when a song card is swiped left.
   final ValueChanged<int>? onSongSwipedLeft;
 
+  /// Callback when a song card is swiped right.
+  final ValueChanged<int>? onSongSwipedRight;
+
   /// Controller for external jump-to-index actions.
   final OrbitScrollController? controller;
 
@@ -51,6 +54,7 @@ class OrbitScroll extends StatefulWidget {
     this.onSongSelected,
     this.onSelectedIndexChanged,
     this.onSongSwipedLeft,
+    this.onSongSwipedRight,
     this.controller,
   });
 
@@ -422,6 +426,7 @@ class _OrbitScrollState extends State<OrbitScroll>
                   widget.onSongSelected?.call(actualIndex);
                 },
                 onSwipeLeft: () => widget.onSongSwipedLeft?.call(actualIndex),
+                onSwipeRight: () => widget.onSongSwipedRight?.call(actualIndex),
               ),
             ),
           ),

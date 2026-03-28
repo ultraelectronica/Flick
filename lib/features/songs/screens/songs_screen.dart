@@ -290,6 +290,9 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
         onSongSwipedLeft: (index) async {
           await _queueSong(songs[index]);
         },
+        onSongSwipedRight: (index) async {
+          await _favoriteSong(songs[index]);
+        },
       ),
     );
   }
@@ -314,6 +317,9 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
           child: _QueueSwipeListItem(
             onQueued: () async {
               await _queueSong(song);
+            },
+            onFavorited: () async {
+              await _favoriteSong(song);
             },
             child: Material(
               color: Colors.transparent,
@@ -625,6 +631,17 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Queued "${song.title}"')));
+  }
+
+  Future<void> _favoriteSong(Song song) async {
+    final isFavorite = await ref
+        .read(favoritesProvider.notifier)
+        .toggleFavorite(song.id);
+    if (!mounted) return;
+    final label = isFavorite ? 'Added to favorites' : 'Removed from favorites';
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$label: "${song.title}"')));
   }
 
   Widget _buildLoadingState() {
@@ -1104,8 +1121,13 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
 class _QueueSwipeListItem extends StatefulWidget {
   final Widget child;
   final Future<void> Function() onQueued;
+  final Future<void> Function() onFavorited;
 
-  const _QueueSwipeListItem({required this.child, required this.onQueued});
+  const _QueueSwipeListItem({
+    required this.child,
+    required this.onQueued,
+    required this.onFavorited,
+  });
 
   @override
   State<_QueueSwipeListItem> createState() => _QueueSwipeListItemState();
@@ -1114,10 +1136,12 @@ class _QueueSwipeListItem extends StatefulWidget {
 class _QueueSwipeListItemState extends State<_QueueSwipeListItem> {
   double _dragDx = 0;
   bool _queuedFlash = false;
+  bool _favoriteFlash = false;
 
   @override
   Widget build(BuildContext context) {
-    final revealProgress = (-_dragDx / 120).clamp(0.0, 1.0);
+    final queueRevealProgress = (-_dragDx / 120).clamp(0.0, 1.0);
+    final favoriteRevealProgress = (_dragDx / 120).clamp(0.0, 1.0);
 
     return Stack(
       children: [
@@ -1129,16 +1153,25 @@ class _QueueSwipeListItemState extends State<_QueueSwipeListItem> {
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
                 colors: [
-                  AppColors.accent.withValues(
-                    alpha: 0.14 + (revealProgress * 0.14),
+                  Colors.redAccent.withValues(
+                    alpha: 0.14 + (favoriteRevealProgress * 0.14),
                   ),
                   AppColors.surface,
+                  AppColors.accent.withValues(
+                    alpha: 0.14 + (queueRevealProgress * 0.14),
+                  ),
                 ],
               ),
               border: Border.all(
-                color: AppColors.accent.withValues(
-                  alpha: 0.18 + (revealProgress * 0.24),
-                ),
+                color: Color.lerp(
+                  AppColors.accent.withValues(
+                    alpha: 0.18 + (queueRevealProgress * 0.24),
+                  ),
+                  Colors.redAccent.withValues(
+                    alpha: 0.18 + (favoriteRevealProgress * 0.24),
+                  ),
+                  favoriteRevealProgress,
+                )!,
               ),
             ),
             child: Padding(
@@ -1147,9 +1180,17 @@ class _QueueSwipeListItemState extends State<_QueueSwipeListItem> {
               ),
               child: Row(
                 children: [
+                  Opacity(
+                    opacity: favoriteRevealProgress,
+                    child: const Icon(
+                      Icons.favorite_rounded,
+                      color: Colors.redAccent,
+                      size: 22,
+                    ),
+                  ),
                   const Spacer(),
                   Opacity(
-                    opacity: revealProgress,
+                    opacity: queueRevealProgress,
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1176,7 +1217,7 @@ class _QueueSwipeListItemState extends State<_QueueSwipeListItem> {
         ),
         GestureDetector(
           onHorizontalDragUpdate: (details) {
-            final nextDx = (_dragDx + details.delta.dx).clamp(-132.0, 0.0);
+            final nextDx = (_dragDx + details.delta.dx).clamp(-132.0, 132.0);
             if (nextDx != _dragDx) {
               setState(() {
                 _dragDx = nextDx;
@@ -1184,10 +1225,28 @@ class _QueueSwipeListItemState extends State<_QueueSwipeListItem> {
             }
           },
           onHorizontalDragEnd: (details) async {
+            final shouldFavorite =
+                _dragDx >= 84 ||
+                (details.primaryVelocity != null &&
+                    details.primaryVelocity! > 400);
             final shouldQueue =
                 _dragDx <= -84 ||
                 (details.primaryVelocity != null &&
                     details.primaryVelocity! < -400);
+            if (shouldFavorite) {
+              setState(() {
+                _dragDx = 0;
+                _favoriteFlash = true;
+              });
+              await widget.onFavorited();
+              if (!mounted) return;
+              await Future<void>.delayed(const Duration(milliseconds: 180));
+              if (!mounted) return;
+              setState(() {
+                _favoriteFlash = false;
+              });
+              return;
+            }
             if (shouldQueue) {
               setState(() {
                 _dragDx = 0;
@@ -1220,15 +1279,19 @@ class _QueueSwipeListItemState extends State<_QueueSwipeListItem> {
             offset: Offset(_dragDx / 360, 0),
             child: AnimatedScale(
               duration: const Duration(milliseconds: 180),
-              scale: _queuedFlash ? 0.985 : 1,
+              scale: (_queuedFlash || _favoriteFlash) ? 0.985 : 1,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                  boxShadow: _queuedFlash
+                  boxShadow: (_queuedFlash || _favoriteFlash)
                       ? [
                           BoxShadow(
-                            color: AppColors.accent.withValues(alpha: 0.22),
+                            color:
+                                (_favoriteFlash
+                                        ? Colors.redAccent
+                                        : AppColors.accent)
+                                    .withValues(alpha: 0.22),
                             blurRadius: 18,
                             spreadRadius: 1,
                           ),
