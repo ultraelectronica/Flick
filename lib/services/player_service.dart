@@ -46,6 +46,7 @@ class PlayerService {
   bool _rustBackendAvailable = false;
   bool _rustListenersAttached = false;
   Future<bool>? _rustInitInFlight;
+  bool _suppressSequenceStateUpdates = false;
 
   // Timer to periodically save position
   Timer? _positionSaveTimer;
@@ -353,7 +354,7 @@ class PlayerService {
     _justAudioPlayer.sequenceStateStream.listen((sequenceState) {
       if (_usingRustBackend) return;
       // Skip updates during playlist rebuild to prevent wrong song display
-      if (_isRebuildingPlaylist) return;
+      if (_isRebuildingPlaylist || _suppressSequenceStateUpdates) return;
 
       if (sequenceState.currentIndex != null) {
         final newIndex = sequenceState.currentIndex!;
@@ -753,14 +754,16 @@ class PlayerService {
         // Build audio sources for gapless playback
         final sources = await _buildAudioSources();
 
-        await _justAudioPlayer.setAudioSources(
-          sources,
-          initialIndex: _currentIndex,
-          preload: true, // Enable gapless playback by preloading next track
-        );
-        await _justAudioPlayer.setSpeed(playbackSpeedNotifier.value);
-        await _updateLoopMode();
-        await _justAudioPlayer.play();
+        await _runWithSuppressedSequenceStateUpdates(() async {
+          await _justAudioPlayer.setAudioSources(
+            sources,
+            initialIndex: _currentIndex,
+            preload: true, // Enable gapless playback by preloading next track
+          );
+          await _justAudioPlayer.setSpeed(playbackSpeedNotifier.value);
+          await _updateLoopMode();
+          await _justAudioPlayer.play();
+        });
         await reapplyEqualizer();
         await _syncUac2PlaybackStatus(song, isPlaying: true);
 
@@ -867,12 +870,15 @@ class PlayerService {
         _justAudioPlayer.processingState == just_audio.ProcessingState.idle) {
       // Rebuild playlist if needed
       final sources = await _buildAudioSources();
-      await _justAudioPlayer.setAudioSources(
-        sources,
-        initialIndex: _currentIndex >= 0 ? _currentIndex : 0,
-        preload: true,
-      );
-      await _justAudioPlayer.seek(positionNotifier.value);
+      final resumeIndex = _currentIndex >= 0 ? _currentIndex : 0;
+      await _runWithSuppressedSequenceStateUpdates(() async {
+        await _justAudioPlayer.setAudioSources(
+          sources,
+          initialIndex: resumeIndex,
+          preload: true,
+        );
+        await _justAudioPlayer.seek(positionNotifier.value, index: resumeIndex);
+      });
     }
     await _justAudioPlayer.play();
     await _syncUac2PlaybackStatus(song, isPlaying: true);
@@ -981,14 +987,16 @@ class PlayerService {
 
       final sources = await _buildAudioSources();
 
-      await _justAudioPlayer.setAudioSources(
-        sources,
-        initialIndex: _currentIndex,
-        preload: true,
-      );
+      await _runWithSuppressedSequenceStateUpdates(() async {
+        await _justAudioPlayer.setAudioSources(
+          sources,
+          initialIndex: _currentIndex,
+          preload: true,
+        );
 
-      await _justAudioPlayer.seek(currentPosition);
-      await _updateLoopMode();
+        await _justAudioPlayer.seek(currentPosition, index: _currentIndex);
+        await _updateLoopMode();
+      });
 
       if (wasPlaying) {
         await _justAudioPlayer.play();
@@ -1251,6 +1259,18 @@ class PlayerService {
     bufferedPositionNotifier.dispose();
     playbackSpeedNotifier.dispose();
     sleepTimerRemainingNotifier.dispose();
+  }
+
+  Future<T> _runWithSuppressedSequenceStateUpdates<T>(
+    Future<T> Function() action,
+  ) async {
+    final previousValue = _suppressSequenceStateUpdates;
+    _suppressSequenceStateUpdates = true;
+    try {
+      return await action();
+    } finally {
+      _suppressSequenceStateUpdates = previousValue;
+    }
   }
 }
 
