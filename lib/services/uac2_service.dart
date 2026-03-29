@@ -59,6 +59,7 @@ class Uac2DeviceStatus {
   final Uac2DeviceInfo device;
   final Uac2State state;
   final String? errorMessage;
+  final String? warningMessage;
   final Uac2AudioFormat? currentFormat;
   final Uac2RouteType routeType;
   final String? routeLabel;
@@ -72,6 +73,7 @@ class Uac2DeviceStatus {
     required this.device,
     required this.state,
     this.errorMessage,
+    this.warningMessage,
     this.currentFormat,
     this.routeType = Uac2RouteType.unknown,
     this.routeLabel,
@@ -86,6 +88,7 @@ class Uac2DeviceStatus {
     Uac2DeviceInfo? device,
     Uac2State? state,
     Object? errorMessage = _unset,
+    Object? warningMessage = _unset,
     Object? currentFormat = _unset,
     Uac2RouteType? routeType,
     Object? routeLabel = _unset,
@@ -101,6 +104,9 @@ class Uac2DeviceStatus {
       errorMessage: identical(errorMessage, _unset)
           ? this.errorMessage
           : errorMessage as String?,
+      warningMessage: identical(warningMessage, _unset)
+          ? this.warningMessage
+          : warningMessage as String?,
       currentFormat: identical(currentFormat, _unset)
           ? this.currentFormat
           : currentFormat as Uac2AudioFormat?,
@@ -262,7 +268,16 @@ class Uac2Service {
     if (!rust_uac2.uac2IsAvailable()) return null;
     try {
       return const Uac2DeviceCapabilities(
-        supportedSampleRates: [44100, 48000, 96000, 192000],
+        supportedSampleRates: [
+          44100,
+          48000,
+          88200,
+          96000,
+          176400,
+          192000,
+          352800,
+          384000,
+        ],
         supportedBitDepths: [16, 24, 32],
         supportedChannels: [2],
         deviceType: 'DAC',
@@ -296,7 +311,21 @@ class Uac2Service {
           }
         }
 
-        // On Android, we use native USB implementation, not Rust
+        final activated = await _channel.invokeMethod<bool>(
+          'activateDirectUsb',
+          {'deviceName': deviceIdentifier},
+        );
+        if (activated != true) {
+          _updateStatus(
+            Uac2DeviceStatus(
+              device: device,
+              state: Uac2State.error,
+              errorMessage: 'Failed to activate direct USB DAC',
+            ),
+          );
+          return false;
+        }
+
         await _preferencesService.saveSelectedDevice(device);
         await _refreshAndroidRouteStatus(
           preferredDevice: device,
@@ -422,6 +451,11 @@ class Uac2Service {
       debugPrint('Uac2Service.disconnect failed: $e');
     } finally {
       if (Platform.isAndroid) {
+        try {
+          await _channel.invokeMethod<bool>('deactivateDirectUsb');
+        } catch (e) {
+          debugPrint('Uac2Service.deactivateDirectUsb failed: $e');
+        }
         await _refreshAndroidRouteStatus(
           formatOverride: _lastKnownFormat,
           isPlaying: _lastKnownIsPlaying,
@@ -693,7 +727,35 @@ class Uac2Service {
     _lastKnownHasSong = song != null;
 
     if (Platform.isAndroid) {
+      final resolvedPreferredDevice = await _resolvePreferredAndroidDevice(
+        null,
+      );
+      if (resolvedPreferredDevice != null &&
+          (resolvedPreferredDevice.deviceName?.isNotEmpty ?? false) &&
+          _shouldActivateAndroidDirectUsb(resolvedPreferredDevice)) {
+        await selectDevice(resolvedPreferredDevice);
+      }
+
+      if (formatOverride != null) {
+        try {
+          await _channel.invokeMethod<bool>('setDirectUsbPlaybackFormat', {
+            'sampleRate': formatOverride.sampleRate,
+            'bitDepth': formatOverride.bitDepth,
+            'channels': formatOverride.channels,
+          });
+        } catch (e) {
+          debugPrint('Uac2Service.setDirectUsbPlaybackFormat failed: $e');
+        }
+      } else {
+        try {
+          await _channel.invokeMethod<bool>('clearDirectUsbPlaybackFormat');
+        } catch (e) {
+          debugPrint('Uac2Service.clearDirectUsbPlaybackFormat failed: $e');
+        }
+      }
+
       await _refreshAndroidRouteStatus(
+        preferredDevice: resolvedPreferredDevice,
         formatOverride: formatOverride,
         isPlaying: isPlaying,
         hasActiveSong: song != null,
@@ -750,6 +812,7 @@ class Uac2Service {
           device: fallbackDevice,
           state: Uac2State.error,
           errorMessage: 'Audio route unavailable',
+          warningMessage: null,
           currentFormat: effectiveFormat,
         ),
       );
@@ -783,6 +846,7 @@ class Uac2Service {
           device: resolvedPreferredDevice,
           state: Uac2State.error,
           errorMessage: 'Selected USB DAC not detected',
+          warningMessage: null,
           currentFormat: effectiveFormat,
           routeType: routeType,
           routeLabel: routeLabel,
@@ -808,6 +872,7 @@ class Uac2Service {
         device: routeDevice,
         state: effectiveIsPlaying ? Uac2State.streaming : Uac2State.connected,
         errorMessage: null,
+        warningMessage: _androidRouteWarningMessage(routeType),
         currentFormat: effectiveFormat,
         routeType: routeType,
         routeLabel: routeLabel,
@@ -820,6 +885,19 @@ class Uac2Service {
     );
   }
 
+  Future<bool> isAndroidExternalUsbRouteActive() async {
+    if (!Platform.isAndroid) {
+      return false;
+    }
+
+    final resolvedPreferredDevice = await _resolvePreferredAndroidDevice(null);
+    final routeStatus = await _getAndroidRouteStatus(
+      preferredDevice: resolvedPreferredDevice,
+    );
+    return _routeTypeFromString(routeStatus?['routeType'] as String?) ==
+        Uac2RouteType.externalUsb;
+  }
+
   Future<Uac2DeviceInfo?> _resolvePreferredAndroidDevice(
     Uac2DeviceInfo? preferredDevice,
   ) async {
@@ -827,7 +905,7 @@ class Uac2Service {
         (preferredDevice.vendorId != 0 ||
             preferredDevice.productId != 0 ||
             (preferredDevice.deviceName?.isNotEmpty ?? false))) {
-      return preferredDevice;
+      return _resolveConnectedAndroidDevice(preferredDevice);
     }
 
     final currentDevice = _currentDeviceStatus;
@@ -835,7 +913,64 @@ class Uac2Service {
       return currentDevice.device;
     }
 
-    return _preferencesService.loadSelectedDevice();
+    final storedDevice = await _preferencesService.loadSelectedDevice();
+    return _resolveConnectedAndroidDevice(storedDevice);
+  }
+
+  Future<Uac2DeviceInfo?> _resolveConnectedAndroidDevice(
+    Uac2DeviceInfo? preferredDevice,
+  ) async {
+    if (!Platform.isAndroid || preferredDevice == null) {
+      return preferredDevice;
+    }
+
+    if (preferredDevice.deviceName?.isNotEmpty ?? false) {
+      return preferredDevice;
+    }
+
+    final devices = await _listDevicesAndroid();
+    for (final device in devices) {
+      if (_isSameAndroidDevice(device, preferredDevice)) {
+        return device;
+      }
+    }
+
+    return preferredDevice;
+  }
+
+  bool _shouldActivateAndroidDirectUsb(Uac2DeviceInfo preferredDevice) {
+    final currentStatus = _currentDeviceStatus;
+    if (currentStatus == null) {
+      return true;
+    }
+
+    if (!_isSameAndroidDevice(currentStatus.device, preferredDevice)) {
+      return true;
+    }
+
+    return currentStatus.state == Uac2State.error ||
+        !currentStatus.isExternalRoute;
+  }
+
+  bool _isSameAndroidDevice(Uac2DeviceInfo a, Uac2DeviceInfo b) {
+    final hasSerial =
+        (a.serial?.isNotEmpty ?? false) && (b.serial?.isNotEmpty ?? false);
+    if (hasSerial) {
+      return a.vendorId == b.vendorId &&
+          a.productId == b.productId &&
+          a.serial == b.serial;
+    }
+
+    final hasDeviceName =
+        (a.deviceName?.isNotEmpty ?? false) &&
+        (b.deviceName?.isNotEmpty ?? false);
+    if (hasDeviceName) {
+      return a.deviceName == b.deviceName;
+    }
+
+    return a.vendorId == b.vendorId &&
+        a.productId == b.productId &&
+        a.productName == b.productName;
   }
 
   Future<Map<String, dynamic>?> _getAndroidRouteStatus({
@@ -909,6 +1044,20 @@ class Uac2Service {
   void _updateStatus(Uac2DeviceStatus? status) {
     _currentDeviceStatus = status;
     _notifyStatusListeners();
+  }
+}
+
+String? _androidRouteWarningMessage(Uac2RouteType routeType) {
+  switch (routeType) {
+    case Uac2RouteType.externalUsb:
+      return 'External USB DAC route is active. The format shown below is the track format, not a confirmed DAC output rate. Confirm the DAC indicator because Android may still keep the device locked or resample the stream.';
+    case Uac2RouteType.dock:
+      return 'Dock audio route is active. The format shown below is the track format, not a confirmed DAC output rate. Confirm the actual output mode on the device.';
+    case Uac2RouteType.internalDac:
+    case Uac2RouteType.wired:
+    case Uac2RouteType.bluetooth:
+    case Uac2RouteType.unknown:
+      return null;
   }
 }
 

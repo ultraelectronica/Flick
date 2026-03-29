@@ -11,6 +11,7 @@ class Uac2StatusIndicator extends ConsumerWidget {
     final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
     final deviceStatus = deviceStatusNotifier.status;
     final isBitPerfect = ref.watch(uac2BitPerfectIndicatorProvider);
+    final warningMessage = deviceStatus?.warningMessage;
 
     if (deviceStatus == null || deviceStatus.state == Uac2State.idle) {
       return const SizedBox.shrink();
@@ -29,11 +30,7 @@ class Uac2StatusIndicator extends ConsumerWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.usb,
-            size: 16,
-            color: _getStatusColor(deviceStatus.state),
-          ),
+          Icon(Icons.usb, size: 16, color: _getStatusColor(deviceStatus.state)),
           const SizedBox(width: 4),
           Text(
             deviceStatus.device.productName,
@@ -49,7 +46,9 @@ class Uac2StatusIndicator extends ConsumerWidget {
               '${deviceStatus.currentFormat!.sampleRate ~/ 1000}kHz/${deviceStatus.currentFormat!.bitDepth}bit',
               style: TextStyle(
                 fontSize: 10,
-                color: _getStatusColor(deviceStatus.state).withValues(alpha: 0.8),
+                color: _getStatusColor(
+                  deviceStatus.state,
+                ).withValues(alpha: 0.8),
               ),
             ),
           ],
@@ -60,6 +59,9 @@ class Uac2StatusIndicator extends ConsumerWidget {
               size: 14,
               color: _getStatusColor(deviceStatus.state),
             ),
+          ] else if (warningMessage != null) ...[
+            const SizedBox(width: 4),
+            Icon(Icons.info_outline, size: 14, color: Colors.amber.shade400),
           ],
         ],
       ),

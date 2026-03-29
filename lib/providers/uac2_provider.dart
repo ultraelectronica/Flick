@@ -89,16 +89,17 @@ class SelectedUac2Device extends Notifier<Uac2DeviceInfo?> {
 
 final selectedUac2DeviceProvider =
     NotifierProvider<SelectedUac2Device, Uac2DeviceInfo?>(
-  SelectedUac2Device.new,
-);
+      SelectedUac2Device.new,
+    );
 
 final uac2DeviceCapabilitiesProvider =
-    FutureProvider.family<Uac2DeviceCapabilities?, Uac2DeviceInfo>(
-  (ref, device) async {
-    final service = ref.watch(uac2ServiceProvider);
-    return service.getDeviceCapabilities(device);
-  },
-);
+    FutureProvider.family<Uac2DeviceCapabilities?, Uac2DeviceInfo>((
+      ref,
+      device,
+    ) async {
+      final service = ref.watch(uac2ServiceProvider);
+      return service.getDeviceCapabilities(device);
+    });
 
 class Uac2Enabled extends Notifier<bool> {
   @override
@@ -123,6 +124,10 @@ final uac2BitPerfectIndicatorProvider = Provider<bool>((ref) {
   if (status == null || status.state != Uac2State.streaming) {
     return false;
   }
+  if (status.routeType == Uac2RouteType.externalUsb ||
+      status.routeType == Uac2RouteType.dock) {
+    return false;
+  }
   return true;
 });
 
@@ -140,14 +145,16 @@ final uac2AutoSelectDeviceProvider = FutureProvider<bool>((ref) async {
   return service.getAutoSelectDevice();
 });
 
-final uac2FormatPreferenceProvider =
-    FutureProvider<Uac2FormatPreference>((ref) async {
+final uac2FormatPreferenceProvider = FutureProvider<Uac2FormatPreference>((
+  ref,
+) async {
   final service = ref.watch(uac2PreferencesServiceProvider);
   return service.getFormatPreference();
 });
 
-final uac2PreferredFormatProvider =
-    FutureProvider<Uac2AudioFormat?>((ref) async {
+final uac2PreferredFormatProvider = FutureProvider<Uac2AudioFormat?>((
+  ref,
+) async {
   final service = ref.watch(uac2PreferencesServiceProvider);
   return service.loadPreferredFormat();
 });

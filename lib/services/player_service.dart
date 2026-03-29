@@ -247,6 +247,16 @@ class PlayerService {
   Uac2AudioFormat? _deriveUac2FormatFromSong(Song? song) {
     if (song == null) return null;
 
+    final structuredSampleRate = song.sampleRate;
+    final structuredBitDepth = song.bitDepth;
+    if (structuredSampleRate != null || structuredBitDepth != null) {
+      return Uac2AudioFormat(
+        sampleRate: structuredSampleRate ?? 44100,
+        bitDepth: structuredBitDepth ?? 16,
+        channels: 2,
+      );
+    }
+
     final resolution = song.resolution ?? '';
     final bitDepthMatch = RegExp(
       r'(\d+)-bit',
@@ -287,10 +297,10 @@ class PlayerService {
     _justAudioPlayer.errorStream.listen((error) {
       if (_usingRustBackend) return;
       final song = currentSongNotifier.value;
-      if (song == null || !_shouldUseRustFallback(song)) return;
+      if (song == null) return;
 
       debugPrint('just_audio error for ${song.title}: $error');
-      unawaited(_tryRustFallbackPlayback(song));
+      unawaited(_tryRustFallbackPlayback(song, force: true));
     });
 
     _justAudioPlayer.playerStateStream.listen((state) {
@@ -697,9 +707,21 @@ class PlayerService {
     }
   }
 
-  bool _shouldUseRustFallback(Song song) {
+  bool _requiresRustFormatFallback(Song song) {
     final normalized = song.fileType.replaceAll('.', '').trim().toUpperCase();
     return normalized == 'ALAC' || normalized == 'M4A';
+  }
+
+  Future<bool> _shouldPreferRustBackend(Song song) async {
+    if (_requiresRustFormatFallback(song)) {
+      return true;
+    }
+
+    if (!Platform.isAndroid) {
+      return false;
+    }
+
+    return _uac2Service.isAndroidExternalUsbRouteActive();
   }
 
   Future<String?> _resolveRustPath(Song song) async {
@@ -726,8 +748,8 @@ class PlayerService {
     return null;
   }
 
-  Future<bool> _tryRustFallbackPlayback(Song song) async {
-    if (!_shouldUseRustFallback(song)) {
+  Future<bool> _tryRustFallbackPlayback(Song song, {bool force = false}) async {
+    if (!force && !await _shouldPreferRustBackend(song)) {
       return false;
     }
 
@@ -745,7 +767,11 @@ class PlayerService {
     try {
       _usingRustBackend = true;
       await _justAudioPlayer.stop();
-      await _rustAudioService.setPlaybackSpeed(playbackSpeedNotifier.value);
+      await _uac2Service.syncPlaybackStatus(
+        song: song,
+        isPlaying: false,
+        formatOverride: _deriveUac2FormatFromSong(song),
+      );
       await _rustAudioService.play(path);
 
       final started = await _waitForRustPlaybackStart();
@@ -763,6 +789,12 @@ class PlayerService {
           ? _rustAudioService.durationNotifier.value
           : song.duration;
       bufferedPositionNotifier.value = Duration.zero;
+      await _rustAudioService.setPlaybackSpeed(playbackSpeedNotifier.value);
+      await _rustAudioService.setVolume(_rustAudioService.volumeNotifier.value);
+      await _rustAudioService.setCrossfade(
+        enabled: _rustAudioService.crossfadeEnabledNotifier.value,
+        durationSecs: _rustAudioService.crossfadeDurationNotifier.value,
+      );
       await reapplyEqualizer();
       await _updateNotificationState();
       await _syncUac2PlaybackStatus(song, isPlaying: isPlayingNotifier.value);
@@ -831,10 +863,10 @@ class PlayerService {
             isFavorite: isFav,
           );
 
-          // Prefer Rust backend up-front for formats that frequently fail or
-          // silently decode incorrectly on some Android decoder stacks.
-          if (_shouldUseRustFallback(song)) {
-            final usedRust = await _tryRustFallbackPlayback(song);
+          // Prefer the native backend for USB DAC playback and for formats that
+          // are unreliable on the platform decoder stack.
+          if (await _shouldPreferRustBackend(song)) {
+            final usedRust = await _tryRustFallbackPlayback(song, force: true);
             if (usedRust) {
               return;
             }
@@ -865,7 +897,10 @@ class PlayerService {
       });
     } catch (e) {
       debugPrint("Error playing song with just_audio: $e");
-      final usedRustFallback = await _tryRustFallbackPlayback(song);
+      final usedRustFallback = await _tryRustFallbackPlayback(
+        song,
+        force: true,
+      );
       if (!usedRustFallback) {
         debugPrint("Playback failed on both backends for ${song.title}");
       }

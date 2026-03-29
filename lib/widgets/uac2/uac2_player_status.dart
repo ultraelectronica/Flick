@@ -54,11 +54,7 @@ class Uac2PlayerStatus extends ConsumerWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.usb,
-            size: 14,
-            color: _getStatusColor(status.state),
-          ),
+          Icon(Icons.usb, size: 14, color: _getStatusColor(status.state)),
           if (status.currentFormat != null && showFormat) ...[
             const SizedBox(width: 4),
             Text(
@@ -77,6 +73,9 @@ class Uac2PlayerStatus extends ConsumerWidget {
               size: 12,
               color: _getStatusColor(status.state),
             ),
+          ] else if (status.warningMessage != null) ...[
+            const SizedBox(width: 4),
+            Icon(Icons.info_outline, size: 12, color: Colors.amber.shade400),
           ],
         ],
       ),
@@ -178,8 +177,8 @@ class Uac2PlayerStatus extends ConsumerWidget {
                   status.currentFormat!.channels == 1
                       ? 'Mono'
                       : status.currentFormat!.channels == 2
-                          ? 'Stereo'
-                          : '${status.currentFormat!.channels}ch',
+                      ? 'Stereo'
+                      : '${status.currentFormat!.channels}ch',
                   context,
                 ),
                 if (isBitPerfect && showBitPerfect) ...[
@@ -217,6 +216,30 @@ class Uac2PlayerStatus extends ConsumerWidget {
               ],
             ),
           ],
+          if (status.warningMessage != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 12,
+                  color: Colors.amber.shade400,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    status.warningMessage!,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.amber.shade400,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (status.errorMessage != null) ...[
             const SizedBox(height: 6),
             Row(
@@ -231,10 +254,7 @@ class Uac2PlayerStatus extends ConsumerWidget {
                 Flexible(
                   child: Text(
                     status.errorMessage!,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.red.shade400,
-                    ),
+                    style: TextStyle(fontSize: 10, color: Colors.red.shade400),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -252,10 +272,7 @@ class Uac2PlayerStatus extends ConsumerWidget {
       decoration: BoxDecoration(
         color: AppColors.glassBackgroundStrong,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: AppColors.glassBorder,
-          width: 0.5,
-        ),
+        border: Border.all(color: AppColors.glassBorder, width: 0.5),
       ),
       child: Text(
         label,

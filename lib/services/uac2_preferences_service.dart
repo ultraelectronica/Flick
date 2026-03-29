@@ -3,11 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flick/services/uac2_service.dart';
 
-enum Uac2FormatPreference {
-  highestQuality,
-  compatibility,
-  custom,
-}
+enum Uac2FormatPreference { highestQuality, compatibility, custom }
 
 class Uac2PreferencesService {
   static const _keySelectedDevice = 'uac2_selected_device';
@@ -25,6 +21,7 @@ class Uac2PreferencesService {
         'serial': device.serial,
         'productName': device.productName,
         'manufacturer': device.manufacturer,
+        'deviceName': device.deviceName,
       });
       await prefs.setString(_keySelectedDevice, deviceJson);
     } catch (e) {
@@ -45,6 +42,7 @@ class Uac2PreferencesService {
         serial: map['serial'] as String?,
         productName: map['productName'] as String,
         manufacturer: map['manufacturer'] as String,
+        deviceName: map['deviceName'] as String?,
       );
     } catch (e) {
       debugPrint('Failed to load selected device: $e');
@@ -137,7 +135,7 @@ class Uac2PreferencesService {
       final prefs = await SharedPreferences.getInstance();
       final value = prefs.getString(_keyFormatPreference);
       if (value == null) return Uac2FormatPreference.highestQuality;
-      
+
       return Uac2FormatPreference.values.firstWhere(
         (e) => e.name == value,
         orElse: () => Uac2FormatPreference.highestQuality,
