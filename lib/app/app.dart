@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -178,8 +180,11 @@ class _MainShellState extends ConsumerState<MainShell>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      unawaited(ref.read(playerServiceProvider).persistLastPlayed());
+
       // Attempt to scrobble the current track before the app suspends.
       // Only fire if playback is not active — audio apps often keep playing
       // in the background, so treat this as a true "end" only when paused.

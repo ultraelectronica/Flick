@@ -394,6 +394,7 @@ class PlayerService {
       currentSongNotifier.value = newSong;
       _recentlyPlayedRepository.recordPlay(newSong.id);
       positionNotifier.value = Duration.zero;
+      unawaited(_savePosition());
       unawaited(
         _syncUac2PlaybackStatus(newSong, isPlaying: isPlayingNotifier.value),
       );
@@ -745,6 +746,7 @@ class PlayerService {
 
       positionNotifier.value = Duration.zero;
       durationNotifier.value = Duration.zero;
+      await _savePosition();
 
       if (song.filePath != null) {
         final isFav = await _favoritesService.isFavorite(song.id);
@@ -812,6 +814,10 @@ class PlayerService {
     }
   }
 
+  Future<void> persistLastPlayed() async {
+    await _savePosition();
+  }
+
   Future<void> restoreLastPlayed() async {
     final lastPlayed = await _lastPlayedService.getLastPlayed();
     if (lastPlayed != null) {
@@ -869,6 +875,7 @@ class PlayerService {
       await _justAudioPlayer.pause();
     }
     await _syncUac2PlaybackStatus(currentSongNotifier.value, isPlaying: false);
+    await _savePosition();
     _updateNotificationState();
   }
 
