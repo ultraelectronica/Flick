@@ -1664,17 +1664,17 @@ class _AnimatedSongScene extends StatelessWidget {
         final topPadding = isVeryShortHeight
             ? 6.0
             : context.responsive(10.0, 12.0, 16.0);
-        final maxArtworkSize = context.responsive(280.0, 320.0, 360.0);
+        final maxArtworkSize = context.responsive(320.0, 360.0, 400.0);
         final artworkSize = math
             .min(
               constraints.maxWidth - (horizontalPadding * 2),
               isVeryShortHeight
-                  ? constraints.maxHeight * 0.30
-                  : isShortHeight
                   ? constraints.maxHeight * 0.34
-                  : constraints.maxHeight * 0.40,
+                  : isShortHeight
+                  ? constraints.maxHeight * 0.38
+                  : constraints.maxHeight * 0.44,
             )
-            .clamp(isVeryShortHeight ? 160.0 : 180.0, maxArtworkSize)
+            .clamp(isVeryShortHeight ? 180.0 : 200.0, maxArtworkSize)
             .toDouble();
         final artworkSpacing = isVeryShortHeight
             ? 14.0
@@ -1762,15 +1762,15 @@ class _AnimatedSongScene extends StatelessWidget {
     bool veryCompact = false,
   }) {
     final titleSize = veryCompact
-        ? context.responsive(22.0, 24.0, 28.0)
+        ? context.responsive(19.0, 21.0, 24.0)
         : compact
-        ? context.responsive(24.0, 27.0, 30.0)
-        : context.responsive(28.0, 30.0, 34.0);
+        ? context.responsive(21.0, 24.0, 27.0)
+        : context.responsive(24.0, 26.0, 29.0);
     final artistSize = veryCompact
-        ? context.responsive(13.0, 14.0, 16.0)
+        ? context.responsive(12.0, 13.0, 14.0)
         : compact
-        ? context.responsive(14.0, 15.0, 17.0)
-        : context.responsive(15.0, 16.0, 18.0);
+        ? context.responsive(13.0, 14.0, 15.0)
+        : context.responsive(14.0, 15.0, 16.0);
     final titleToArtistSpacing = veryCompact
         ? 6.0
         : context.responsive(8.0, 9.0, 10.0);
@@ -1786,8 +1786,8 @@ class _AnimatedSongScene extends StatelessWidget {
         ? 5.0
         : context.responsive(6.0, 7.0, 8.0);
     final albumFontSize = veryCompact
-        ? context.responsive(11.0, 12.0, 13.0)
-        : context.responsive(12.0, 13.0, 14.0);
+        ? context.responsive(10.0, 11.0, 12.0)
+        : context.responsive(11.0, 12.0, 13.0);
 
     return Column(
       children: [
@@ -1885,8 +1885,7 @@ class _AlbumArtBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double resolvedSize =
-        size ?? context.responsive(280.0, 320.0, 360.0);
+    final double resolvedSize = size ?? context.responsive(280.0, 320.0, 360.0);
     final framePadding = resolvedSize < 220 ? 4.0 : 6.0;
     final outerRadius = resolvedSize < 220 ? 26.0 : 32.0;
     final innerRadius = math.max(outerRadius - 6.0, 18.0);
