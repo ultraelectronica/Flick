@@ -9,6 +9,7 @@ import 'package:flick/services/last_played_service.dart';
 import 'package:flick/services/favorites_service.dart';
 import 'package:flick/data/repositories/recently_played_repository.dart';
 import 'package:flick/services/equalizer_service.dart';
+import 'package:flick/services/replay_play_tracker.dart';
 import 'package:flick/services/rust_audio_service.dart';
 import 'package:flick/services/uac2_service.dart';
 import 'package:flick/services/alac_converter_service.dart';
@@ -40,6 +41,7 @@ class PlayerService {
   final Uac2Service _uac2Service = Uac2Service.instance;
   final RecentlyPlayedRepository _recentlyPlayedRepository =
       RecentlyPlayedRepository();
+  final ReplayPlayTracker _replayPlayTracker = ReplayPlayTracker();
   static const MethodChannel _storageChannel = MethodChannel(
     'com.ultraelectronica.flick/storage',
   );
@@ -47,7 +49,10 @@ class PlayerService {
   final Map<String, String> _convertedPlaybackPathCache = {};
   bool _usingRustBackend = false;
   bool _rustBackendAvailable = false;
+  bool _justAudioListenersAttached = false;
   bool _rustListenersAttached = false;
+  bool _audioInitialized = false;
+  Future<void>? _audioInitInFlight;
   Future<bool>? _rustInitInFlight;
   bool _suppressSequenceStateUpdates = false;
   DateTime? _autoSyncGuardUntil;
@@ -194,15 +199,35 @@ class PlayerService {
   /// Initialize the audio engine.
   /// Sets up just_audio with gapless playback support.
   Future<void> initAudio() async {
+    if (_audioInitialized) return;
+    final inFlight = _audioInitInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+
+    final future = _initializeAudio();
+    _audioInitInFlight = future;
+    await future;
+  }
+
+  Future<void> _initializeAudio() async {
     debugPrint('Initializing just_audio with gapless playback support');
 
-    // Set up just_audio listeners
-    _setupJustAudioListeners();
-    _setupRustAudioListeners();
+    try {
+      _setupJustAudioListeners();
+      _setupRustAudioListeners();
+      await _updateLoopMode();
+      _audioInitialized = true;
 
-    // Set initial loop mode
-    await _updateLoopMode();
-    await _uac2Service.initialize();
+      unawaited(
+        _uac2Service.initialize().catchError(
+          (Object e) => debugPrint('UAC2 init failed: $e'),
+        ),
+      );
+    } finally {
+      _audioInitInFlight = null;
+    }
   }
 
   Future<bool> _ensureRustBackendAvailable() async {
@@ -294,6 +319,9 @@ class PlayerService {
   }
 
   void _setupJustAudioListeners() {
+    if (_justAudioListenersAttached) return;
+    _justAudioListenersAttached = true;
+
     _justAudioPlayer.errorStream.listen((error) {
       if (_usingRustBackend) return;
       final song = currentSongNotifier.value;
@@ -340,6 +368,7 @@ class PlayerService {
       _lastPosition = pos;
       positionNotifier.value = pos;
       _updateAutoSyncGuardFromProgress(pos);
+      _trackReplayProgress(pos);
 
       // Update notification on loop wrap-around
       if (currentSongNotifier.value != null &&
@@ -424,13 +453,45 @@ class PlayerService {
         'Track transition: ${currentSongNotifier.value?.title} -> ${newSong.title}',
       );
       currentSongNotifier.value = newSong;
-      _recentlyPlayedRepository.recordPlay(newSong.id);
+      _startReplayTracking(newSong);
       positionNotifier.value = Duration.zero;
       unawaited(_savePosition());
       unawaited(
         _syncUac2PlaybackStatus(newSong, isPlaying: isPlayingNotifier.value),
       );
       _updateNotificationState();
+    }
+  }
+
+  void _startReplayTracking(
+    Song song, {
+    Duration initialPosition = Duration.zero,
+  }) {
+    _replayPlayTracker.startTrack(song.id, initialPosition: initialPosition);
+  }
+
+  void _clearReplayTracking() {
+    _replayPlayTracker.clear();
+  }
+
+  void _trackReplayProgress(Duration position) {
+    final song = currentSongNotifier.value;
+    if (song == null) {
+      _clearReplayTracking();
+      return;
+    }
+
+    if (!isPlayingNotifier.value) {
+      _replayPlayTracker.syncPosition(songId: song.id, position: position);
+      return;
+    }
+
+    final counted = _replayPlayTracker.onPositionChanged(
+      songId: song.id,
+      position: position,
+    );
+    if (counted) {
+      unawaited(_recentlyPlayedRepository.recordPlay(song.id));
     }
   }
 
@@ -459,6 +520,7 @@ class PlayerService {
       if (!_usingRustBackend) return;
 
       positionNotifier.value = _rustAudioService.positionNotifier.value;
+      _trackReplayProgress(positionNotifier.value);
 
       final now = DateTime.now();
       if (currentSongNotifier.value != null &&
@@ -492,7 +554,12 @@ class PlayerService {
     final song = currentSongNotifier.value;
     if (song == null) return;
 
-    final isFav = await _favoritesService.isFavorite(song.id);
+    var isFav = false;
+    try {
+      isFav = await _favoritesService.isFavorite(song.id);
+    } catch (e) {
+      debugPrint('Failed to load favorite state: $e');
+    }
 
     await _notificationService.updateNotification(
       song: song,
@@ -522,6 +589,7 @@ class PlayerService {
   void _stopPlayback() async {
     await _savePosition();
     _positionSaveTimer?.cancel();
+    _clearReplayTracking();
 
     if (_usingRustBackend) {
       await _rustAudioService.stop();
@@ -796,8 +864,10 @@ class PlayerService {
         durationSecs: _rustAudioService.crossfadeDurationNotifier.value,
       );
       await reapplyEqualizer();
-      await _updateNotificationState();
-      await _syncUac2PlaybackStatus(song, isPlaying: isPlayingNotifier.value);
+      unawaited(_updateNotificationState());
+      unawaited(
+        _syncUac2PlaybackStatus(song, isPlaying: isPlayingNotifier.value),
+      );
 
       _positionSaveTimer = Timer.periodic(
         const Duration(seconds: 5),
@@ -818,6 +888,8 @@ class PlayerService {
 
   /// Play a specific song.
   Future<void> play(Song song, {List<Song>? playlist}) async {
+    await initAudio();
+
     try {
       await _runWithSuppressedSequenceStateUpdates(() async {
         _positionSaveTimer?.cancel();
@@ -845,24 +917,13 @@ class PlayerService {
 
         currentSongNotifier.value = song;
         _armAutoSyncGuard(song);
-        _recentlyPlayedRepository.recordPlay(song.id);
+        _startReplayTracking(song);
 
         positionNotifier.value = Duration.zero;
-        durationNotifier.value = Duration.zero;
-        await _savePosition();
+        durationNotifier.value = song.duration;
+        unawaited(_savePosition());
 
         if (song.filePath != null) {
-          final isFav = await _favoritesService.isFavorite(song.id);
-
-          await _notificationService.showNotification(
-            song: song,
-            isPlaying: true,
-            duration: song.duration,
-            position: Duration.zero,
-            isShuffle: isShuffleNotifier.value,
-            isFavorite: isFav,
-          );
-
           // Prefer the native backend for USB DAC playback and for formats that
           // are unreliable on the platform decoder stack.
           if (await _shouldPreferRustBackend(song)) {
@@ -887,7 +948,8 @@ class PlayerService {
           await _updateLoopMode();
           await _justAudioPlayer.play();
           await reapplyEqualizer();
-          await _syncUac2PlaybackStatus(song, isPlaying: true);
+          unawaited(_updateNotificationState());
+          unawaited(_syncUac2PlaybackStatus(song, isPlaying: true));
 
           _positionSaveTimer = Timer.periodic(
             const Duration(seconds: 5),
@@ -910,12 +972,16 @@ class PlayerService {
   Future<void> _savePosition() async {
     final song = currentSongNotifier.value;
     if (song != null) {
-      await _lastPlayedService.saveLastPlayed(
-        song.id,
-        positionNotifier.value,
-        playlistSongIds: _playlist.map((s) => s.id).toList(),
-        currentIndex: _currentIndex,
-      );
+      try {
+        await _lastPlayedService.saveLastPlayed(
+          song.id,
+          positionNotifier.value,
+          playlistSongIds: _playlist.map((s) => s.id).toList(),
+          currentIndex: _currentIndex,
+        );
+      } catch (e) {
+        debugPrint('Failed to save last played position: $e');
+      }
     }
   }
 
@@ -924,8 +990,16 @@ class PlayerService {
   }
 
   Future<void> restoreLastPlayed() async {
+    if (currentSongNotifier.value != null || isPlayingNotifier.value) {
+      return;
+    }
+
     final lastPlayed = await _lastPlayedService.getLastPlayed();
     if (lastPlayed != null) {
+      if (currentSongNotifier.value != null || isPlayingNotifier.value) {
+        return;
+      }
+
       final restoredPlaylist = lastPlayed.playlist;
 
       if (restoredPlaylist != null && restoredPlaylist.isNotEmpty) {
@@ -947,6 +1021,12 @@ class PlayerService {
 
       currentSongNotifier.value = _playlist[_currentIndex];
       final restoredSong = currentSongNotifier.value;
+      if (restoredSong != null) {
+        _startReplayTracking(
+          restoredSong,
+          initialPosition: lastPlayed.position,
+        );
+      }
 
       if (restoredSong?.filePath != null) {
         try {
@@ -985,6 +1065,8 @@ class PlayerService {
   }
 
   Future<void> resume() async {
+    await initAudio();
+
     final song = currentSongNotifier.value;
 
     // Immediately update the playing state for responsive UI
@@ -1254,6 +1336,7 @@ class PlayerService {
       }
       _setCurrentIndex(playlistIndex);
       currentSongNotifier.value = _playlist[playlistIndex];
+      _startReplayTracking(_playlist[playlistIndex]);
       positionNotifier.value = Duration.zero;
       await _justAudioPlayer.seek(Duration.zero, index: playlistIndex);
       if (!isPlayingNotifier.value) {

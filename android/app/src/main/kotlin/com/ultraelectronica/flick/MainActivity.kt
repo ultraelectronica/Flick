@@ -29,6 +29,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugins.GeneratedPluginRegistrant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -87,7 +88,8 @@ class MainActivity: FlutterActivity() {
     override fun provideFlutterEngine(context: android.content.Context): FlutterEngine? {
         var engine = FlutterEngineCache.getInstance().get("main_engine")
         if (engine == null) {
-            engine = FlutterEngine(context)
+            engine = FlutterEngine(context.applicationContext)
+            GeneratedPluginRegistrant.registerWith(engine)
             engine.dartExecutor.executeDartEntrypoint(
                 DartExecutor.DartEntrypoint.createDefault()
             )
@@ -97,8 +99,6 @@ class MainActivity: FlutterActivity() {
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "openDocumentTree" -> {

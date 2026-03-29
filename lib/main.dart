@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -19,19 +20,11 @@ Future<void> main() async {
   // Initialize database FIRST (required by PlayerService)
   await Database.init();
 
-  // Initialize audio engines
-  await _initAudioEngines();
-
-  // Set high refresh rate mode for smoother animations
-  await _setOptimalDisplayMode();
-
-  // Request notification permission (required for Android 13+ media controls)
-  await _requestNotificationPermission();
-
-  // Restore last played song state
-  await _restoreLastPlayedSong();
-
   runApp(const ProviderScope(child: FlickPlayerApp()));
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(_bootstrapAppAfterFirstFrame());
+  });
 }
 
 /// Initialize both audio engines (just_audio for Android, Rust engine for desktop).
@@ -57,11 +50,29 @@ Future<void> _initAudioEngines() async {
     if (initialized) {
       debugPrint('Rust audio engine initialized successfully');
     } else {
-      debugPrint('Rust audio engine not available (expected on mobile platforms)');
+      debugPrint(
+        'Rust audio engine not available (expected on mobile platforms)',
+      );
     }
   } catch (e) {
     debugPrint('Failed to initialize Rust audio engine: $e');
     // Continue anyway - Rust engine is only for desktop platforms
+  }
+}
+
+Future<void> _bootstrapAppAfterFirstFrame() async {
+  unawaited(_setOptimalDisplayMode());
+  unawaited(
+    _requestNotificationPermission().catchError(
+      (Object e) => debugPrint('Notification permission request failed: $e'),
+    ),
+  );
+
+  try {
+    await _initAudioEngines();
+    await _restoreLastPlayedSong();
+  } catch (e) {
+    debugPrint('Deferred audio bootstrap failed: $e');
   }
 }
 
