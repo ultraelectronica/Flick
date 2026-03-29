@@ -11,7 +11,7 @@ default = ["native_audio"]
 # Enable native audio engine (now enabled on Android with CPAL/Oboe)
 native_audio = ["cpal", "symphonia", "rubato", "ringbuf", "crossbeam-channel"]
 # Custom UAC 2.0 USB Audio (host-side DAC/AMP support)
-uac2 = ["rusb", "tokio"]
+uac2 = ["rusb", "libusb1-sys", "tokio"]
 
 [dependencies]
 flutter_rust_bridge = "=2.11.1"
@@ -33,12 +33,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # UAC 2.0 USB host (optional, for DAC/AMP detection and bit-perfect playback)
 rusb = { version = "0.9", optional = true }
+libusb1-sys = { version = "0.7", optional = true }
 
 # Async runtime for UAC2 (hot-plug, streaming)
 tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread", "sync", "macros", "io-util"] }
 
 # Audio Engine Dependencies (available on all platforms including Android)
-cpal = { version = "0.15", optional = true, features = ["oboe-shared-stdcxx"] }
+cpal = { path = "vendor/cpal", optional = true, features = ["oboe-shared-stdcxx"] }
 symphonia = { version = "0.5", features = ["all"], optional = true }
 rubato = { version = "0.15", optional = true }
 ringbuf = { version = "0.4", optional = true }
@@ -54,7 +55,7 @@ ndk-context = "0.1"
 
 # Desktop platforms use default CPAL backends
 [target.'cfg(not(target_os = "android"))'.dependencies]
-cpal = "0.15"
+cpal = { path = "vendor/cpal" }
 symphonia = { version = "0.5", features = ["all"] }
 rubato = "0.15"
 ringbuf = "0.4"

@@ -4,12 +4,58 @@
 //! Now available on all platforms including Android (using CPAL with Oboe backend).
 
 use crate::audio::commands::{AudioEvent, PlaybackState};
-use crate::audio::engine::{create_audio_engine, AudioEngineHandle};
-use once_cell::sync::OnceCell;
+use crate::audio::decoder::probe_file;
+use crate::audio::engine::{create_audio_engine, desired_output_signature, AudioEngineHandle};
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use std::path::PathBuf;
 
 // Global audio engine handle
-static AUDIO_ENGINE: OnceCell<AudioEngineHandle> = OnceCell::new();
+static AUDIO_ENGINE: Lazy<Mutex<Option<AudioEngineHandle>>> = Lazy::new(|| Mutex::new(None));
+
+fn with_audio_engine<T>(
+    f: impl FnOnce(&AudioEngineHandle) -> Result<T, String>,
+) -> Result<T, String> {
+    let guard = AUDIO_ENGINE.lock();
+    let handle = guard
+        .as_ref()
+        .ok_or_else(|| "Audio engine not initialized".to_string())?;
+    f(handle)
+}
+
+fn read_audio_engine<T>(f: impl FnOnce(&AudioEngineHandle) -> T) -> Option<T> {
+    let guard = AUDIO_ENGINE.lock();
+    guard.as_ref().map(f)
+}
+
+fn ensure_audio_engine(preferred_sample_rate: Option<u32>) -> Result<(), String> {
+    let mut guard = AUDIO_ENGINE.lock();
+    let desired_signature = desired_output_signature(preferred_sample_rate);
+    let needs_recreate = match (guard.as_ref(), preferred_sample_rate) {
+        (None, _) => true,
+        (Some(handle), Some(rate)) => {
+            handle.sample_rate() != rate || handle.output_signature() != desired_signature
+        }
+        (Some(handle), None) => handle.output_signature() != desired_signature,
+    };
+
+    if !needs_recreate {
+        return Ok(());
+    }
+
+    if let Some(handle) = guard.take() {
+        let _ = handle.shutdown();
+    }
+
+    *guard = Some(create_audio_engine(preferred_sample_rate)?);
+    Ok(())
+}
+
+fn probe_output_sample_rate(path: &PathBuf) -> Option<u32> {
+    probe_file(path.as_path())
+        .map(|probe| probe.source_info.original_sample_rate)
+        .ok()
+}
 
 // ============================================================================
 // SHARED TYPES (available on all platforms)
@@ -75,73 +121,54 @@ pub fn audio_is_native_available() -> bool {
 /// Initialize the audio engine.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_init() -> Result<(), String> {
-    let handle = create_audio_engine()?;
-    AUDIO_ENGINE
-        .set(handle)
-        .map_err(|_| "Audio engine already initialized".to_string())?;
-    Ok(())
+    ensure_audio_engine(None)
 }
 
 /// Check if the audio engine is initialized.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_is_initialized() -> bool {
-    AUDIO_ENGINE.get().is_some()
+    AUDIO_ENGINE.lock().is_some()
 }
 
 /// Play an audio file.
 pub fn audio_play(path: String) -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .play(PathBuf::from(path))
+    let path = PathBuf::from(path);
+    ensure_audio_engine(probe_output_sample_rate(&path))?;
+    with_audio_engine(|handle| handle.play(path))
 }
 
 /// Queue the next track for gapless playback.
 pub fn audio_queue_next(path: String) -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .queue_next(PathBuf::from(path))
+    let path = PathBuf::from(path);
+    if !audio_is_initialized() {
+        ensure_audio_engine(probe_output_sample_rate(&path))?;
+    }
+    with_audio_engine(|handle| handle.queue_next(path))
 }
 
 /// Pause playback.
 pub fn audio_pause() -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .pause()
+    with_audio_engine(|handle| handle.pause())
 }
 
 /// Resume playback after pause.
 pub fn audio_resume() -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .resume()
+    with_audio_engine(|handle| handle.resume())
 }
 
 /// Stop playback completely.
 pub fn audio_stop() -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .stop()
+    with_audio_engine(|handle| handle.stop())
 }
 
 /// Seek to a position in the current track.
 pub fn audio_seek(position_secs: f64) -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .seek(position_secs)
+    with_audio_engine(|handle| handle.seek(position_secs))
 }
 
 /// Set the playback volume.
 pub fn audio_set_volume(volume: f32) -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .set_volume(volume)
+    with_audio_engine(|handle| handle.set_volume(volume))
 }
 
 /// Set graphic EQ: enabled and 10 band gains in dB (order = 32,64,125,250,500,1k,2k,4k,8k,16k Hz).
@@ -151,10 +178,7 @@ pub fn audio_set_equalizer(enabled: bool, gains_db: Vec<f32>) -> Result<(), Stri
     }
     let mut arr = [0.0f32; 10];
     arr.copy_from_slice(&gains_db[..10]);
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .set_equalizer(enabled, arr)
+    with_audio_engine(|handle| handle.set_equalizer(enabled, arr))
 }
 
 /// Configure compressor settings for the native audio engine.
@@ -166,10 +190,8 @@ pub fn audio_set_compressor(
     release_ms: f32,
     makeup_gain_db: f32,
 ) -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .set_compressor(
+    with_audio_engine(|handle| {
+        handle.set_compressor(
             enabled,
             threshold_db,
             ratio,
@@ -177,6 +199,7 @@ pub fn audio_set_compressor(
             release_ms,
             makeup_gain_db,
         )
+    })
 }
 
 /// Configure limiter settings for the native audio engine.
@@ -186,49 +209,37 @@ pub fn audio_set_limiter(
     ceiling_db: f32,
     release_ms: f32,
 ) -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .set_limiter(enabled, input_gain_db, ceiling_db, release_ms)
+    with_audio_engine(|handle| handle.set_limiter(enabled, input_gain_db, ceiling_db, release_ms))
 }
 
 /// Configure crossfade settings.
 pub fn audio_set_crossfade(enabled: bool, duration_secs: f32) -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .set_crossfade(enabled, duration_secs)
+    with_audio_engine(|handle| handle.set_crossfade(enabled, duration_secs))
 }
 
 /// Skip to the next queued track.
 pub fn audio_skip_to_next() -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .skip_to_next()
+    with_audio_engine(|handle| handle.skip_to_next())
 }
 
 /// Set the playback speed.
 pub fn audio_set_playback_speed(speed: f32) -> Result<(), String> {
-    AUDIO_ENGINE
-        .get()
-        .ok_or("Audio engine not initialized")?
-        .set_playback_speed(speed)
+    with_audio_engine(|handle| handle.set_playback_speed(speed))
 }
 
 /// Get the current playback speed.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_get_playback_speed() -> Option<f32> {
-    AUDIO_ENGINE.get().map(|h| h.get_playback_speed())
+    read_audio_engine(|handle| handle.get_playback_speed())
 }
 
 /// Get the current playback state.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_get_state() -> String {
-    let Some(handle) = AUDIO_ENGINE.get() else {
+    let Some(handle_state) = read_audio_engine(|handle| handle.state()) else {
         return "uninitialized".to_string();
     };
-    match handle.state() {
+    match handle_state {
         PlaybackState::Idle => "idle".to_string(),
         PlaybackState::Playing => "playing".to_string(),
         PlaybackState::Paused => "paused".to_string(),
@@ -241,18 +252,19 @@ pub fn audio_get_state() -> String {
 /// Get the current playback progress.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_get_progress() -> Option<AudioProgress> {
-    AUDIO_ENGINE.get()?.get_progress().map(|p| AudioProgress {
-        position_secs: p.position_secs,
-        duration_secs: p.duration_secs,
-        buffer_level: p.buffer_level,
-    })
+    read_audio_engine(|handle| handle.get_progress())
+        .flatten()
+        .map(|p| AudioProgress {
+            position_secs: p.position_secs,
+            duration_secs: p.duration_secs,
+            buffer_level: p.buffer_level,
+        })
 }
 
 /// Poll for audio events (non-blocking).
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_poll_event() -> Option<AudioEventType> {
-    let handle = AUDIO_ENGINE.get()?;
-    let event = handle.try_recv_event()?;
+    let event = read_audio_engine(|handle| handle.try_recv_event()).flatten()?;
     Some(match event {
         AudioEvent::StateChanged(state) => AudioEventType::StateChanged {
             state: match state {
@@ -286,27 +298,27 @@ pub fn audio_set_crossfade_curve(_curve: CrossfadeCurveType) -> Result<(), Strin
 /// Get the audio engine's sample rate.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_get_sample_rate() -> Option<u32> {
-    AUDIO_ENGINE.get().map(|h| h.sample_rate())
+    read_audio_engine(|handle| handle.sample_rate())
 }
 
 /// Get the current track path.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_get_current_path() -> Option<String> {
-    AUDIO_ENGINE
-        .get()
-        .and_then(|h| h.get_current_path())
+    read_audio_engine(|handle| handle.get_current_path())
+        .flatten()
         .map(|p| p.to_string_lossy().to_string())
 }
 
 /// Get the number of audio channels.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_get_channels() -> Option<usize> {
-    AUDIO_ENGINE.get().map(|h| h.channels())
+    read_audio_engine(|handle| handle.channels())
 }
 
 /// Shutdown the audio engine.
 pub fn audio_shutdown() -> Result<(), String> {
-    if let Some(handle) = AUDIO_ENGINE.get() {
+    let handle = AUDIO_ENGINE.lock().take();
+    if let Some(handle) = handle {
         handle.shutdown()?;
     }
     Ok(())

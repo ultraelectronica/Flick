@@ -3,7 +3,7 @@
 //! Decoding happens in a separate thread to avoid blocking the audio callback.
 //! Decoded samples are written to a ring buffer for consumption by the audio thread.
 
-use crate::audio::resampler::{AudioResampler, DEFAULT_OUTPUT_SAMPLE_RATE};
+use crate::audio::resampler::AudioResampler;
 use crate::audio::source::{AudioSource, SourceInfo, SourceProducer};
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -107,9 +107,9 @@ pub fn probe_file(path: &Path) -> Result<ProbeResult, DecoderError> {
         0.0
     };
 
-    // Total samples at output sample rate
-    let total_samples =
-        (duration_secs * DEFAULT_OUTPUT_SAMPLE_RATE as f64 * channels as f64) as u64;
+    // Total samples at the source rate. The playback engine rewrites this when
+    // it selects an output rate for the active stream.
+    let total_samples = (duration_secs * sample_rate as f64 * channels as f64) as u64;
 
     let decoder_opts = DecoderOptions::default();
     let decoder = symphonia::default::get_codecs()
@@ -119,7 +119,7 @@ pub fn probe_file(path: &Path) -> Result<ProbeResult, DecoderError> {
     let source_info = SourceInfo {
         path: path.to_path_buf(),
         original_sample_rate: sample_rate,
-        output_sample_rate: DEFAULT_OUTPUT_SAMPLE_RATE,
+        output_sample_rate: sample_rate,
         channels,
         total_samples,
         duration_secs,
@@ -160,7 +160,11 @@ impl DecoderThread {
     ) -> Result<(AudioSource, Self), DecoderError> {
         // Probe the file first (on the calling thread)
         let probe_result = probe_file(&path)?;
-        let source_info = probe_result.source_info.clone();
+        let mut source_info = probe_result.source_info.clone();
+        source_info.output_sample_rate = output_sample_rate;
+        source_info.total_samples = (source_info.duration_secs
+            * output_sample_rate as f64
+            * source_info.channels as f64) as u64;
 
         // Create the source and producer
         let (source, producer) = AudioSource::new(source_info);

@@ -1,0 +1,9 @@
+cargo:
+  debug:
+    extra_flags:
+      - --features
+      - uac2
+  release:
+    extra_flags:
+      - --features
+      - uac2

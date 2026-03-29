@@ -8,12 +8,22 @@ use crate::audio::crossfader::Crossfader;
 use crate::audio::decoder::DecoderThread;
 use crate::audio::dynamics::DynamicsChain;
 use crate::audio::equalizer::Equalizer;
-use crate::audio::resampler::DEFAULT_OUTPUT_SAMPLE_RATE;
 use crate::audio::source::{AudioSource, SourceProvider};
+#[cfg(all(feature = "uac2", target_os = "android"))]
+use crate::uac2::{android_direct_output_signature, create_android_usb_backend};
 
+#[cfg(not(target_os = "android"))]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+#[cfg(not(target_os = "android"))]
 use cpal::{SampleRate, StreamConfig};
 use crossbeam_channel::{bounded, Receiver, Sender};
+#[cfg(target_os = "android")]
+use oboe::{
+    AudioApi, AudioDeviceDirection, AudioDeviceInfo, AudioDeviceType, AudioFormat,
+    AudioOutputCallback, AudioOutputStreamSafe, AudioStream, AudioStreamAsync, AudioStreamBase,
+    AudioStreamSafe, ContentType, DataCallbackResult, Output, PerformanceMode,
+    SampleRateConversionQuality, SharingMode, Stereo, Usage,
+};
 use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -129,6 +139,8 @@ pub struct AudioEngineHandle {
     sample_rate: u32,
     /// Number of channels
     channels: usize,
+    /// Output/backend signature used to determine when the engine must be recreated.
+    output_signature: String,
     /// Active decoder threads (kept alive for the duration of playback)
     #[allow(dead_code)]
     decoders: Arc<Mutex<Vec<DecoderThread>>>,
@@ -291,6 +303,11 @@ impl AudioEngineHandle {
         self.channels
     }
 
+    /// Get the output/backend signature.
+    pub fn output_signature(&self) -> &str {
+        &self.output_signature
+    }
+
     /// Shutdown the engine.
     pub fn shutdown(&self) -> Result<(), String> {
         self.shutdown.store(true, Ordering::Release);
@@ -298,10 +315,31 @@ impl AudioEngineHandle {
     }
 }
 
+#[cfg(not(target_os = "android"))]
+fn device_supports_sample_rate(device: &cpal::Device, channels: u16, sample_rate: u32) -> bool {
+    let Ok(configs) = device.supported_output_configs() else {
+        return false;
+    };
+
+    configs.into_iter().any(|config| {
+        config.channels() == channels
+            && sample_rate >= config.min_sample_rate().0
+            && sample_rate <= config.max_sample_rate().0
+    })
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn desired_output_signature(preferred_sample_rate: Option<u32>) -> String {
+    format!("native-shared:{}", preferred_sample_rate.unwrap_or(0))
+}
+
 /// Initialize the audio engine and return a handle.
 ///
 /// The actual cpal stream runs in a dedicated thread.
-pub fn create_audio_engine() -> Result<AudioEngineHandle, String> {
+#[cfg(not(target_os = "android"))]
+pub fn create_audio_engine(
+    preferred_sample_rate: Option<u32>,
+) -> Result<AudioEngineHandle, String> {
     // Get the default audio device
     let host = cpal::default_host();
     let device = host
@@ -315,13 +353,16 @@ pub fn create_audio_engine() -> Result<AudioEngineHandle, String> {
 
     let sample_rate = default_config.sample_rate().0;
     let channels = default_config.channels() as usize;
+    let target_sample_rate = preferred_sample_rate
+        .filter(|rate| device_supports_sample_rate(&device, channels as u16, *rate))
+        .unwrap_or(sample_rate);
 
-    // Prefer our default sample rate if supported
-    let target_sample_rate = if sample_rate == DEFAULT_OUTPUT_SAMPLE_RATE {
-        sample_rate
-    } else {
-        DEFAULT_OUTPUT_SAMPLE_RATE
-    };
+    eprintln!(
+        "Audio engine opening output device '{}' at {} Hz (preferred: {:?})",
+        device.name().unwrap_or_else(|_| "unknown".to_string()),
+        target_sample_rate,
+        preferred_sample_rate
+    );
 
     let config = StreamConfig {
         channels: channels as u16,
@@ -413,9 +454,438 @@ pub fn create_audio_engine() -> Result<AudioEngineHandle, String> {
         state,
         sample_rate: target_sample_rate,
         channels,
+        output_signature: desired_output_signature(Some(target_sample_rate)),
         decoders,
         shutdown,
     })
+}
+
+#[cfg(target_os = "android")]
+const ANDROID_DIRECT_CHANNELS: usize = 2;
+#[cfg(target_os = "android")]
+const ANDROID_DIRECT_SCRATCH_SAMPLES: usize = 32_768;
+
+#[cfg(target_os = "android")]
+pub fn desired_output_signature(preferred_sample_rate: Option<u32>) -> String {
+    #[cfg(feature = "uac2")]
+    if let Some(signature) = android_direct_output_signature(preferred_sample_rate) {
+        return signature;
+    }
+
+    format!("android-shared:{}", preferred_sample_rate.unwrap_or(48_000))
+}
+
+#[cfg(target_os = "android")]
+fn parse_android_output_channels(output_signature: &str) -> Option<usize> {
+    let mut parts = output_signature.split(':');
+    let backend = parts.next()?;
+    if backend != "android-uac2" {
+        return None;
+    }
+
+    // Signature format: android-uac2:<fd>:<sample_rate>:<bit_depth>:<channels>:<device_name>
+    parts.next()?;
+    parts.next()?;
+    parts.next()?;
+    parts.next()?.parse::<usize>().ok()
+}
+
+#[cfg(target_os = "android")]
+pub fn create_audio_engine(
+    preferred_sample_rate: Option<u32>,
+) -> Result<AudioEngineHandle, String> {
+    let target_sample_rate = preferred_sample_rate.unwrap_or(48_000);
+    let output_signature = desired_output_signature(Some(target_sample_rate));
+    let channels =
+        parse_android_output_channels(&output_signature).unwrap_or(ANDROID_DIRECT_CHANNELS);
+
+    // Create finished tracks channel (from audio callback to command thread)
+    let (finished_tx, finished_rx) = bounded::<AudioSource>(32);
+
+    // Create shared data
+    let callback_data = Arc::new(AudioCallbackData::new(
+        target_sample_rate,
+        channels,
+        finished_tx,
+    ));
+    let callback_data_clone = Arc::clone(&callback_data);
+
+    // Create event channel
+    let (event_tx, event_rx) = bounded::<AudioEvent>(256);
+    let event_tx_clone = event_tx.clone();
+
+    // Create command channel
+    let (command_tx, command_rx) = bounded::<AudioCommand>(64);
+
+    // State
+    let state = Arc::new(AtomicU8::new(PlaybackState::Idle as u8));
+    let state_clone = Arc::clone(&state);
+
+    // Decoders
+    let decoders = Arc::new(Mutex::new(Vec::<DecoderThread>::new()));
+    let decoders_clone = Arc::clone(&decoders);
+
+    // Shutdown flag
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_clone = Arc::clone(&shutdown);
+
+    // Callback data for command thread
+    let callback_data_for_thread = Arc::clone(&callback_data);
+
+    #[cfg(feature = "uac2")]
+    let direct_usb_backend = if output_signature.starts_with("android-uac2:") {
+        match create_android_usb_backend(
+            Arc::clone(&callback_data_clone),
+            event_tx_clone.clone(),
+            target_sample_rate,
+        )? {
+            Some(backend) => Some(backend),
+            None => {
+                return Err(
+                    "Android direct USB backend was requested but no matching USB DAC format is configured"
+                        .to_string(),
+                )
+            }
+        }
+    } else {
+        None
+    };
+
+    // Spawn the audio thread (which owns the Oboe stream)
+    thread::Builder::new()
+        .name("audio-engine".to_string())
+        .spawn(move || {
+            #[cfg(feature = "uac2")]
+            let mut direct_usb_backend = direct_usb_backend;
+
+            #[cfg(feature = "uac2")]
+            if direct_usb_backend.is_some() {
+                command_processing_loop(
+                    command_rx,
+                    finished_rx,
+                    event_tx,
+                    callback_data_for_thread,
+                    state_clone,
+                    decoders_clone,
+                    target_sample_rate,
+                    shutdown_clone,
+                );
+
+                if let Some(mut backend) = direct_usb_backend.take() {
+                    let _ = backend.stop();
+                }
+                return;
+            }
+
+            let mut stream = match open_android_output_stream(
+                Arc::clone(&callback_data_clone),
+                event_tx_clone.clone(),
+                target_sample_rate,
+            ) {
+                Ok(stream) => stream,
+                Err(error) => {
+                    eprintln!("Failed to open Android direct output stream: {}", error);
+                    let _ = event_tx.try_send(AudioEvent::Error {
+                        message: format!("Failed to open Android direct output stream: {}", error),
+                    });
+                    return;
+                }
+            };
+
+            if let Err(error) = stream.start() {
+                eprintln!("Failed to start Android direct output stream: {}", error);
+                let _ = event_tx.try_send(AudioEvent::Error {
+                    message: format!("Failed to start Android direct output stream: {}", error),
+                });
+                return;
+            }
+
+            command_processing_loop(
+                command_rx,
+                finished_rx,
+                event_tx,
+                callback_data_for_thread,
+                state_clone,
+                decoders_clone,
+                target_sample_rate,
+                shutdown_clone,
+            );
+
+            if let Err(error) = stream.stop() {
+                eprintln!("Failed to stop Android direct output stream: {}", error);
+            }
+        })
+        .map_err(|e| format!("Failed to spawn audio thread: {}", e))?;
+
+    Ok(AudioEngineHandle {
+        callback_data,
+        command_tx,
+        event_rx,
+        state,
+        sample_rate: target_sample_rate,
+        channels,
+        output_signature,
+        decoders,
+        shutdown,
+    })
+}
+
+#[cfg(target_os = "android")]
+struct AndroidOutputCallbackState {
+    callback_data: Arc<AudioCallbackData>,
+    event_tx: Sender<AudioEvent>,
+    scratch: Vec<f32>,
+}
+
+#[cfg(target_os = "android")]
+impl AndroidOutputCallbackState {
+    fn new(callback_data: Arc<AudioCallbackData>, event_tx: Sender<AudioEvent>) -> Self {
+        Self {
+            callback_data,
+            event_tx,
+            scratch: vec![0.0; ANDROID_DIRECT_SCRATCH_SAMPLES],
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+impl AudioOutputCallback for AndroidOutputCallbackState {
+    type FrameType = (f32, Stereo);
+
+    fn on_error_before_close(
+        &mut self,
+        audio_stream: &mut dyn AudioOutputStreamSafe,
+        error: oboe::Error,
+    ) {
+        eprintln!(
+            "Android direct output error before close: {:?} (device_id={}, sample_rate={} Hz, sharing={:?}, api={:?})",
+            error,
+            audio_stream.get_device_id(),
+            audio_stream.get_sample_rate(),
+            audio_stream.get_sharing_mode(),
+            audio_stream.get_audio_api(),
+        );
+    }
+
+    fn on_error_after_close(
+        &mut self,
+        audio_stream: &mut dyn AudioOutputStreamSafe,
+        error: oboe::Error,
+    ) {
+        eprintln!(
+            "Android direct output error after close: {:?} (device_id={}, sample_rate={} Hz, sharing={:?}, api={:?})",
+            error,
+            audio_stream.get_device_id(),
+            audio_stream.get_sample_rate(),
+            audio_stream.get_sharing_mode(),
+            audio_stream.get_audio_api(),
+        );
+    }
+
+    fn on_audio_ready(
+        &mut self,
+        _audio_stream: &mut dyn AudioOutputStreamSafe,
+        audio_data: &mut [(f32, f32)],
+    ) -> DataCallbackResult {
+        let required_samples = audio_data.len() * ANDROID_DIRECT_CHANNELS;
+
+        if required_samples > self.scratch.len() {
+            for frame in audio_data.iter_mut() {
+                *frame = (0.0, 0.0);
+            }
+            return DataCallbackResult::Continue;
+        }
+
+        let scratch = &mut self.scratch[..required_samples];
+        audio_callback(scratch, &self.callback_data, &self.event_tx);
+
+        for (frame_index, frame) in audio_data.iter_mut().enumerate() {
+            let sample_index = frame_index * ANDROID_DIRECT_CHANNELS;
+            *frame = (scratch[sample_index], scratch[sample_index + 1]);
+        }
+
+        DataCallbackResult::Continue
+    }
+}
+
+#[cfg(target_os = "android")]
+fn open_android_output_stream(
+    callback_data: Arc<AudioCallbackData>,
+    event_tx: Sender<AudioEvent>,
+    target_sample_rate: u32,
+) -> Result<AudioStreamAsync<Output, AndroidOutputCallbackState>, String> {
+    let selected_device = select_android_output_device(target_sample_rate)?;
+    let frames_per_callback = android_frames_per_callback(target_sample_rate);
+    let attempts = [AudioApi::AAudio, AudioApi::Unspecified];
+
+    let mut last_error = None;
+
+    for audio_api in attempts {
+        let builder = oboe::AudioStreamBuilder::default()
+            .set_stereo()
+            .set_f32()
+            .set_sample_rate(target_sample_rate as i32)
+            .set_frames_per_callback(frames_per_callback)
+            .set_device_id(selected_device.id)
+            .set_sharing_mode(SharingMode::Exclusive)
+            .set_performance_mode(PerformanceMode::LowLatency)
+            .set_usage(Usage::Media)
+            .set_content_type(ContentType::Music)
+            .set_channel_conversion_allowed(false)
+            .set_format_conversion_allowed(false)
+            .set_sample_rate_conversion_quality(SampleRateConversionQuality::None)
+            .set_audio_api(audio_api);
+
+        let stream = match builder
+            .set_callback(AndroidOutputCallbackState::new(
+                Arc::clone(&callback_data),
+                event_tx.clone(),
+            ))
+            .open_stream()
+        {
+            Ok(stream) => stream,
+            Err(error) => {
+                last_error = Some(format!(
+                    "{} open failed on '{}' (id {}, type {:?}): {}",
+                    audio_api_label(audio_api),
+                    selected_device.product_name,
+                    selected_device.id,
+                    selected_device.device_type,
+                    error
+                ));
+                continue;
+            }
+        };
+
+        let actual_rate = stream.get_sample_rate();
+        let actual_api = stream.get_audio_api();
+        let actual_sharing = stream.get_sharing_mode();
+        let actual_format = stream.get_format();
+        let actual_channels = stream.get_channel_count();
+
+        eprintln!(
+            "Android direct output opened '{}' (id {}, type {:?}) requested {} Hz -> actual {} Hz, api {:?}, sharing {:?}, format {:?}, channels {:?}",
+            selected_device.product_name,
+            selected_device.id,
+            selected_device.device_type,
+            target_sample_rate,
+            actual_rate,
+            actual_api,
+            actual_sharing,
+            actual_format,
+            actual_channels,
+        );
+
+        if actual_rate != target_sample_rate as i32 {
+            last_error = Some(format!(
+                "{} opened '{}' at {} Hz instead of requested {} Hz",
+                audio_api_label(audio_api),
+                selected_device.product_name,
+                actual_rate,
+                target_sample_rate,
+            ));
+            continue;
+        }
+
+        return Ok(stream);
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        format!(
+            "No Android direct output stream could be opened for '{}' at {} Hz",
+            selected_device.product_name, target_sample_rate
+        )
+    }))
+}
+
+#[cfg(target_os = "android")]
+fn select_android_output_device(target_sample_rate: u32) -> Result<AudioDeviceInfo, String> {
+    let mut devices = AudioDeviceInfo::request(AudioDeviceDirection::Output)
+        .map_err(|e| format!("Failed to enumerate Android output devices: {}", e))?;
+
+    if devices.is_empty() {
+        return Err("No Android output devices found".to_string());
+    }
+
+    devices.sort_by_key(|device| {
+        (
+            android_output_device_priority(device.device_type),
+            !android_device_supports_sample_rate(device, target_sample_rate),
+            !android_device_supports_stereo(device),
+            !android_device_supports_f32(device),
+            device.id,
+        )
+    });
+
+    for device in &devices {
+        eprintln!(
+            "Android output candidate '{}' (id {}, type {:?}, sample_rates={:?}, channel_counts={:?}, formats={:?})",
+            device.product_name,
+            device.id,
+            device.device_type,
+            device.sample_rates,
+            device.channel_counts,
+            device.formats,
+        );
+    }
+
+    Ok(devices.remove(0))
+}
+
+#[cfg(target_os = "android")]
+fn android_device_supports_sample_rate(device: &AudioDeviceInfo, target_sample_rate: u32) -> bool {
+    device.sample_rates.is_empty() || device.sample_rates.contains(&(target_sample_rate as i32))
+}
+
+#[cfg(target_os = "android")]
+fn android_device_supports_stereo(device: &AudioDeviceInfo) -> bool {
+    device.channel_counts.is_empty() || device.channel_counts.iter().any(|channels| *channels >= 2)
+}
+
+#[cfg(target_os = "android")]
+fn android_device_supports_f32(device: &AudioDeviceInfo) -> bool {
+    device.formats.is_empty() || device.formats.contains(&AudioFormat::F32)
+}
+
+#[cfg(target_os = "android")]
+fn android_output_device_priority(device_type: AudioDeviceType) -> u8 {
+    match device_type {
+        AudioDeviceType::UsbDevice
+        | AudioDeviceType::UsbHeadset
+        | AudioDeviceType::UsbAccessory
+        | AudioDeviceType::Dock => 0,
+        AudioDeviceType::WiredHeadphones
+        | AudioDeviceType::WiredHeadset
+        | AudioDeviceType::LineAnalog
+        | AudioDeviceType::LineDigital
+        | AudioDeviceType::Hdmi
+        | AudioDeviceType::HdmiArc
+        | AudioDeviceType::HdmiEarc => 1,
+        AudioDeviceType::BluetoothA2DP
+        | AudioDeviceType::BluetoothSCO
+        | AudioDeviceType::BleBroadcast
+        | AudioDeviceType::BleHeadset
+        | AudioDeviceType::BleSpeaker
+        | AudioDeviceType::HearingAid => 2,
+        AudioDeviceType::BuiltinSpeaker
+        | AudioDeviceType::BuiltinSpeakerSafe
+        | AudioDeviceType::BuiltinEarpiece => 3,
+        _ => 4,
+    }
+}
+
+#[cfg(target_os = "android")]
+fn android_frames_per_callback(target_sample_rate: u32) -> i32 {
+    ((target_sample_rate / 100).clamp(96, 1024)) as i32
+}
+
+#[cfg(target_os = "android")]
+fn audio_api_label(audio_api: AudioApi) -> &'static str {
+    match audio_api {
+        AudioApi::AAudio => "AAudio",
+        AudioApi::OpenSLES => "OpenSLES",
+        AudioApi::Unspecified => "Unspecified",
+    }
 }
 
 /// The real-time audio callback.
@@ -425,7 +895,11 @@ pub fn create_audio_engine() -> Result<AudioEngineHandle, String> {
 /// - Block on mutexes (we use try_lock where possible)
 /// - Perform I/O
 #[inline]
-fn audio_callback(output: &mut [f32], data: &AudioCallbackData, _event_tx: &Sender<AudioEvent>) {
+pub(crate) fn audio_callback(
+    output: &mut [f32],
+    data: &AudioCallbackData,
+    _event_tx: &Sender<AudioEvent>,
+) {
     // Check if paused
     if data.is_paused() {
         output.fill(0.0);
