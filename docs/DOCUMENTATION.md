@@ -6,6 +6,28 @@
 
 The application leverages the power of **Flutter** for a responsive, animated frontend and **Rust** for a stable, efficient backend. Key features include a custom "Function Code" (Audio Engine) that handles playback independent of the OS media controls in some aspects, ensuring high-fidelity audio output.
 
+## Planned Features
+
+The current roadmap includes:
+
+- DSD/DSF support
+- MQA support
+- Poweramp-style EQ filters, including low-pass
+- Advanced audio controls such as balance, tempo, damp, filter, delays, size, and mix
+- Themes and broader UI customization options
+- Album art improvements
+- Lyric clickability and sync
+- Scrobble settings
+- Crossfade and fade controls
+- Resampler enhancements
+- Advanced audio tweaks
+- Visualizations
+- Android audio settings
+- Bluetooth audio settings
+- Internal Hi-Res audio settings
+- USB audio tweaks
+- Further performance optimizations
+
 ## Code "Functions" (Core Architecture)
 
 The application behaves as a hybrid system. Here is a breakdown of the key *Function Codes* (modules) that drive the application:

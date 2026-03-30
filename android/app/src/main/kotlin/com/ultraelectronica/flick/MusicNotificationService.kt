@@ -60,7 +60,6 @@ class MusicNotificationService : Service() {
                     // Optimistic local update — flip immediately without waiting for Flutter
                     isPlaying = !isPlaying
                     val notification = buildNotification()
-                    notificationManager.cancel(NOTIFICATION_ID)
                     notificationManager.notify(NOTIFICATION_ID, notification)
                     android.util.Log.d("MusicNotification", "Optimistically updated to isPlaying=$isPlaying")
                 }
@@ -83,7 +82,6 @@ class MusicNotificationService : Service() {
                     isShuffleMode = !isShuffleMode
                     sendCommandToFlutter("toggleShuffle")
                     val notification = buildNotification()
-                    notificationManager.cancel(NOTIFICATION_ID)
                     notificationManager.notify(NOTIFICATION_ID, notification)
                 }
                 ACTION_FAVORITE -> {
@@ -91,7 +89,6 @@ class MusicNotificationService : Service() {
                     isFavorite = !isFavorite
                     sendCommandToFlutter("toggleFavorite")
                     val notification = buildNotification()
-                    notificationManager.cancel(NOTIFICATION_ID)
                     notificationManager.notify(NOTIFICATION_ID, notification)
                 }
             }
@@ -151,7 +148,6 @@ class MusicNotificationService : Service() {
             isForegroundServiceStarted = true
         } else {
             android.util.Log.d("MusicNotification", "Updating notification: isPlaying=$isPlaying, position=$currentPosition, duration=$currentDuration")
-            notificationManager.cancel(NOTIFICATION_ID)
             notificationManager.notify(NOTIFICATION_ID, notification)
         }
 
@@ -224,7 +220,6 @@ class MusicNotificationService : Service() {
                             sendCommandToFlutter("toggleShuffle")
                             updatePlaybackState()
                             val notification = buildNotification()
-                            notificationManager.cancel(NOTIFICATION_ID)
                             notificationManager.notify(NOTIFICATION_ID, notification)
                         }
                         ACTION_FAVORITE -> {
@@ -232,7 +227,6 @@ class MusicNotificationService : Service() {
                             sendCommandToFlutter("toggleFavorite")
                             updatePlaybackState()
                             val notification = buildNotification()
-                            notificationManager.cancel(NOTIFICATION_ID)
                             notificationManager.notify(NOTIFICATION_ID, notification)
                         }
                     }
@@ -343,6 +337,7 @@ class MusicNotificationService : Service() {
             .setContentIntent(contentIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
+            .setSilent(true)
             .setShowWhen(false)
             .setOngoing(true)
 
@@ -436,7 +431,6 @@ class MusicNotificationService : Service() {
         favorite?.let { isFavorite = it }
 
         val notification = buildNotification()
-        notificationManager.cancel(NOTIFICATION_ID)
         notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
