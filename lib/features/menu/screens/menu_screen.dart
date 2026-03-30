@@ -277,8 +277,9 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                                 ),
                                 scrollDirection: Axis.horizontal,
                                 itemCount: homeData.smartMixes.length,
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(width: AppConstants.spacingMd),
+                                separatorBuilder: (_, _) => const SizedBox(
+                                  width: AppConstants.spacingMd,
+                                ),
                                 itemBuilder: (context, index) {
                                   final mix = homeData.smartMixes[index];
                                   return _SmartMixCard(
@@ -312,8 +313,9 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                                 ),
                                 scrollDirection: Axis.horizontal,
                                 itemCount: homeData.recentArtists.length,
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(width: AppConstants.spacingMd),
+                                separatorBuilder: (_, _) => const SizedBox(
+                                  width: AppConstants.spacingMd,
+                                ),
                                 itemBuilder: (context, index) {
                                   final artist = homeData.recentArtists[index];
                                   return _ArtistShelfCard(
@@ -343,8 +345,10 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                             subtitle:
                                 'Pick up exactly where your last sessions left off.',
                             trailing: TextButton(
-                              onPressed: () =>
-                                  _navigateTo(context, const RecentlyPlayedScreen()),
+                              onPressed: () => _navigateTo(
+                                context,
+                                const RecentlyPlayedScreen(),
+                              ),
                               child: const Text('See all'),
                             ),
                             child: SizedBox(
@@ -355,8 +359,9 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                                 ),
                                 scrollDirection: Axis.horizontal,
                                 itemCount: homeData.recentTracks.length,
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(width: AppConstants.spacingMd),
+                                separatorBuilder: (_, _) => const SizedBox(
+                                  width: AppConstants.spacingMd,
+                                ),
                                 itemBuilder: (context, index) {
                                   final song = homeData.recentTracks[index];
                                   return _RecentTrackCard(
@@ -406,7 +411,8 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                                     height: 236,
                                     child: ListView.separated(
                                       scrollDirection: Axis.horizontal,
-                                      itemCount: homeData.playlistPreviews.length,
+                                      itemCount:
+                                          homeData.playlistPreviews.length,
                                       separatorBuilder: (_, _) =>
                                           const SizedBox(
                                             width: AppConstants.spacingMd,
@@ -457,14 +463,18 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                                 _BrowseChip(
                                   icon: LucideIcons.disc,
                                   label: 'Albums',
-                                  onTap: () =>
-                                      _navigateTo(context, const AlbumsScreen()),
+                                  onTap: () => _navigateTo(
+                                    context,
+                                    const AlbumsScreen(),
+                                  ),
                                 ),
                                 _BrowseChip(
                                   icon: LucideIcons.folder,
                                   label: 'Folders',
-                                  onTap: () =>
-                                      _navigateTo(context, const FoldersScreen()),
+                                  onTap: () => _navigateTo(
+                                    context,
+                                    const FoldersScreen(),
+                                  ),
                                 ),
                                 _BrowseChip(
                                   icon: LucideIcons.list,
@@ -483,8 +493,10 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                                 _BrowseChip(
                                   icon: LucideIcons.users,
                                   label: 'Artists',
-                                  onTap: () =>
-                                      _navigateTo(context, const ArtistsScreen()),
+                                  onTap: () => _navigateTo(
+                                    context,
+                                    const ArtistsScreen(),
+                                  ),
                                 ),
                               ],
                             ),
@@ -492,7 +504,9 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                         ),
                       ),
                       const SliverToBoxAdapter(
-                        child: SizedBox(height: AppConstants.navBarHeight + 136),
+                        child: SizedBox(
+                          height: AppConstants.navBarHeight + 136,
+                        ),
                       ),
                     ],
                   ],
@@ -594,7 +608,66 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
         ? 'Play Again'
         : 'Open Library';
 
-    final secondaryLabel = favoriteSongs.isNotEmpty ? 'Shuffle Favorites' : null;
+    final secondaryLabel = favoriteSongs.isNotEmpty
+        ? 'Shuffle Favorites'
+        : null;
+
+    Future<void> handlePrimaryTap() async {
+      if (hasNowPlaying && featuredSong != null) {
+        await NavigationHelper.navigateToFullPlayer(
+          context,
+          heroTag: 'menu_now_playing_${featuredSong.id}',
+        );
+        return;
+      }
+
+      if (featuredSong != null) {
+        await _playSongs(
+          context,
+          homeData.recentTracks.isNotEmpty
+              ? homeData.recentTracks
+              : [featuredSong],
+          initialSong: featuredSong,
+          heroSeed: 'menu_hero',
+        );
+        return;
+      }
+
+      if (widget.onNavigateToTab != null) {
+        widget.onNavigateToTab!(1);
+      } else {
+        _navigateTo(context, const SongsScreen());
+      }
+    }
+
+    final featureTile = _HeroFeatureTile(
+      song: featuredSong,
+      eyebrow: hasNowPlaying
+          ? 'Streaming from queue'
+          : featuredSong != null
+          ? 'Last pick'
+          : 'No playback yet',
+    );
+
+    final primaryButton = _HeroActionButton(
+      label: primaryLabel,
+      icon: hasNowPlaying ? LucideIcons.audioLines : LucideIcons.play,
+      isPrimary: true,
+      onTap: handlePrimaryTap,
+    );
+
+    final secondaryButton = secondaryLabel == null
+        ? null
+        : _HeroActionButton(
+            label: secondaryLabel,
+            icon: LucideIcons.shuffle,
+            onTap: () => _playSongs(
+              context,
+              favoriteSongs,
+              shuffle: true,
+              heroSeed: 'menu_favorites',
+            ),
+          );
 
     return Container(
       decoration: BoxDecoration(
@@ -661,71 +734,44 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                   ),
                 ),
                 const SizedBox(height: AppConstants.spacingLg),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _HeroFeatureTile(
-                        song: featuredSong,
-                        eyebrow: hasNowPlaying
-                            ? 'Streaming from queue'
-                            : featuredSong != null
-                            ? 'Last pick'
-                            : 'No playback yet',
-                      ),
-                    ),
-                    const SizedBox(width: AppConstants.spacingMd),
-                    Column(
-                      children: [
-                        _HeroActionButton(
-                          label: primaryLabel,
-                          icon: hasNowPlaying
-                              ? LucideIcons.audioLines
-                              : LucideIcons.play,
-                          isPrimary: true,
-                          onTap: () async {
-                            if (hasNowPlaying && featuredSong != null) {
-                              await NavigationHelper.navigateToFullPlayer(
-                                context,
-                                heroTag: 'menu_now_playing_${featuredSong.id}',
-                              );
-                              return;
-                            }
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isCompactHero = constraints.maxWidth < 520;
 
-                            if (featuredSong != null) {
-                              await _playSongs(
-                                context,
-                                homeData.recentTracks.isNotEmpty
-                                    ? homeData.recentTracks
-                                    : [featuredSong],
-                                initialSong: featuredSong,
-                                heroSeed: 'menu_hero',
-                              );
-                              return;
-                            }
-
-                            if (widget.onNavigateToTab != null) {
-                              widget.onNavigateToTab!(1);
-                            } else {
-                              _navigateTo(context, const SongsScreen());
-                            }
-                          },
-                        ),
-                        if (secondaryLabel != null) ...[
-                          const SizedBox(height: AppConstants.spacingSm),
-                          _HeroActionButton(
-                            label: secondaryLabel,
-                            icon: LucideIcons.shuffle,
-                            onTap: () => _playSongs(
-                              context,
-                              favoriteSongs,
-                              shuffle: true,
-                              heroSeed: 'menu_favorites',
-                            ),
+                    if (isCompactHero) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          featureTile,
+                          const SizedBox(height: AppConstants.spacingMd),
+                          Wrap(
+                            spacing: AppConstants.spacingSm,
+                            runSpacing: AppConstants.spacingSm,
+                            children: [
+                              primaryButton,
+                              if (secondaryButton != null) secondaryButton,
+                            ],
                           ),
                         ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        Expanded(child: featureTile),
+                        const SizedBox(width: AppConstants.spacingMd),
+                        Column(
+                          children: [
+                            primaryButton,
+                            if (secondaryButton != null) ...[
+                              const SizedBox(height: AppConstants.spacingSm),
+                              secondaryButton,
+                            ],
+                          ],
+                        ),
                       ],
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -879,9 +925,9 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
       songsByArtist.putIfAbsent(artist, () => []).add(song);
     }
 
-    final recentTracks = _dedupeSongs(recentEntries.map((entry) => entry.song))
-        .take(12)
-        .toList();
+    final recentTracks = _dedupeSongs(
+      recentEntries.map((entry) => entry.song),
+    ).take(12).toList();
 
     final recentArtists = _buildRecentArtists(
       recentEntries: recentEntries,
@@ -918,27 +964,26 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
 
     for (final entry in recentEntries.take(120)) {
       final artist = _normalizeArtist(entry.song.artist);
-      stats.putIfAbsent(
-        artist,
-        () => _ArtistSpotlightAccumulator(name: artist),
-      ).add(entry.song);
+      stats
+          .putIfAbsent(artist, () => _ArtistSpotlightAccumulator(name: artist))
+          .add(entry.song);
     }
 
-    final items = stats.values.map((accumulator) {
-      final songs = songsByArtist[accumulator.name] ?? const <Song>[];
-      return _ArtistSpotlight(
-        name: accumulator.name,
-        plays: accumulator.plays,
-        uniqueSongs: accumulator.uniqueSongIds.length,
-        artPath: accumulator.artPath,
-        songs: songs,
-      );
-    }).toList()
-      ..sort((left, right) {
-        final playCompare = right.plays.compareTo(left.plays);
-        if (playCompare != 0) return playCompare;
-        return left.name.compareTo(right.name);
-      });
+    final items =
+        stats.values.map((accumulator) {
+          final songs = songsByArtist[accumulator.name] ?? const <Song>[];
+          return _ArtistSpotlight(
+            name: accumulator.name,
+            plays: accumulator.plays,
+            uniqueSongs: accumulator.uniqueSongIds.length,
+            artPath: accumulator.artPath,
+            songs: songs,
+          );
+        }).toList()..sort((left, right) {
+          final playCompare = right.plays.compareTo(left.plays);
+          if (playCompare != 0) return playCompare;
+          return left.name.compareTo(right.name);
+        });
 
     return items.where((artist) => artist.songs.isNotEmpty).take(8).toList();
   }
@@ -957,9 +1002,13 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
     final rewindCutoff = DateTime.now().subtract(const Duration(days: 21));
 
     for (final entry in recentEntries) {
-      recentPlayCount.update(entry.song.id, (count) => count + 1, ifAbsent: () {
-        return 1;
-      });
+      recentPlayCount.update(
+        entry.song.id,
+        (count) => count + 1,
+        ifAbsent: () {
+          return 1;
+        },
+      );
 
       final previous = recentLastPlayedAt[entry.song.id];
       if (previous == null || entry.playedAt.isAfter(previous)) {
@@ -1009,27 +1058,21 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
             .toList() ??
         const <Song>[];
 
-    final onRepeatSongs = _takeDistinctSongs(
-      [
-        ...monthlyTop,
-        ...weeklyTop,
-        ...rankedRecentSongs,
-      ],
-      20,
-    );
+    final onRepeatSongs = _takeDistinctSongs([
+      ...monthlyTop,
+      ...weeklyTop,
+      ...rankedRecentSongs,
+    ], 20);
 
     final currentRepeatIds = {
       for (final song in onRepeatSongs) song.id,
       for (final song in monthlyTop) song.id,
     };
 
-    final rewindSongs = _takeDistinctSongs(
-      [
-        ..._rankSongsFromEntries(olderEntries),
-        ...yearlyTop.where((song) => !currentRepeatIds.contains(song.id)),
-      ],
-      20,
-    );
+    final rewindSongs = _takeDistinctSongs([
+      ..._rankSongsFromEntries(olderEntries),
+      ...yearlyTop.where((song) => !currentRepeatIds.contains(song.id)),
+    ], 20);
 
     final favoritesByMomentum = List<Song>.from(favoriteSongs)
       ..sort((left, right) {
@@ -1047,14 +1090,11 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
         return left.title.compareTo(right.title);
       });
 
-    final heavyRotationSongs = _takeDistinctSongs(
-      [
-        ...favoritesByMomentum,
-        ...weeklyTop,
-        ...rankedRecentSongs,
-      ],
-      20,
-    );
+    final heavyRotationSongs = _takeDistinctSongs([
+      ...favoritesByMomentum,
+      ...weeklyTop,
+      ...rankedRecentSongs,
+    ], 20);
 
     final freshSongs = List<Song>.from(allSongs)
       ..sort((left, right) {
@@ -1070,20 +1110,16 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
       20,
     );
 
-    final afterHoursSongs = _takeDistinctSongs(
-      [
-        ..._rankSongsFromEntries(afterHoursEntries),
-        ...heavyRotationSongs.where((song) => song.duration.inMinutes >= 3),
-      ],
-      20,
-    );
+    final afterHoursSongs = _takeDistinctSongs([
+      ..._rankSongsFromEntries(afterHoursEntries),
+      ...heavyRotationSongs.where((song) => song.duration.inMinutes >= 3),
+    ], 20);
 
     final mixes = <_SmartMix>[
       _SmartMix(
         title: 'On Repeat',
         subtitle: 'Your heaviest rotation right now',
-        description:
-            'The tracks dominating your weekly and monthly recap.',
+        description: 'The tracks dominating your weekly and monthly recap.',
         icon: LucideIcons.repeat,
         colors: const [Color(0xFF5B1FA6), Color(0xFFB33EF5)],
         songs: onRepeatSongs,
@@ -1109,8 +1145,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
       _SmartMix(
         title: 'Fresh Additions',
         subtitle: 'Latest arrivals from your library',
-        description:
-            'Recently added tracks waiting for more play time.',
+        description: 'Recently added tracks waiting for more play time.',
         icon: LucideIcons.sparkles,
         colors: const [Color(0xFF845114), Color(0xFFE1A53D)],
         songs: freshAdditionsSongs,
@@ -1207,9 +1242,13 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
     final songById = <String, Song>{};
 
     for (final entry in entries) {
-      countBySongId.update(entry.song.id, (count) => count + 1, ifAbsent: () {
-        return 1;
-      });
+      countBySongId.update(
+        entry.song.id,
+        (count) => count + 1,
+        ifAbsent: () {
+          return 1;
+        },
+      );
 
       final previous = lastPlayedAt[entry.song.id];
       if (previous == null || entry.playedAt.isAfter(previous)) {
@@ -1396,6 +1435,8 @@ class _HeroFeatureTile extends StatelessWidget {
               children: [
                 Text(
                   eyebrow,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: Colors.white.withValues(alpha: 0.7),
                     letterSpacing: 0.5,
@@ -1982,9 +2023,9 @@ class _PlaylistArtworkGrid extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
-        child: SizedBox(
-          width: double.infinity,
-          height: 136,
+      child: SizedBox(
+        width: double.infinity,
+        height: 136,
         child: artPaths.isEmpty
             ? Container(
                 decoration: const BoxDecoration(
@@ -2070,11 +2111,7 @@ class _EmptyShelfCard extends StatelessWidget {
                   color: AppColors.glassBackgroundStrong,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(
-                  icon,
-                  color: context.adaptiveTextPrimary,
-                  size: 22,
-                ),
+                child: Icon(icon, color: context.adaptiveTextPrimary, size: 22),
               ),
               const SizedBox(width: AppConstants.spacingMd),
               Expanded(
@@ -2301,10 +2338,8 @@ class _SmartMixDetailScreen extends StatelessWidget {
                                   label: 'Play',
                                   icon: LucideIcons.play,
                                   isPrimary: true,
-                                  onTap: () => _playSongs(
-                                    context,
-                                    songs: mix.songs,
-                                  ),
+                                  onTap: () =>
+                                      _playSongs(context, songs: mix.songs),
                                 ),
                                 const SizedBox(width: AppConstants.spacingSm),
                                 _InlineActionButton(
@@ -2352,7 +2387,9 @@ class _SmartMixDetailScreen extends StatelessWidget {
                 delegate: SliverChildBuilderDelegate((context, index) {
                   final song = mix.songs[index];
                   return Padding(
-                    padding: const EdgeInsets.only(bottom: AppConstants.spacingSm),
+                    padding: const EdgeInsets.only(
+                      bottom: AppConstants.spacingSm,
+                    ),
                     child: Material(
                       color: AppColors.surface.withValues(alpha: 0.72),
                       borderRadius: BorderRadius.circular(20),
@@ -2381,10 +2418,12 @@ class _SmartMixDetailScreen extends StatelessWidget {
                                           thumbnailHeight: 140,
                                         )
                                       : Container(
-                                          color: AppColors.glassBackgroundStrong,
+                                          color:
+                                              AppColors.glassBackgroundStrong,
                                           child: Icon(
                                             LucideIcons.music4,
-                                            color: context.adaptiveTextSecondary,
+                                            color:
+                                                context.adaptiveTextSecondary,
                                           ),
                                         ),
                                 ),
@@ -2406,7 +2445,9 @@ class _SmartMixDetailScreen extends StatelessWidget {
                                             fontWeight: FontWeight.w700,
                                           ),
                                     ),
-                                    const SizedBox(height: AppConstants.spacingXxs),
+                                    const SizedBox(
+                                      height: AppConstants.spacingXxs,
+                                    ),
                                     Text(
                                       '${song.artist} • ${song.fileType.toUpperCase()}',
                                       maxLines: 1,
