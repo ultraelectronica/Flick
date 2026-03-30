@@ -22,6 +22,12 @@ Future<void> main() async {
 
   runApp(const ProviderScope(child: FlickPlayerApp()));
 
+  unawaited(
+    PlayerService().initAudio().catchError(
+      (Object e) => debugPrint('Eager audio warm-up failed: $e'),
+    ),
+  );
+
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(_bootstrapAppAfterFirstFrame());
   });

@@ -41,6 +41,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   List<Song> _cachedSongs = [];
   String _selectedFastToken = 'A';
   late final ProviderSubscription<Song?> _currentSongSubscription;
+  bool _alignedCurrentSongAfterLoad = false;
 
   @override
   void initState() {
@@ -49,14 +50,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
       previous,
       next,
     ) {
-      if (next != null && mounted) {
-        final index = _cachedSongs.indexWhere((s) => s.id == next.id);
-        if (index != -1 && index != _selectedIndex) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        }
-      }
+      _syncInterfaceToCurrentSong(next);
     });
   }
 
@@ -163,6 +157,8 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                       if (songs.isEmpty && _searchQuery.isNotEmpty) {
                         return _buildNoSearchResultsState();
                       }
+
+                      _alignCurrentSongAfterSongsLoad(songs);
 
                       // Ensure selected index is valid
                       if (_selectedIndex >= songs.length) {
@@ -590,6 +586,69 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     } else {
       _listScrollController.jumpTo(clampedOffset);
     }
+  }
+
+  List<Song> _visibleSongsFromCache() {
+    if (_searchQuery.isEmpty) {
+      return _cachedSongs;
+    }
+
+    return _cachedSongs.where((song) {
+      return song.title.toLowerCase().contains(_searchQuery) ||
+          song.artist.toLowerCase().contains(_searchQuery);
+    }).toList();
+  }
+
+  void _syncInterfaceToCurrentSong(Song? song, {bool animate = true}) {
+    if (!mounted || song == null || _cachedSongs.isEmpty) {
+      return;
+    }
+
+    final visibleSongs = _visibleSongsFromCache();
+    final targetIndex = visibleSongs.indexWhere((candidate) {
+      return candidate.id == song.id;
+    });
+    if (targetIndex == -1) return;
+
+    _syncSelectedTokenForIndex(visibleSongs, targetIndex);
+
+    if (targetIndex != _selectedIndex) {
+      setState(() {
+        _selectedIndex = targetIndex;
+      });
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final viewMode = ref.read(songsViewModeProvider);
+      if (viewMode == SongViewMode.list) {
+        _jumpInList(targetIndex, animate);
+        return;
+      }
+
+      _orbitScrollController.jumpToIndex(targetIndex, animate: animate);
+    });
+  }
+
+  void _alignCurrentSongAfterSongsLoad(List<Song> visibleSongs) {
+    if (_alignedCurrentSongAfterLoad || visibleSongs.isEmpty) {
+      return;
+    }
+
+    final currentSong = ref.read(currentSongProvider);
+    if (currentSong == null) return;
+
+    final targetIndex = visibleSongs.indexWhere(
+      (song) => song.id == currentSong.id,
+    );
+    if (targetIndex == -1) return;
+
+    _alignedCurrentSongAfterLoad = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncInterfaceToCurrentSong(currentSong, animate: false);
+    });
   }
 
   void _syncSelectedTokenForIndex(List<Song> songs, int index) {

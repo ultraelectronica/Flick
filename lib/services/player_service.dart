@@ -425,6 +425,19 @@ class PlayerService {
       if (newIndex == null) return;
       _syncCurrentSongFromIndex(newIndex, fromListener: true);
     });
+
+    _justAudioPlayer.positionDiscontinuityStream.listen((discontinuity) {
+      if (_usingRustBackend) return;
+      if (_isRebuildingPlaylist || _suppressSequenceStateUpdates) return;
+      if (discontinuity.reason !=
+          just_audio.PositionDiscontinuityReason.autoAdvance) {
+        return;
+      }
+
+      final newIndex = discontinuity.event.currentIndex;
+      if (newIndex == null) return;
+      _syncCurrentSongFromIndex(newIndex, fromListener: true);
+    });
   }
 
   void _syncCurrentSongFromIndex(int newIndex, {bool fromListener = false}) {
@@ -608,16 +621,30 @@ class PlayerService {
 
   /// Build audio sources for the playlist (gapless playback).
   Future<List<just_audio.AudioSource>> _buildAudioSources() async {
+    if (_playlist.isEmpty) return const [];
+
+    const batchSize = 12;
     final sources = <just_audio.AudioSource>[];
-    for (final song in _playlist) {
-      if (song.filePath == null) {
-        sources.add(just_audio.AudioSource.uri(Uri.parse('')));
-        continue;
-      }
-      final uri = await _resolvePlaybackUri(song);
-      sources.add(just_audio.AudioSource.uri(uri));
+
+    for (var start = 0; start < _playlist.length; start += batchSize) {
+      final end = (start + batchSize).clamp(0, _playlist.length);
+      final batch = _playlist.sublist(start, end);
+      final resolvedBatch = await Future.wait(
+        batch.map(_buildAudioSourceForSong),
+      );
+      sources.addAll(resolvedBatch);
     }
+
     return sources;
+  }
+
+  Future<just_audio.AudioSource> _buildAudioSourceForSong(Song song) async {
+    if (song.filePath == null) {
+      return just_audio.AudioSource.uri(Uri.parse(''));
+    }
+
+    final uri = await _resolvePlaybackUri(song);
+    return just_audio.AudioSource.uri(uri);
   }
 
   Future<Uri> _resolvePlaybackUri(Song song) async {
