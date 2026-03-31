@@ -20,9 +20,11 @@ pub mod decoder;
 pub mod dynamics;
 pub mod engine;
 pub mod equalizer;
+pub mod manager;
 pub mod resampler;
 pub mod source;
 
 pub use alac_converter::{AudioMetadata, ConversionSession};
 pub use commands::{AudioCommand, PlaybackState};
 pub use engine::{create_audio_engine, AudioEngineHandle};
+pub use manager::{AudioEngine, EngineManager};
