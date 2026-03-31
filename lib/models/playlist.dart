@@ -4,6 +4,7 @@ class Playlist {
   final List<String> songIds;
   final DateTime createdAt;
   final DateTime? updatedAt;
+  final String? sourcePath;
 
   const Playlist({
     required this.id,
@@ -11,6 +12,7 @@ class Playlist {
     this.songIds = const [],
     required this.createdAt,
     this.updatedAt,
+    this.sourcePath,
   });
 
   Playlist copyWith({
@@ -19,6 +21,7 @@ class Playlist {
     List<String>? songIds,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? sourcePath,
   }) {
     return Playlist(
       id: id ?? this.id,
@@ -26,6 +29,7 @@ class Playlist {
       songIds: songIds ?? this.songIds,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      sourcePath: sourcePath ?? this.sourcePath,
     );
   }
 
@@ -36,6 +40,7 @@ class Playlist {
       'songIds': songIds,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
+      'sourcePath': sourcePath,
     };
   }
 
@@ -48,6 +53,7 @@ class Playlist {
       updatedAt: json['updatedAt'] != null
           ? DateTime.parse(json['updatedAt'] as String)
           : null,
+      sourcePath: json['sourcePath'] as String?,
     );
   }
 
