@@ -9,7 +9,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'audio_api.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `ensure_audio_engine`, `probe_output_sample_rate`, `read_audio_engine`, `with_audio_engine`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 /// Check if native audio is available on this platform.
 bool audioIsNativeAvailable() =>
@@ -26,6 +26,17 @@ bool audioIsInitialized() =>
 /// to initialize even if a DAC is not currently detected.
 void audioSetHighResMode({required bool enabled}) =>
     RustLib.instance.api.crateApiAudioApiAudioSetHighResMode(enabled: enabled);
+
+/// Update the current platform capability snapshot used for engine selection.
+void audioSetCapabilityInfo({required AudioCapabilityInfo info}) =>
+    RustLib.instance.api.crateApiAudioApiAudioSetCapabilityInfo(info: info);
+
+/// Inspect the current capability snapshot after native detection and platform hints are merged.
+Future<AudioCapabilityInfo> audioGetCapabilityInfo({
+  int? preferredSampleRate,
+}) => RustLib.instance.api.crateApiAudioApiAudioGetCapabilityInfo(
+  preferredSampleRate: preferredSampleRate,
+);
 
 /// Return the currently selected engine.
 String audioGetActiveEngine() =>
@@ -153,6 +164,40 @@ BigInt? audioGetChannels() =>
 /// Shutdown the audio engine.
 Future<void> audioShutdown() =>
     RustLib.instance.api.crateApiAudioApiAudioShutdown();
+
+class AudioCapabilityInfo {
+  final List<AudioCapabilityType> capabilities;
+  final String routeType;
+  final String? routeLabel;
+  final int? maxSampleRate;
+
+  const AudioCapabilityInfo({
+    required this.capabilities,
+    required this.routeType,
+    this.routeLabel,
+    this.maxSampleRate,
+  });
+
+  @override
+  int get hashCode =>
+      capabilities.hashCode ^
+      routeType.hashCode ^
+      routeLabel.hashCode ^
+      maxSampleRate.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AudioCapabilityInfo &&
+          runtimeType == other.runtimeType &&
+          capabilities == other.capabilities &&
+          routeType == other.routeType &&
+          routeLabel == other.routeLabel &&
+          maxSampleRate == other.maxSampleRate;
+}
+
+/// The currently available output capability classes for engine selection.
+enum AudioCapabilityType { usbDac, hiResInternal, standard }
 
 @freezed
 sealed class AudioEventType with _$AudioEventType {

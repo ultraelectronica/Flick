@@ -37,6 +37,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AlacAudioMetadata dco_decode_alac_audio_metadata(dynamic raw);
 
   @protected
+  AudioCapabilityInfo dco_decode_audio_capability_info(dynamic raw);
+
+  @protected
+  AudioCapabilityType dco_decode_audio_capability_type(dynamic raw);
+
+  @protected
   AudioEventType dco_decode_audio_event_type(dynamic raw);
 
   @protected
@@ -47,6 +53,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  AudioCapabilityInfo dco_decode_box_autoadd_audio_capability_info(dynamic raw);
 
   @protected
   AudioEventType dco_decode_box_autoadd_audio_event_type(dynamic raw);
@@ -95,6 +104,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<AudioCapabilityType> dco_decode_list_audio_capability_type(dynamic raw);
 
   @protected
   List<AudioFileMetadata> dco_decode_list_audio_file_metadata(dynamic raw);
@@ -218,6 +230,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  AudioCapabilityInfo sse_decode_audio_capability_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  AudioCapabilityType sse_decode_audio_capability_type(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   AudioEventType sse_decode_audio_event_type(SseDeserializer deserializer);
 
   @protected
@@ -230,6 +252,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  AudioCapabilityInfo sse_decode_box_autoadd_audio_capability_info(
+    SseDeserializer deserializer,
+  );
 
   @protected
   AudioEventType sse_decode_box_autoadd_audio_event_type(
@@ -288,6 +315,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<AudioCapabilityType> sse_decode_list_audio_capability_type(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<AudioFileMetadata> sse_decode_list_audio_file_metadata(
@@ -434,6 +466,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_audio_capability_info(
+    AudioCapabilityInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_audio_capability_type(
+    AudioCapabilityType self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_audio_event_type(
     AudioEventType self,
     SseSerializer serializer,
@@ -450,6 +494,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_audio_capability_info(
+    AudioCapabilityInfo self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_audio_event_type(
@@ -513,6 +563,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_audio_capability_type(
+    List<AudioCapabilityType> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_audio_file_metadata(
