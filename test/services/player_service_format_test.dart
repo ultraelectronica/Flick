@@ -32,4 +32,12 @@ void main() {
       );
     });
   });
+
+  group('shouldOptimisticallySyncSkipForLoopMode', () {
+    test('disables optimistic UI skip sync for repeat-one only', () {
+      expect(shouldOptimisticallySyncSkipForLoopMode(LoopMode.off), isTrue);
+      expect(shouldOptimisticallySyncSkipForLoopMode(LoopMode.all), isTrue);
+      expect(shouldOptimisticallySyncSkipForLoopMode(LoopMode.one), isFalse);
+    });
+  });
 }

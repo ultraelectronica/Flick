@@ -131,6 +131,11 @@ String _normalizePlaybackFileTypeCandidate(String rawValue) {
   }
 }
 
+@visibleForTesting
+bool shouldOptimisticallySyncSkipForLoopMode(LoopMode loopMode) {
+  return loopMode != LoopMode.one;
+}
+
 /// Singleton service to manage global audio playback state.
 ///
 /// Uses just_audio for playback with gapless playback support.
@@ -1541,6 +1546,10 @@ class PlayerService {
     _updateNotificationState();
   }
 
+  bool _shouldOptimisticallySyncJustAudioSkip() {
+    return shouldOptimisticallySyncSkipForLoopMode(loopModeNotifier.value);
+  }
+
   Future<void> next() async {
     if (_playlist.isEmpty) return;
 
@@ -1566,7 +1575,9 @@ class PlayerService {
       final targetIndex = _currentIndex + 1;
       debugPrint('next(): Advancing to index $_currentIndex');
       await _justAudioPlayer.seekToNext();
-      _syncCurrentSongFromIndex(targetIndex);
+      if (_shouldOptimisticallySyncJustAudioSkip()) {
+        _syncCurrentSongFromIndex(targetIndex);
+      }
     } else if (loopModeNotifier.value == LoopMode.all) {
       debugPrint('next(): LoopMode.all, wrapping to index 0');
       await _justAudioPlayer.seek(Duration.zero, index: 0);
@@ -1604,7 +1615,9 @@ class PlayerService {
       if (_currentIndex > 0) {
         final targetIndex = _currentIndex - 1;
         await _justAudioPlayer.seekToPrevious();
-        _syncCurrentSongFromIndex(targetIndex);
+        if (_shouldOptimisticallySyncJustAudioSkip()) {
+          _syncCurrentSongFromIndex(targetIndex);
+        }
       } else {
         await seek(Duration.zero);
       }
