@@ -212,7 +212,7 @@ Flick Player is purely open-source and free. There are no premium features, ads,
 
 ## Contributors
 
-- [@Harleythetech](https://github.com/Harleythetech)
+- [@Harleythetech](https://github.com/Harleythetech) (The first ever contributor of Flick)
 
 ## Contributing
 
