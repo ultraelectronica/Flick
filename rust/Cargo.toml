@@ -16,6 +16,7 @@ uac2 = ["rusb", "libusb1-sys"]
 [dependencies]
 flutter_rust_bridge = "=2.11.1"
 lofty = "0.21.1"
+jwalk = "0.8"
 walkdir = "2"
 rayon = "1.8"
 anyhow = "1.0"

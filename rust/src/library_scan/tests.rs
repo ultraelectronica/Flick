@@ -138,6 +138,30 @@ fn two_phase_scan_async_applies_batch_updates() {
     assert_eq!(database.len(), 1);
 }
 
+#[test]
+fn two_phase_scan_skips_nomedia_subtrees() {
+    let root = TestDir::new("nomedia");
+    let visible_track = root.path().join("visible").join("track.mp3");
+    let hidden_dir = root.path().join("hidden");
+    let hidden_track = hidden_dir.join("secret.flac");
+    let nomedia = hidden_dir.join(".nomedia");
+
+    write_file(&visible_track, b"visible");
+    write_file(&nomedia, b"");
+    write_file(&hidden_track, b"hidden");
+
+    let database = SharedFileDatabase::new();
+    let diff = TwoPhaseScanner::scan(root.path(), &database).unwrap();
+
+    assert_eq!(
+        diff.new_files
+            .iter()
+            .map(|file| file.path.clone())
+            .collect::<Vec<_>>(),
+        vec![visible_track.to_string_lossy().into_owned()]
+    );
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 #[test]
 fn hybrid_scanner_bootstraps_and_reacts_to_live_changes() {

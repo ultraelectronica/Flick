@@ -1,6 +1,7 @@
 use super::database::SharedFileDatabase;
 use super::types::{FileFingerprint, ScanDiff};
 use anyhow::{anyhow, Result};
+use jwalk::WalkDir;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -8,7 +9,6 @@ use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::thread::{self, JoinHandle};
 use std::time::UNIX_EPOCH;
-use walkdir::WalkDir;
 
 pub struct TwoPhaseScanner;
 
@@ -69,14 +69,51 @@ fn normalize_root<P: AsRef<Path>>(root_path: P) -> Result<PathBuf> {
 }
 
 fn collect_candidate_paths(root_path: &Path) -> Vec<PathBuf> {
+    let mut nomedia_cache = HashMap::new();
+
     WalkDir::new(root_path)
         .follow_links(false)
+        .process_read_dir(|_, _, _, children| {
+            let has_nomedia = children.iter().any(|child| {
+                child
+                    .as_ref()
+                    .ok()
+                    .and_then(|entry| entry.file_name.to_str())
+                    == Some(".nomedia")
+            });
+
+            if has_nomedia {
+                children.clear();
+            }
+        })
         .into_iter()
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
-        .map(|entry| entry.into_path())
+        .map(|entry| entry.path())
+        .filter(|path| !is_in_nomedia_subtree(path, &mut nomedia_cache))
         .filter(|path| is_supported_audio_path(path))
         .collect()
+}
+
+fn is_in_nomedia_subtree(path: &Path, cache: &mut HashMap<PathBuf, bool>) -> bool {
+    path.parent()
+        .map(|parent| directory_is_nomedia_blocked(parent, cache))
+        .unwrap_or(false)
+}
+
+fn directory_is_nomedia_blocked(dir: &Path, cache: &mut HashMap<PathBuf, bool>) -> bool {
+    if let Some(cached) = cache.get(dir) {
+        return *cached;
+    }
+
+    let blocked = dir.join(".nomedia").is_file()
+        || dir
+            .parent()
+            .map(|parent| directory_is_nomedia_blocked(parent, cache))
+            .unwrap_or(false);
+
+    cache.insert(dir.to_path_buf(), blocked);
+    blocked
 }
 
 fn classify_diff(
