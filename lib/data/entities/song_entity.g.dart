@@ -115,40 +115,14 @@ const SongEntitySchema = CollectionSchema(
         ),
       ],
     ),
-    r'artist': IndexSchema(
-      id: 5842945185359817302,
-      name: r'artist',
+    r'folderUri': IndexSchema(
+      id: -6159925735266607609,
+      name: r'folderUri',
       unique: false,
       replace: false,
       properties: [
         IndexPropertySchema(
-          name: r'artist',
-          type: IndexType.hash,
-          caseSensitive: true,
-        ),
-      ],
-    ),
-    r'album': IndexSchema(
-      id: 6222745341035631462,
-      name: r'album',
-      unique: false,
-      replace: false,
-      properties: [
-        IndexPropertySchema(
-          name: r'album',
-          type: IndexType.hash,
-          caseSensitive: true,
-        ),
-      ],
-    ),
-    r'genre': IndexSchema(
-      id: 7810252941268804523,
-      name: r'genre',
-      unique: false,
-      replace: false,
-      properties: [
-        IndexPropertySchema(
-          name: r'genre',
+          name: r'folderUri',
           type: IndexType.hash,
           caseSensitive: true,
         ),
@@ -579,73 +553,19 @@ extension SongEntityQueryWhere
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> artistEqualTo(
-    String artist,
-  ) {
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> folderUriIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
-        IndexWhereClause.equalTo(indexName: r'artist', value: [artist]),
+        IndexWhereClause.equalTo(indexName: r'folderUri', value: [null]),
       );
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> artistNotEqualTo(
-    String artist,
-  ) {
-    return QueryBuilder.apply(this, (query) {
-      if (query.whereSort == Sort.asc) {
-        return query
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'artist',
-                lower: [],
-                upper: [artist],
-                includeUpper: false,
-              ),
-            )
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'artist',
-                lower: [artist],
-                includeLower: false,
-                upper: [],
-              ),
-            );
-      } else {
-        return query
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'artist',
-                lower: [artist],
-                includeLower: false,
-                upper: [],
-              ),
-            )
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'artist',
-                lower: [],
-                upper: [artist],
-                includeUpper: false,
-              ),
-            );
-      }
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumIsNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(
-        IndexWhereClause.equalTo(indexName: r'album', value: [null]),
-      );
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumIsNotNull() {
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> folderUriIsNotNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
         IndexWhereClause.between(
-          indexName: r'album',
+          indexName: r'folderUri',
           lower: [null],
           includeLower: false,
           upper: [],
@@ -654,34 +574,34 @@ extension SongEntityQueryWhere
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumEqualTo(
-    String? album,
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> folderUriEqualTo(
+    String? folderUri,
   ) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
-        IndexWhereClause.equalTo(indexName: r'album', value: [album]),
+        IndexWhereClause.equalTo(indexName: r'folderUri', value: [folderUri]),
       );
     });
   }
 
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> albumNotEqualTo(
-    String? album,
+  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> folderUriNotEqualTo(
+    String? folderUri,
   ) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
             .addWhereClause(
               IndexWhereClause.between(
-                indexName: r'album',
+                indexName: r'folderUri',
                 lower: [],
-                upper: [album],
+                upper: [folderUri],
                 includeUpper: false,
               ),
             )
             .addWhereClause(
               IndexWhereClause.between(
-                indexName: r'album',
-                lower: [album],
+                indexName: r'folderUri',
+                lower: [folderUri],
                 includeLower: false,
                 upper: [],
               ),
@@ -690,92 +610,17 @@ extension SongEntityQueryWhere
         return query
             .addWhereClause(
               IndexWhereClause.between(
-                indexName: r'album',
-                lower: [album],
+                indexName: r'folderUri',
+                lower: [folderUri],
                 includeLower: false,
                 upper: [],
               ),
             )
             .addWhereClause(
               IndexWhereClause.between(
-                indexName: r'album',
+                indexName: r'folderUri',
                 lower: [],
-                upper: [album],
-                includeUpper: false,
-              ),
-            );
-      }
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> genreIsNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(
-        IndexWhereClause.equalTo(indexName: r'genre', value: [null]),
-      );
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> genreIsNotNull() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(
-        IndexWhereClause.between(
-          indexName: r'genre',
-          lower: [null],
-          includeLower: false,
-          upper: [],
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> genreEqualTo(
-    String? genre,
-  ) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(
-        IndexWhereClause.equalTo(indexName: r'genre', value: [genre]),
-      );
-    });
-  }
-
-  QueryBuilder<SongEntity, SongEntity, QAfterWhereClause> genreNotEqualTo(
-    String? genre,
-  ) {
-    return QueryBuilder.apply(this, (query) {
-      if (query.whereSort == Sort.asc) {
-        return query
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'genre',
-                lower: [],
-                upper: [genre],
-                includeUpper: false,
-              ),
-            )
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'genre',
-                lower: [genre],
-                includeLower: false,
-                upper: [],
-              ),
-            );
-      } else {
-        return query
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'genre',
-                lower: [genre],
-                includeLower: false,
-                upper: [],
-              ),
-            )
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'genre',
-                lower: [],
-                upper: [genre],
+                upper: [folderUri],
                 includeUpper: false,
               ),
             );

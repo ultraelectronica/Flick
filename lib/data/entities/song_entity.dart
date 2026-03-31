@@ -16,11 +16,9 @@ class SongEntity {
   late String title;
 
   /// Artist name
-  @Index()
   late String artist;
 
   /// Album name
-  @Index()
   String? album;
 
   /// Album artist
@@ -39,7 +37,6 @@ class SongEntity {
   int? year;
 
   /// Genre
-  @Index()
   String? genre;
 
   /// File size in bytes
@@ -64,6 +61,7 @@ class SongEntity {
   String? albumArtPath;
 
   /// URI of the folder containing this song
+  @Index()
   String? folderUri;
 
   /// Date the song was added to the library

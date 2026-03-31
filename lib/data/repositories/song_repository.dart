@@ -89,48 +89,6 @@ class SongRepository {
     if (entities.isEmpty) return;
 
     await _isar.writeTxn(() async {
-      final unresolvedEntities = entities
-          .where((entity) => entity.id == Isar.autoIncrement)
-          .toList();
-      if (unresolvedEntities.isEmpty) {
-        await _isar.songEntitys.putAll(entities);
-        return;
-      }
-
-      // Batch query for all existing songs by file paths
-      final filePaths = unresolvedEntities.map((e) => e.filePath).toList();
-
-      // Build a map of existing songs by file path for quick lookup
-      final existingMap = <String, SongEntity>{};
-
-      // Query in chunks to avoid potential query size limits
-      const chunkSize = 100;
-      for (var i = 0; i < filePaths.length; i += chunkSize) {
-        final end = (i + chunkSize < filePaths.length)
-            ? i + chunkSize
-            : filePaths.length;
-        final chunkPaths = filePaths.sublist(i, end);
-
-        // Query for existing songs in this chunk
-        for (final path in chunkPaths) {
-          final existing = await _isar.songEntitys
-              .filter()
-              .filePathEqualTo(path)
-              .findFirst();
-          if (existing != null) {
-            existingMap[path] = existing;
-          }
-        }
-      }
-
-      // Assign IDs to entities that already exist
-      for (final entity in unresolvedEntities) {
-        final existing = existingMap[entity.filePath];
-        if (existing != null) {
-          entity.id = existing.id;
-        }
-      }
-
       await _isar.songEntitys.putAll(entities);
     });
   }
@@ -160,6 +118,33 @@ class SongRepository {
       for (final path in paths) {
         await _isar.songEntitys.filter().filePathEqualTo(path).deleteAll();
       }
+    });
+  }
+
+  Future<void> deleteSongsByIds(List<Id> ids) async {
+    if (ids.isEmpty) return;
+
+    await _isar.writeTxn(() async {
+      await _isar.songEntitys.deleteAll(ids);
+    });
+  }
+
+  Future<void> updateAlbumArtPath(String filePath, String? albumArtPath) async {
+    await _isar.writeTxn(() async {
+      final existing = await _isar.songEntitys
+          .filter()
+          .filePathEqualTo(filePath)
+          .findFirst();
+      if (existing == null) {
+        return;
+      }
+
+      if (existing.albumArtPath == albumArtPath) {
+        return;
+      }
+
+      existing.albumArtPath = albumArtPath;
+      await _isar.songEntitys.put(existing);
     });
   }
 

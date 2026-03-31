@@ -20,6 +20,7 @@ import android.media.audiofx.AudioEffect
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
@@ -185,12 +186,33 @@ class MainActivity: FlutterActivity() {
                 }
                 "listAudioFiles" -> {
                     val uri = call.argument<String>("uri")
+                    val filterNonMusicFilesAndFolders =
+                        call.argument<Boolean>("filterNonMusicFilesAndFolders") ?: true
                     if (uri != null) {
                         // Launch in background to avoid blocking UI
                         mainScope.launch {
                             try {
                                 val files = withContext(Dispatchers.IO) {
-                                    fastScanAudioFiles(uri)
+                                    fastScanAudioFiles(uri, filterNonMusicFilesAndFolders)
+                                }
+                                result.success(files)
+                            } catch (e: Exception) {
+                                result.error("SCAN_ERROR", "Failed to scan folder: ${e.message}", null)
+                            }
+                        }
+                    } else {
+                        result.error("INVALID_ARGUMENT", "URI is required", null)
+                    }
+                }
+                "listPlaylistFiles" -> {
+                    val uri = call.argument<String>("uri")
+                    val filterNonMusicFilesAndFolders =
+                        call.argument<Boolean>("filterNonMusicFilesAndFolders") ?: true
+                    if (uri != null) {
+                        mainScope.launch {
+                            try {
+                                val files = withContext(Dispatchers.IO) {
+                                    scanPlaylistFiles(uri, filterNonMusicFilesAndFolders)
                                 }
                                 result.success(files)
                             } catch (e: Exception) {
@@ -216,6 +238,23 @@ class MainActivity: FlutterActivity() {
                         }
                     } else {
                         result.error("INVALID_ARGUMENT", "URIs list is required", null)
+                    }
+                }
+                "fetchEmbeddedArtwork" -> {
+                    val uri = call.argument<String>("uri")
+                    if (uri != null) {
+                        mainScope.launch {
+                            try {
+                                val artwork = withContext(Dispatchers.IO) {
+                                    extractEmbeddedArtwork(uri)
+                                }
+                                result.success(artwork)
+                            } catch (e: Exception) {
+                                result.error("ARTWORK_ERROR", "Failed to fetch embedded artwork: ${e.message}", null)
+                            }
+                        }
+                    } else {
+                        result.error("INVALID_ARGUMENT", "URI is required", null)
                     }
                 }
                 "cacheUriForPlayback" -> {
@@ -275,6 +314,14 @@ class MainActivity: FlutterActivity() {
                     if (uri != null) {
                         val displayName = getDocumentDisplayName(uri)
                         result.success(displayName)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "URI is required", null)
+                    }
+                }
+                "resolveTreeUriToPath" -> {
+                    val uri = call.argument<String>("uri")
+                    if (uri != null) {
+                        result.success(resolveTreeUriToPath(uri))
                     } else {
                         result.error("INVALID_ARGUMENT", "URI is required", null)
                     }
@@ -840,6 +887,54 @@ class MainActivity: FlutterActivity() {
         }
     }
 
+    private fun resolveTreeUriToPath(uriString: String): String? {
+        return try {
+            val uri = Uri.parse(uriString)
+            if (uri.scheme == "file") {
+                return uri.path
+            }
+
+            if (uri.scheme != "content" ||
+                uri.authority != "com.android.externalstorage.documents"
+            ) {
+                return null
+            }
+
+            val documentId = DocumentsContract.getTreeDocumentId(uri)
+            val decodedId = Uri.decode(documentId)
+            val parts = decodedId.split(":", limit = 2)
+            if (parts.isEmpty()) {
+                return null
+            }
+
+            val volumeId = parts[0]
+            val relativePath = parts.getOrNull(1)?.trim('/') ?: ""
+            val basePath = when (volumeId.lowercase()) {
+                "primary" -> Environment.getExternalStorageDirectory().absolutePath
+                "home" -> Environment.getExternalStoragePublicDirectory(
+                    Environment.DIRECTORY_DOCUMENTS
+                ).absolutePath
+                else -> "/storage/$volumeId"
+            }
+
+            val candidate = if (relativePath.isEmpty()) {
+                basePath
+            } else {
+                "$basePath/$relativePath"
+            }
+
+            val candidateFile = File(candidate)
+            if (!candidateFile.exists() || !candidateFile.canRead()) {
+                return null
+            }
+
+            candidateFile.absolutePath
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Failed to resolve tree URI to path: $uriString", e)
+            null
+        }
+    }
+
     private fun readTextDocument(uriString: String): String {
         android.util.Log.d("MainActivity", "[readTextDocument] Input URI: $uriString")
         val uri = Uri.parse(uriString)
@@ -875,21 +970,32 @@ class MainActivity: FlutterActivity() {
     }
 
     // Phase 1: Fast Scan (Filesystem only)
-    private fun fastScanAudioFiles(uriString: String): List<Map<String, Any?>> {
+    private fun fastScanAudioFiles(
+        uriString: String,
+        filterNonMusicFilesAndFolders: Boolean
+    ): List<Map<String, Any?>> {
         val uri = Uri.parse(uriString)
         val documentFile = DocumentFile.fromTreeUri(this, uri) ?: return emptyList()
-        
-        val audioExtensions = setOf("mp3", "flac", "wav", "aac", "m4a", "ogg", "oga", "ogx", "opus", "wma", "alac", "aif", "aiff")
+
+        val audioExtensions =
+            setOf("mp3", "flac", "wav", "aac", "m4a", "ogg", "oga", "ogx", "opus", "wma", "alac", "aif", "aiff")
         val result = mutableListOf<Map<String, Any?>>()
 
         fun scanDirectory(dir: DocumentFile) {
-            for (file in dir.listFiles()) {
+            val children = dir.listFiles()
+            if (filterNonMusicFilesAndFolders &&
+                children.any { child -> child.name == ".nomedia" }
+            ) {
+                return
+            }
+
+            for (file in children) {
                 if (file.isDirectory) {
                     scanDirectory(file)
                 } else if (file.isFile) {
                     val name = file.name ?: continue
                     val extension = name.substringAfterLast('.', "").lowercase()
-                    if (extension in audioExtensions) {
+                    if (!filterNonMusicFilesAndFolders || extension in audioExtensions) {
                         result.add(mapOf(
                             "uri" to file.uri.toString(),
                             "name" to name,
@@ -907,13 +1013,52 @@ class MainActivity: FlutterActivity() {
         return result
     }
 
+    private fun scanPlaylistFiles(
+        uriString: String,
+        filterNonMusicFilesAndFolders: Boolean
+    ): List<Map<String, Any?>> {
+        val uri = Uri.parse(uriString)
+        val documentFile = DocumentFile.fromTreeUri(this, uri) ?: return emptyList()
+        val playlistExtensions = setOf("m3u", "m3u8")
+        val result = mutableListOf<Map<String, Any?>>()
+
+        fun scanDirectory(dir: DocumentFile) {
+            val children = dir.listFiles()
+            if (filterNonMusicFilesAndFolders &&
+                children.any { child -> child.name == ".nomedia" }
+            ) {
+                return
+            }
+
+            for (file in children) {
+                if (file.isDirectory) {
+                    scanDirectory(file)
+                } else if (file.isFile) {
+                    val name = file.name ?: continue
+                    val extension = name.substringAfterLast('.', "").lowercase()
+                    if (extension in playlistExtensions) {
+                        result.add(
+                            mapOf(
+                                "uri" to file.uri.toString(),
+                                "name" to name,
+                                "size" to file.length(),
+                                "lastModified" to file.lastModified(),
+                                "extension" to extension,
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        scanDirectory(documentFile)
+        return result
+    }
+
     // Phase 2: Metadata Extraction (Targeted)
     private fun extractMetadataForFiles(uris: List<String>): List<Map<String, Any?>> {
         val retriever = MediaMetadataRetriever()
         val result = mutableListOf<Map<String, Any?>>()
-        // Use filesDir instead of cacheDir for persistent album art storage
-        // cacheDir can be cleared by Android at any time when storage is low
-        val albumArtDir = java.io.File(filesDir, "album_art").apply { mkdirs() }
 
         for (uriString in uris) {
             try {
@@ -952,26 +1097,6 @@ class MainActivity: FlutterActivity() {
                     metadata["duration"] = durationStr.toLongOrNull()
                 }
 
-                // Extract Album Art
-                val embeddedArt = retriever.embeddedPicture
-                if (embeddedArt != null) {
-                    try {
-                        // Use MD5 of URI as filename to avoid collisions and invalid chars
-                        val filename = java.math.BigInteger(1, java.security.MessageDigest.getInstance("MD5").digest(uriString.toByteArray())).toString(16) + ".jpg"
-                        val file = java.io.File(albumArtDir, filename)
-                        
-                        // Only write if not exists or maybe overwrite? 
-                        // For performance, check existence. 
-                        // But what if art changed? (Unlikely for same URI without modified time change, but we assume immutable for now)
-                        if (!file.exists()) {
-                            file.writeBytes(embeddedArt)
-                        }
-                        metadata["albumArtPath"] = file.absolutePath
-                    } catch (e: Exception) {
-                        // Failed to save art
-                    }
-                }
-
                 result.add(metadata)
             } catch (e: Exception) {
                 // Return just the URI if metadata fails, so Dart knows we tried
@@ -986,6 +1111,22 @@ class MainActivity: FlutterActivity() {
         }
 
         return result
+    }
+
+    private fun extractEmbeddedArtwork(uriString: String): ByteArray? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(context, Uri.parse(uriString))
+            retriever.embeddedPicture
+        } catch (_: Exception) {
+            null
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {
+                // Ignore
+            }
+        }
     }
 
     private fun extractMetadataByKeyName(
