@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/app_colors.dart';
@@ -10,6 +8,7 @@ import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:flick/services/favorites_service.dart';
+import 'package:flick/widgets/common/cached_image_widget.dart';
 import 'package:flick/widgets/common/display_mode_wrapper.dart';
 
 /// Favorites screen showing liked songs with heart animations.
@@ -340,20 +339,18 @@ class _FavoriteSongTile extends StatelessWidget {
                         AppConstants.radiusMd,
                       ),
                     ),
-                    child: song.albumArt != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              AppConstants.radiusMd,
-                            ),
-                            child: Image.file(
-                              File(song.albumArt!),
-                              fit: BoxFit.cover,
-                              filterQuality: FilterQuality.low,
-                              errorBuilder: (_, _, _) =>
-                                  _buildPlaceholder(context),
-                            ),
-                          )
-                        : _buildPlaceholder(context),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusMd,
+                      ),
+                      child: CachedImageWidget(
+                        imagePath: song.albumArt,
+                        audioSourcePath: song.filePath,
+                        fit: BoxFit.cover,
+                        placeholder: _buildPlaceholder(context),
+                        errorWidget: _buildPlaceholder(context),
+                      ),
+                    ),
                   ),
                   const SizedBox(width: AppConstants.spacingMd),
                   // Song info

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -11,6 +10,7 @@ import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/data/repositories/song_repository.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/widgets/common/cached_image_widget.dart';
 import 'package:flick/widgets/common/display_mode_wrapper.dart';
 
 /// Artists screen with circular avatar cards.
@@ -52,6 +52,16 @@ class _ArtistsScreenState extends State<ArtistsScreen> {
     return null;
   }
 
+  String? _getArtworkSourcePath(List<Song> songs) {
+    for (final song in songs) {
+      final filePath = song.filePath;
+      if (filePath != null && filePath.isNotEmpty) {
+        return filePath;
+      }
+    }
+    return null;
+  }
+
   String _getArtistInitials(String name) {
     final words = name.split(' ');
     if (words.length >= 2) {
@@ -70,6 +80,7 @@ class _ArtistsScreenState extends State<ArtistsScreen> {
               artistName: artistName,
               songs: songs,
               artistArt: _getArtistArt(songs),
+              artistArtSourcePath: _getArtworkSourcePath(songs),
               playerService: _playerService,
             ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -203,6 +214,7 @@ class _ArtistsScreenState extends State<ArtistsScreen> {
           artistName: entry.key,
           songs: entry.value,
           artistArt: _getArtistArt(entry.value),
+          artistArtSourcePath: _getArtworkSourcePath(entry.value),
           initials: _getArtistInitials(entry.key),
           onTap: () => _openArtistDetail(entry.key, entry.value),
         );
@@ -215,6 +227,7 @@ class _ArtistCard extends StatelessWidget {
   final String artistName;
   final List<Song> songs;
   final String? artistArt;
+  final String? artistArtSourcePath;
   final String initials;
   final VoidCallback onTap;
 
@@ -222,6 +235,7 @@ class _ArtistCard extends StatelessWidget {
     required this.artistName,
     required this.songs,
     required this.artistArt,
+    required this.artistArtSourcePath,
     required this.initials,
     required this.onTap,
   });
@@ -254,16 +268,15 @@ class _ArtistCard extends StatelessWidget {
                     color: AppColors.surfaceLight,
                     border: Border.all(color: AppColors.surfaceDark, width: 2),
                   ),
-                  child: artistArt != null
-                      ? ClipOval(
-                          child: Image.file(
-                            File(artistArt!),
-                            fit: BoxFit.cover,
-                            filterQuality: FilterQuality.low,
-                            errorBuilder: (_, _, _) => _buildInitials(context),
-                          ),
-                        )
-                      : _buildInitials(context),
+                  child: ClipOval(
+                    child: CachedImageWidget(
+                      imagePath: artistArt,
+                      audioSourcePath: artistArtSourcePath,
+                      fit: BoxFit.cover,
+                      placeholder: _buildInitials(context),
+                      errorWidget: _buildInitials(context),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: AppConstants.spacingMd),
                 // Artist info
@@ -322,6 +335,7 @@ class ArtistDetailScreen extends StatelessWidget {
   final String artistName;
   final List<Song> songs;
   final String? artistArt;
+  final String? artistArtSourcePath;
   final PlayerService playerService;
 
   const ArtistDetailScreen({
@@ -329,6 +343,7 @@ class ArtistDetailScreen extends StatelessWidget {
     required this.artistName,
     required this.songs,
     required this.artistArt,
+    required this.artistArtSourcePath,
     required this.playerService,
   });
 
@@ -368,14 +383,15 @@ class ArtistDetailScreen extends StatelessWidget {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (artistArt != null)
+                  if (artistArt != null || artistArtSourcePath != null)
                     ImageFiltered(
                       imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                      child: Image.file(
-                        File(artistArt!),
+                      child: CachedImageWidget(
+                        imagePath: artistArt,
+                        audioSourcePath: artistArtSourcePath,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            Container(color: AppColors.surface),
+                        placeholder: Container(color: AppColors.surface),
+                        errorWidget: Container(color: AppColors.surface),
                       ),
                     )
                   else
@@ -411,23 +427,23 @@ class ArtistDetailScreen extends StatelessWidget {
                               width: 3,
                             ),
                           ),
-                          child: artistArt != null
-                              ? ClipOval(
-                                  child: Image.file(
-                                    File(artistArt!),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => Icon(
-                                      LucideIcons.user,
-                                      size: 40,
-                                      color: context.adaptiveTextTertiary,
-                                    ),
-                                  ),
-                                )
-                              : Icon(
-                                  LucideIcons.user,
-                                  size: 40,
-                                  color: context.adaptiveTextTertiary,
-                                ),
+                          child: ClipOval(
+                            child: CachedImageWidget(
+                              imagePath: artistArt,
+                              audioSourcePath: artistArtSourcePath,
+                              fit: BoxFit.cover,
+                              placeholder: Icon(
+                                LucideIcons.user,
+                                size: 40,
+                                color: context.adaptiveTextTertiary,
+                              ),
+                              errorWidget: Icon(
+                                LucideIcons.user,
+                                size: 40,
+                                color: context.adaptiveTextTertiary,
+                              ),
+                            ),
+                          ),
                         ),
                         const SizedBox(height: AppConstants.spacingMd),
                         Text(
@@ -575,26 +591,24 @@ class _SongTile extends StatelessWidget {
                   color: AppColors.glassBackground,
                   borderRadius: BorderRadius.circular(AppConstants.radiusSm),
                 ),
-                child: song.albumArt != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                          AppConstants.radiusSm,
-                        ),
-                        child: Image.file(
-                          File(song.albumArt!),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Icon(
-                            LucideIcons.music,
-                            color: context.adaptiveTextTertiary,
-                            size: 18,
-                          ),
-                        ),
-                      )
-                    : Icon(
-                        LucideIcons.music,
-                        color: context.adaptiveTextTertiary,
-                        size: 18,
-                      ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                  child: CachedImageWidget(
+                    imagePath: song.albumArt,
+                    audioSourcePath: song.filePath,
+                    fit: BoxFit.cover,
+                    placeholder: Icon(
+                      LucideIcons.music,
+                      color: context.adaptiveTextTertiary,
+                      size: 18,
+                    ),
+                    errorWidget: Icon(
+                      LucideIcons.music,
+                      color: context.adaptiveTextTertiary,
+                      size: 18,
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(width: AppConstants.spacingMd),
               Expanded(
