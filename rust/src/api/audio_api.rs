@@ -5,7 +5,7 @@
 
 use crate::audio::commands::{AudioEvent, PlaybackState};
 use crate::audio::decoder::probe_file;
-use crate::audio::manager::{AudioEngine, EngineManager};
+use crate::audio::manager::{AudioCapability, AudioCapabilitySnapshot, AudioEngine, EngineManager};
 use once_cell::sync::Lazy;
 use std::path::PathBuf;
 
@@ -83,6 +83,65 @@ pub enum CrossfadeCurveType {
     SCurve,
 }
 
+/// The currently available output capability classes for engine selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioCapabilityType {
+    UsbDac,
+    HiResInternal,
+    Standard,
+}
+
+impl From<AudioCapability> for AudioCapabilityType {
+    fn from(value: AudioCapability) -> Self {
+        match value {
+            AudioCapability::UsbDac => Self::UsbDac,
+            AudioCapability::HiResInternal => Self::HiResInternal,
+            AudioCapability::Standard => Self::Standard,
+        }
+    }
+}
+
+impl From<AudioCapabilityType> for AudioCapability {
+    fn from(value: AudioCapabilityType) -> Self {
+        match value {
+            AudioCapabilityType::UsbDac => Self::UsbDac,
+            AudioCapabilityType::HiResInternal => Self::HiResInternal,
+            AudioCapabilityType::Standard => Self::Standard,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AudioCapabilityInfo {
+    pub capabilities: Vec<AudioCapabilityType>,
+    pub route_type: String,
+    pub route_label: Option<String>,
+    pub max_sample_rate: Option<u32>,
+}
+
+impl From<AudioCapabilitySnapshot> for AudioCapabilityInfo {
+    fn from(value: AudioCapabilitySnapshot) -> Self {
+        Self {
+            capabilities: value.capabilities.into_iter().map(Into::into).collect(),
+            route_type: value.route_type,
+            route_label: value.route_label,
+            max_sample_rate: value.max_sample_rate,
+        }
+    }
+}
+
+impl From<AudioCapabilityInfo> for AudioCapabilitySnapshot {
+    fn from(value: AudioCapabilityInfo) -> Self {
+        AudioCapabilitySnapshot {
+            capabilities: value.capabilities.into_iter().map(Into::into).collect(),
+            route_type: value.route_type,
+            route_label: value.route_label,
+            max_sample_rate: value.max_sample_rate,
+        }
+        .normalize()
+    }
+}
+
 // ============================================================================
 // API FUNCTIONS
 // ============================================================================
@@ -112,6 +171,21 @@ pub fn audio_is_initialized() -> bool {
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_set_high_res_mode(enabled: bool) {
     ENGINE_MANAGER.set_high_res_mode(enabled);
+}
+
+/// Update the current platform capability snapshot used for engine selection.
+#[flutter_rust_bridge::frb(sync)]
+pub fn audio_set_capability_info(info: AudioCapabilityInfo) {
+    ENGINE_MANAGER.set_capability_snapshot(info.into());
+}
+
+/// Inspect the current capability snapshot after native detection and platform hints are merged.
+pub fn audio_get_capability_info(
+    preferred_sample_rate: Option<u32>,
+) -> Result<AudioCapabilityInfo, String> {
+    ENGINE_MANAGER
+        .capability_snapshot(preferred_sample_rate)
+        .map(Into::into)
 }
 
 /// Return the currently selected engine.

@@ -27,4 +27,4 @@ pub mod source;
 pub use alac_converter::{AudioMetadata, ConversionSession};
 pub use commands::{AudioCommand, PlaybackState};
 pub use engine::{create_audio_engine, AudioEngineHandle};
-pub use manager::{AudioEngine, EngineManager};
+pub use manager::{AudioCapability, AudioCapabilitySnapshot, AudioEngine, EngineManager};
