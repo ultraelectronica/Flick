@@ -166,6 +166,7 @@ class PlayerService {
   );
   final Map<String, String> _stagedPlaybackPathCache = {};
   final Map<String, String> _convertedPlaybackPathCache = {};
+  final Set<String> _unsupportedWavConversionSources = <String>{};
   bool _usingRustBackend = false;
   bool _rustBackendAvailable = false;
   bool _justAudioListenersAttached = false;
@@ -1140,6 +1141,10 @@ class PlayerService {
     required String sourceKey,
     required String sourcePath,
   }) async {
+    if (_unsupportedWavConversionSources.contains(sourceKey)) {
+      return null;
+    }
+
     final cached = _convertedPlaybackPathCache[sourceKey];
     if (cached != null && cached.isNotEmpty) {
       final cachedFile = Uri.file(cached).toFilePath();
@@ -1154,13 +1159,24 @@ class PlayerService {
       return null;
     }
 
+    final localPath = playbackUri.toFilePath();
+    final canConvert = await AlacConverterService.canConvertToWavFile(
+      localPath,
+    );
+    if (!canConvert) {
+      _unsupportedWavConversionSources.add(sourceKey);
+      return null;
+    }
+
     try {
       final convertedPath = await AlacConverterService.convertToWavFile(
-        playbackUri.toFilePath(),
+        localPath,
       );
       _convertedPlaybackPathCache[sourceKey] = convertedPath;
+      _unsupportedWavConversionSources.remove(sourceKey);
       return convertedPath;
     } catch (e) {
+      _unsupportedWavConversionSources.add(sourceKey);
       debugPrint('Failed to convert playback path to WAV: $e');
       return null;
     }

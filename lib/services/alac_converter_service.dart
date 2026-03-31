@@ -9,6 +9,8 @@ import '../src/rust/api/alac_converter_api.dart' as alac_api;
 /// - One-shot: Convert entire file to WAV in memory (for small files)
 /// - Streaming: Decode chunks progressively (for large files)
 class AlacConverterService {
+  static final Map<String, bool> _wavConversionSupportCache = {};
+
   /// Convert a supported source file to WAV and save to a temporary file.
   ///
   /// Returns the path to the converted WAV file
@@ -51,6 +53,26 @@ class AlacConverterService {
     final file = File(filePath);
     final fileBytes = await file.readAsBytes();
     return alac_api.alacProbeMetadata(fileBytes: fileBytes);
+  }
+
+  /// Quietly check whether the Rust converter can decode this source.
+  ///
+  /// This avoids repeatedly attempting conversions for files that the
+  /// converter doesn't actually support.
+  static Future<bool> canConvertToWavFile(String filePath) async {
+    final cached = _wavConversionSupportCache[filePath];
+    if (cached != null) {
+      return cached;
+    }
+
+    try {
+      await probeMetadata(filePath);
+      _wavConversionSupportCache[filePath] = true;
+      return true;
+    } catch (_) {
+      _wavConversionSupportCache[filePath] = false;
+      return false;
+    }
   }
 
   /// Check if a file is ALAC or M4A format
