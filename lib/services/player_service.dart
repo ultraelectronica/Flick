@@ -254,6 +254,8 @@ class PlayerService {
     // Initialize notification service with callbacks
     _notificationService.init(
       onTogglePlayPause: togglePlayPause,
+      onPlay: resume,
+      onPause: pause,
       onNext: next,
       onPrevious: previous,
       onStop: _stopPlayback,
@@ -1459,9 +1461,13 @@ class PlayerService {
 
   /// Play a specific song.
   Future<void> play(Song song, {List<Song>? playlist}) {
-    final operation = _playRequestQueue.then<void>(
-      (_) => _playInternal(song, playlist: playlist),
+    return _enqueuePlaybackRequest(
+      () => _playInternal(song, playlist: playlist),
     );
+  }
+
+  Future<void> _enqueuePlaybackRequest(Future<void> Function() action) {
+    final operation = _playRequestQueue.then<void>((_) => action());
     _playRequestQueue = operation.catchError((_) {});
     return operation;
   }
@@ -1649,7 +1655,11 @@ class PlayerService {
     }
   }
 
-  Future<void> pause() async {
+  Future<void> pause() {
+    return _enqueuePlaybackRequest(_pauseInternal);
+  }
+
+  Future<void> _pauseInternal() async {
     // Immediately update the playing state for responsive UI
     isPlayingNotifier.value = false;
 
@@ -1663,7 +1673,11 @@ class PlayerService {
     _updateNotificationState();
   }
 
-  Future<void> resume() async {
+  Future<void> resume() {
+    return _enqueuePlaybackRequest(_resumeInternal);
+  }
+
+  Future<void> _resumeInternal() async {
     await initAudio();
 
     final song = currentSongNotifier.value;
@@ -1701,23 +1715,35 @@ class PlayerService {
       return;
     }
 
-    if (song?.filePath != null &&
-        _justAudioPlayer.processingState == just_audio.ProcessingState.idle) {
-      await _loadJustAudioAtPosition(positionNotifier.value);
+    try {
+      if (song?.filePath != null &&
+          _justAudioPlayer.processingState == just_audio.ProcessingState.idle) {
+        await _loadJustAudioAtPosition(positionNotifier.value);
+      }
+      await _justAudioPlayer.play();
+    } on just_audio.PlayerInterruptedException catch (error) {
+      debugPrint(
+        'Ignoring just_audio interruption during resume for '
+        '${song?.title ?? 'unknown track'}: ${error.message}',
+      );
+      isPlayingNotifier.value = _justAudioPlayer.playing;
+      return;
     }
-    await _justAudioPlayer.play();
+
     await reapplyEqualizer();
     _ensurePositionSaveTimer();
     await _syncUac2PlaybackStatus(song, isPlaying: true);
     _updateNotificationState();
   }
 
-  Future<void> togglePlayPause() async {
-    if (isPlayingNotifier.value) {
-      await pause();
-    } else {
-      await resume();
-    }
+  Future<void> togglePlayPause() {
+    return _enqueuePlaybackRequest(() async {
+      if (isPlayingNotifier.value) {
+        await _pauseInternal();
+      } else {
+        await _resumeInternal();
+      }
+    });
   }
 
   Future<void> seek(Duration position) async {

@@ -18,6 +18,8 @@ class NotificationService {
   /// for receiving commands from the notification buttons.
   void init({
     required VoidCallback onTogglePlayPause,
+    required VoidCallback onPlay,
+    required VoidCallback onPause,
     required VoidCallback onNext,
     required VoidCallback onPrevious,
     required VoidCallback onStop,
@@ -31,10 +33,10 @@ class NotificationService {
           onTogglePlayPause();
           break;
         case 'play':
-          onTogglePlayPause(); // Will resume if paused
+          onPlay();
           break;
         case 'pause':
-          onTogglePlayPause(); // Will pause if playing
+          onPause();
           break;
         case 'next':
           onNext();
