@@ -28,6 +28,9 @@ class NavigationHelper {
     return false;
   }
 
+  /// Returns true if the full player is currently open or navigation is in progress.
+  static bool get isFullPlayerOpen => _isFullPlayerOpen || _isNavigating;
+
   static Future<int?> navigateToFullPlayer(
     BuildContext context, {
     required String heroTag,

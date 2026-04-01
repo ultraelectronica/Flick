@@ -104,16 +104,16 @@ class _MainShellState extends ConsumerState<MainShell>
       previousSong,
       nextSong,
     ) {
-      // Navigate if:
-      // 1. There is a new song (not null)
-      // 2. The song actually changed (different from previous, or first song)
-      // 3. The context is still mounted
       final songChanged =
           nextSong != null &&
           (_previousSong == null || _previousSong!.id != nextSong.id);
 
       if (songChanged && context.mounted) {
-        final song = nextSong; // Capture for closure
+        if (NavigationHelper.isFullPlayerOpen) {
+          _previousSong = nextSong;
+          return;
+        }
+        final song = nextSong;
         Future.delayed(const Duration(milliseconds: 100), () {
           if (context.mounted) {
             NavigationHelper.navigateToFullPlayer(
@@ -123,7 +123,6 @@ class _MainShellState extends ConsumerState<MainShell>
           }
         });
       }
-      // Update previous song
       _previousSong = nextSong;
     });
 
