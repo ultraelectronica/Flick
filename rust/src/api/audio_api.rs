@@ -27,14 +27,6 @@ fn ensure_audio_engine(preferred_sample_rate: Option<u32>) -> Result<(), String>
     ENGINE_MANAGER.ensure_rust_engine(preferred_sample_rate)
 }
 
-fn spawn_engine_prewarm(preferred_sample_rate: Option<u32>) {
-    let _ = std::thread::Builder::new()
-        .name("audio-engine-prewarm".to_string())
-        .spawn(move || {
-            let _ = ENGINE_MANAGER.ensure_rust_engine(preferred_sample_rate);
-        });
-}
-
 fn prepare_decoder_source(
     path: &PathBuf,
     output_sample_rate: u32,
@@ -170,7 +162,6 @@ pub fn audio_is_native_available() -> bool {
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_init() -> Result<(), String> {
     ENGINE_MANAGER.init();
-    spawn_engine_prewarm(None);
     Ok(())
 }
 
@@ -185,17 +176,12 @@ pub fn audio_is_initialized() -> bool {
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_set_high_res_mode(enabled: bool) {
     ENGINE_MANAGER.set_high_res_mode(enabled);
-    if enabled {
-        spawn_engine_prewarm(None);
-    }
 }
 
 /// Update the current platform capability snapshot used for engine selection.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_set_capability_info(info: AudioCapabilityInfo) {
-    let preferred_sample_rate = info.max_sample_rate;
     ENGINE_MANAGER.set_capability_snapshot(info.into());
-    spawn_engine_prewarm(preferred_sample_rate);
 }
 
 /// Inspect the current capability snapshot after native detection and platform hints are merged.

@@ -11,6 +11,7 @@ class Uac2PreferencesService {
   static const _keyPreferredFormat = 'uac2_preferred_format';
   static const _keyFormatPreference = 'uac2_format_preference';
   static const _keyAutoSelectDevice = 'uac2_auto_select_device';
+  static const _keyHiFiModeEnabled = 'uac2_hifi_mode_enabled';
 
   Future<void> saveSelectedDevice(Uac2DeviceInfo device) async {
     try {
@@ -121,6 +122,25 @@ class Uac2PreferencesService {
     }
   }
 
+  Future<void> setHiFiModeEnabled(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyHiFiModeEnabled, enabled);
+    } catch (e) {
+      debugPrint('Failed to save HiFi mode setting: $e');
+    }
+  }
+
+  Future<bool> getHiFiModeEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keyHiFiModeEnabled) ?? false;
+    } catch (e) {
+      debugPrint('Failed to load HiFi mode setting: $e');
+      return false;
+    }
+  }
+
   Future<void> setFormatPreference(Uac2FormatPreference preference) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -154,6 +174,7 @@ class Uac2PreferencesService {
       await prefs.remove(_keyPreferredFormat);
       await prefs.remove(_keyFormatPreference);
       await prefs.remove(_keyAutoSelectDevice);
+      await prefs.remove(_keyHiFiModeEnabled);
     } catch (e) {
       debugPrint('Failed to clear preferences: $e');
     }
