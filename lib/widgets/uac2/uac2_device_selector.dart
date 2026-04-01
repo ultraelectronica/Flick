@@ -11,8 +11,7 @@ class Uac2DeviceSelector extends ConsumerWidget {
     final isAvailable = ref.watch(uac2AvailableProvider);
     final devicesAsync = ref.watch(uac2DevicesProvider);
     final selectedDevice = ref.watch(selectedUac2DeviceProvider);
-    final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
-    final deviceStatus = deviceStatusNotifier.status;
+    final deviceStatus = ref.watch(uac2DeviceStatusProvider);
 
     if (!isAvailable) {
       return const Card(
@@ -147,8 +146,7 @@ class Uac2DeviceSelector extends ConsumerWidget {
     WidgetRef ref,
     Uac2DeviceInfo device,
   ) {
-    final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
-    final deviceStatus = deviceStatusNotifier.status;
+    final deviceStatus = ref.watch(uac2DeviceStatusProvider);
     final isConnected = deviceStatus?.state == Uac2State.connected ||
         deviceStatus?.state == Uac2State.streaming;
 
@@ -158,10 +156,10 @@ class Uac2DeviceSelector extends ConsumerWidget {
           child: ElevatedButton.icon(
             onPressed: isConnected
                 ? () async {
-                    await deviceStatusNotifier.disconnect();
+                    await ref.read(uac2DeviceStatusProvider.notifier).disconnect();
                   }
                 : () async {
-                    await deviceStatusNotifier.selectDevice(device);
+                    await ref.read(uac2DeviceStatusProvider.notifier).selectDevice(device);
                   },
             icon: Icon(isConnected ? Icons.link_off : Icons.link),
             label: Text(isConnected ? 'Disconnect' : 'Connect'),

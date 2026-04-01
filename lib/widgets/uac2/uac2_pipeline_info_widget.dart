@@ -41,8 +41,7 @@ class _Uac2PipelineInfoWidgetState
 
   @override
   Widget build(BuildContext context) {
-    final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
-    final deviceStatus = deviceStatusNotifier.status;
+    final deviceStatus = ref.watch(uac2DeviceStatusProvider);
 
     if (deviceStatus == null || deviceStatus.state != Uac2State.streaming) {
       return const SizedBox.shrink();

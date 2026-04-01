@@ -30,8 +30,7 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
     final isAvailable = ref.watch(uac2AvailableProvider);
     final devicesAsync = ref.watch(uac2DevicesProvider);
     final selectedDevice = ref.watch(selectedUac2DeviceProvider);
-    final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
-    final deviceStatus = deviceStatusNotifier.status;
+    final deviceStatus = ref.watch(uac2DeviceStatusProvider);
 
     return DisplayModeWrapper(
       child: Scaffold(
@@ -801,7 +800,7 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
     bool isSelected,
     bool isConnected,
   ) async {
-    final deviceStatusNotifier = ref.read(uac2DeviceStatusProvider);
+    final deviceStatusNotifier = ref.read(uac2DeviceStatusProvider.notifier);
 
     if (isConnected) {
       await deviceStatusNotifier.disconnect();

@@ -15,67 +15,50 @@ class Uac2VolumeControl extends ConsumerStatefulWidget {
 }
 
 class _Uac2VolumeControlState extends ConsumerState<Uac2VolumeControl> {
-  double _volume = 1.0;
-  bool _muted = false;
-  bool _loading = true;
   bool _muteUpdateInFlight = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadVolumeState();
-  }
-
-  Future<void> _loadVolumeState() async {
-    final deviceStatusNotifier = ref.read(uac2DeviceStatusProvider);
-    final volume = await deviceStatusNotifier.getVolume();
-    final muted = await deviceStatusNotifier.getMute();
-
-    if (mounted) {
-      setState(() {
-        _volume = volume ?? 1.0;
-        _muted = muted ?? false;
-        _loading = false;
-      });
-    }
-  }
+  /// Volume level to restore when unmuting via button.
+  double _preMuteVolume = 1.0;
 
   Future<void> _setVolume(double volume) async {
-    setState(() => _volume = volume);
-    final deviceStatusNotifier = ref.read(uac2DeviceStatusProvider);
-    await deviceStatusNotifier.setVolume(volume);
+    final notifier = ref.read(uac2DeviceStatusProvider.notifier);
+    final wasMuted = ref.read(uac2DeviceStatusProvider)?.muted ?? false;
+
+    // Dragging above 0 while muted → auto-unmute
+    if (wasMuted && volume > 0.0) {
+      await notifier.setMute(false);
+    }
+    // Dragging to 0 → auto-mute
+    if (!wasMuted && volume == 0.0) {
+      _preMuteVolume = ref.read(uac2DeviceStatusProvider)?.volume ?? 1.0;
+      await notifier.setMute(true);
+    }
+    await notifier.setVolume(volume);
   }
 
   Future<void> _toggleMute() async {
-    final deviceStatusNotifier = ref.read(uac2DeviceStatusProvider);
-    final currentMuted = deviceStatusNotifier.status?.muted ?? _muted;
+    final notifier = ref.read(uac2DeviceStatusProvider.notifier);
+    final currentMuted = ref.read(uac2DeviceStatusProvider)?.muted ?? false;
     final newMuted = !currentMuted;
 
-    setState(() {
-      _muted = newMuted;
-      _muteUpdateInFlight = true;
-    });
+    setState(() => _muteUpdateInFlight = true);
 
-    final success = await deviceStatusNotifier.setMute(newMuted);
-    final refreshedMuted = success
-        ? await deviceStatusNotifier.getMute()
-        : null;
+    if (newMuted) {
+      // Muting: save current volume for restore, then mute + set volume to 0
+      _preMuteVolume = (ref.read(uac2DeviceStatusProvider)?.volume ?? 1.0).clamp(0.01, 1.0);
+      final success = await notifier.setMute(true);
+      if (success) await notifier.setVolume(0.0);
+    } else {
+      // Unmuting: restore pre-mute volume, then unmute
+      await notifier.setVolume(_preMuteVolume);
+      await notifier.setMute(false);
+    }
 
-    if (!mounted) return;
-    setState(() {
-      _muted = success ? (refreshedMuted ?? newMuted) : currentMuted;
-      _muteUpdateInFlight = false;
-    });
+    if (mounted) setState(() => _muteUpdateInFlight = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
-    final deviceStatus = deviceStatusNotifier.status;
-    final effectiveVolume = deviceStatus?.volume ?? _volume;
-    final effectiveMuted = _muteUpdateInFlight
-        ? _muted
-        : (deviceStatus?.muted ?? _muted);
+    final deviceStatus = ref.watch(uac2DeviceStatusProvider);
 
     if (deviceStatus == null ||
         deviceStatus.state == Uac2State.idle ||
@@ -83,15 +66,8 @@ class _Uac2VolumeControlState extends ConsumerState<Uac2VolumeControl> {
       return const SizedBox.shrink();
     }
 
-    if (_loading) {
-      return const Center(
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
+    final effectiveVolume = deviceStatus.volume ?? 1.0;
+    final effectiveMuted = deviceStatus.muted ?? false;
 
     return Container(
       padding: const EdgeInsets.all(AppConstants.spacingMd),
@@ -164,7 +140,7 @@ class _Uac2VolumeControlState extends ConsumerState<Uac2VolumeControl> {
                   max: 1.0,
                   divisions: 100,
                   label: '${(effectiveVolume * 100).round()}%',
-                  onChanged: effectiveMuted ? null : _setVolume,
+                  onChanged: _setVolume,
                   activeColor: AppColors.accent,
                   inactiveColor: AppColors.textTertiary.withValues(alpha: 0.3),
                 ),

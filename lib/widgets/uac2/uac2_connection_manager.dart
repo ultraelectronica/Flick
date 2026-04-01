@@ -81,8 +81,7 @@ class _Uac2ConnectionManagerState extends ConsumerState<Uac2ConnectionManager> {
 
   @override
   Widget build(BuildContext context) {
-    final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
-    final deviceStatus = deviceStatusNotifier.status;
+    final deviceStatus = ref.watch(uac2DeviceStatusProvider);
 
     if (deviceStatus == null) {
       return const SizedBox.shrink();

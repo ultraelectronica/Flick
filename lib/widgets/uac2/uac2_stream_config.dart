@@ -29,8 +29,7 @@ class _Uac2StreamConfigState extends ConsumerState<Uac2StreamConfig> {
     final capabilitiesAsync = ref.watch(
       uac2DeviceCapabilitiesProvider(widget.device),
     );
-    final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
-    final deviceStatus = deviceStatusNotifier.status;
+    final deviceStatus = ref.watch(uac2DeviceStatusProvider);
     final isStreaming = deviceStatus?.state == Uac2State.streaming;
 
     return capabilitiesAsync.when(
@@ -256,7 +255,7 @@ class _Uac2StreamConfigState extends ConsumerState<Uac2StreamConfig> {
   }
 
   Future<void> _startStreaming() async {
-    final deviceStatusNotifier = ref.read(uac2DeviceStatusProvider);
+    final deviceStatusNotifier = ref.read(uac2DeviceStatusProvider.notifier);
     final format = Uac2AudioFormat(
       sampleRate: _selectedSampleRate,
       bitDepth: _selectedBitDepth,
@@ -275,7 +274,7 @@ class _Uac2StreamConfigState extends ConsumerState<Uac2StreamConfig> {
   }
 
   Future<void> _stopStreaming() async {
-    final deviceStatusNotifier = ref.read(uac2DeviceStatusProvider);
+    final deviceStatusNotifier = ref.read(uac2DeviceStatusProvider.notifier);
     final success = await deviceStatusNotifier.stopStreaming();
     if (!success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

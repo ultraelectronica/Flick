@@ -21,8 +21,7 @@ class Uac2PlayerStatus extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
-    final deviceStatus = deviceStatusNotifier.status;
+    final deviceStatus = ref.watch(uac2DeviceStatusProvider);
     final isBitPerfect = ref.watch(uac2BitPerfectIndicatorProvider);
 
     if (deviceStatus == null || deviceStatus.state == Uac2State.idle) {

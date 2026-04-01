@@ -17,6 +17,9 @@ import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.media.audiofx.Equalizer
 import android.media.audiofx.AudioEffect
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -67,6 +70,11 @@ class MainActivity: FlutterActivity() {
     private var activeDirectUsbDeviceName: String? = null
     private var cachedMusicVolumeBeforeMute: Int? = null
     private var equalizer: Equalizer? = null
+    private var volumeContentObserver: ContentObserver? = null
+    private val volumeObserverHandler = Handler(Looper.getMainLooper())
+    private var volumeObserverDebounceRunnable: Runnable? = null
+    private var suppressVolumeObserver = false
+    private var suppressVolumeObserverRunnable: Runnable? = null
     // private var audioConverter: AudioConverter? = null
     // Coroutine scope for background tasks
     private val mainScope = CoroutineScope(Dispatchers.Main)
@@ -636,6 +644,8 @@ class MainActivity: FlutterActivity() {
         
         // Register USB hot-plug receiver
         registerUsbHotplugReceiver()
+        // Register volume change observer
+        registerVolumeContentObserver()
     }
 
     // private fun handleConversionResult(conversionResult: ConversionResult?, result: MethodChannel.Result) {
@@ -2300,6 +2310,7 @@ class MainActivity: FlutterActivity() {
         if (targetVolume > 0) {
             cachedMusicVolumeBeforeMute = targetVolume
         }
+        suppressVolumeObserverBriefly()
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
         return true
     }
@@ -2319,6 +2330,7 @@ class MainActivity: FlutterActivity() {
         if (audioManager.isVolumeFixed) return false
 
         val streamType = AudioManager.STREAM_MUSIC
+        suppressVolumeObserverBriefly()
         if (muted) {
             val currentVolume = audioManager.getStreamVolume(streamType)
             if (currentVolume > 0) {
@@ -2334,7 +2346,9 @@ class MainActivity: FlutterActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             audioManager.adjustStreamVolume(streamType, AudioManager.ADJUST_UNMUTE, 0)
         }
-        if (audioManager.getStreamVolume(streamType) == 0) {
+        // Read actual OS volume — it may have been changed via hardware buttons while muted
+        val currentAfterUnmute = audioManager.getStreamVolume(streamType)
+        if (currentAfterUnmute == 0) {
             val maxVolume = audioManager.getStreamMaxVolume(streamType).coerceAtLeast(1)
             val restoreVolume = (cachedMusicVolumeBeforeMute ?: (maxVolume / 2).coerceAtLeast(1))
                 .coerceIn(1, maxVolume)
@@ -2350,6 +2364,44 @@ class MainActivity: FlutterActivity() {
         } catch (_: IllegalArgumentException) {
         } catch (_: Exception) {
         }
+    }
+
+    private fun suppressVolumeObserverBriefly() {
+        suppressVolumeObserverRunnable?.let { volumeObserverHandler.removeCallbacks(it) }
+        suppressVolumeObserver = true
+        suppressVolumeObserverRunnable = Runnable { suppressVolumeObserver = false }
+        volumeObserverHandler.postDelayed(suppressVolumeObserverRunnable!!, 200)
+    }
+
+    private fun registerVolumeContentObserver() {
+        volumeContentObserver = object : ContentObserver(volumeObserverHandler) {
+            override fun onChange(selfChange: Boolean) {
+                if (suppressVolumeObserver) return
+                // Debounce: cancel pending, schedule new
+                volumeObserverDebounceRunnable?.let { volumeObserverHandler.removeCallbacks(it) }
+                volumeObserverDebounceRunnable = Runnable {
+                    val volume = getRouteVolume()
+                    val muted = getRouteMuted()
+                    uac2Channel?.invokeMethod("onVolumeChanged", mapOf(
+                        "volume" to volume,
+                        "muted" to muted,
+                    ))
+                }
+                volumeObserverHandler.postDelayed(volumeObserverDebounceRunnable!!, 150)
+            }
+        }
+        contentResolver.registerContentObserver(
+            android.provider.Settings.System.CONTENT_URI,
+            true,
+            volumeContentObserver!!,
+        )
+    }
+
+    private fun unregisterVolumeContentObserver() {
+        volumeContentObserver?.let { contentResolver.unregisterContentObserver(it) }
+        volumeObserverDebounceRunnable?.let { volumeObserverHandler.removeCallbacks(it) }
+        suppressVolumeObserverRunnable?.let { volumeObserverHandler.removeCallbacks(it) }
+        volumeContentObserver = null
     }
 
     private fun registerUsbHotplugReceiver() {
@@ -2397,6 +2449,7 @@ class MainActivity: FlutterActivity() {
         super.onDestroy()
         unregisterReceiverSafely(usbHotplugReceiver)
         unregisterReceiverSafely(usbPermissionReceiver)
+        unregisterVolumeContentObserver()
         usbHotplugReceiver = null
         usbPermissionReceiver = null
         deactivateDirectUsb()

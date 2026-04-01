@@ -8,8 +8,7 @@ class Uac2StatusIndicator extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
-    final deviceStatus = deviceStatusNotifier.status;
+    final deviceStatus = ref.watch(uac2DeviceStatusProvider);
     final isBitPerfect = ref.watch(uac2BitPerfectIndicatorProvider);
     final warningMessage = deviceStatus?.warningMessage;
 

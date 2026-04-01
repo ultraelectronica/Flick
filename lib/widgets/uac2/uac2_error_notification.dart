@@ -18,8 +18,7 @@ class _Uac2ErrorNotificationState
 
   @override
   Widget build(BuildContext context) {
-    final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
-    final deviceStatus = deviceStatusNotifier.status;
+    final deviceStatus = ref.watch(uac2DeviceStatusProvider);
 
     if (_dismissed ||
         deviceStatus == null ||

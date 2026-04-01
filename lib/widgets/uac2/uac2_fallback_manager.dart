@@ -90,8 +90,7 @@ class _Uac2FallbackManagerState extends ConsumerState<Uac2FallbackManager> {
 
   @override
   Widget build(BuildContext context) {
-    final deviceStatusNotifier = ref.watch(uac2DeviceStatusProvider);
-    final deviceStatus = deviceStatusNotifier.status;
+    final deviceStatus = ref.watch(uac2DeviceStatusProvider);
 
     if (deviceStatus == null) {
       return const SizedBox.shrink();
