@@ -163,6 +163,23 @@ class RustAudioService {
     return capabilityInfoPrefersRust(info);
   }
 
+  /// Ensure the native engine is fully created for the requested output rate.
+  Future<bool> prepareEngine({int? preferredSampleRate}) async {
+    if (!_initialized) {
+      return false;
+    }
+
+    try {
+      await rust_audio.audioPrepareEngine(
+        preferredSampleRate: preferredSampleRate,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Error preparing Rust audio engine: $e');
+      return false;
+    }
+  }
+
   /// Get the current playback state.
   RustPlaybackState get state => stateNotifier.value;
 
