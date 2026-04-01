@@ -1,5 +1,6 @@
 import 'package:isar_community/isar.dart';
 
+import '../../core/utils/audio_metadata_utils.dart';
 import '../database.dart';
 import '../../models/song.dart';
 import 'song_repository.dart';
@@ -601,9 +602,13 @@ class RecentlyPlayedRepository {
     if (entity.sampleRate != null) {
       parts.add('${_formatSampleRateKhz(entity.sampleRate!)}kHz');
     }
-    if (entity.bitrate != null) {
-      final bitrateKbps = (entity.bitrate! / 1000).round();
-      parts.add('${bitrateKbps}kbps');
+    final bitrateLabel = AudioMetadataUtils.formatBitrateLabel(
+      entity.bitrate,
+      sampleRate: entity.sampleRate,
+      bitDepth: entity.bitDepth,
+    );
+    if (bitrateLabel != null) {
+      parts.add(bitrateLabel);
     }
     return parts.isEmpty ? 'Unknown' : parts.join(' / ');
   }
