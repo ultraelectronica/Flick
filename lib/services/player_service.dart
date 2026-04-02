@@ -615,11 +615,12 @@ class PlayerService {
     _justAudioSubscriptions.add(
       player.positionStream.listen((pos) {
         if (_usingRustBackend) return;
-        if (!_suppressSequenceStateUpdates) {
-          final activeIndex = player.currentIndex;
-          if (activeIndex != null && activeIndex != _currentIndex) {
-            _syncCurrentSongFromIndex(activeIndex, fromListener: true);
-          }
+        if (_suppressSequenceStateUpdates) {
+          return;
+        }
+        final activeIndex = player.currentIndex;
+        if (activeIndex != null && activeIndex != _currentIndex) {
+          _syncCurrentSongFromIndex(activeIndex, fromListener: true);
         }
 
         // When repeat-one loops, just_audio may not fire completed; detect
@@ -822,8 +823,17 @@ class PlayerService {
       final previous = _lastPlaybackState;
       _lastPlaybackState = state;
 
-      if (currentSongNotifier.value != state.currentTrack) {
-        currentSongNotifier.value = state.currentTrack;
+      // When the engine attaches or reinitialises it briefly emits a null-track
+      // transitional state before the real track loads. If the playlist is still
+      // populated (songs are queued) we preserve the last known song in the
+      // notifier so the mini-player and ambient background never flash to black.
+      // We only truly clear the song notifier when the playlist itself is empty
+      // (i.e. the user explicitly stopped all playback).
+      final incomingTrack =
+          state.currentTrack ??
+          (_playlist.isNotEmpty ? currentSongNotifier.value : null);
+      if (currentSongNotifier.value != incomingTrack) {
+        currentSongNotifier.value = incomingTrack;
       }
       if (isPlayingNotifier.value != state.isPlaying) {
         isPlayingNotifier.value = state.isPlaying;
@@ -1396,8 +1406,25 @@ class PlayerService {
   }
 
   Future<void> _enqueuePlaybackRequest(Future<void> Function() action) {
-    final operation = _playRequestQueue.then<void>((_) => action());
-    _playRequestQueue = operation.catchError((_) {});
+    debugPrint('[PlayerService] _enqueuePlaybackRequest called');
+    final operation = _playRequestQueue
+        .then<void>((_) async {
+          debugPrint(
+            '[PlayerService] _enqueuePlaybackRequest: previous operation complete, executing action',
+          );
+          try {
+            await action();
+          } catch (e, stack) {
+            debugPrint(
+              '[PlayerService] _enqueuePlaybackRequest action error: $e\n$stack',
+            );
+            rethrow;
+          }
+        })
+        .catchError((e) {
+          debugPrint('[PlayerService] _enqueuePlaybackRequest queue error: $e');
+        });
+    _playRequestQueue = operation;
     return operation;
   }
 
@@ -1446,7 +1473,9 @@ class PlayerService {
           reason: 'playback requested',
         );
         debugPrint('[Engine] Playback route resolved to ${activeEngine.name}');
-        await _playbackManager.playTrack(song);
+        await _runWithSuppressedSequenceStateUpdates(() async {
+          await _playbackManager.playTrack(song);
+        });
         _ensurePositionSaveTimer();
       }
     } catch (e, stackTrace) {
@@ -1520,6 +1549,10 @@ class PlayerService {
 
       final restoredSong = _playlist[_currentIndex];
       _rememberRestoredPlaybackContext(restoredSong, lastPlayed.position);
+      _publishRestoredPlaybackState(
+        restoredSong,
+        position: lastPlayed.position,
+      );
 
       if (restoredSong.filePath != null) {
         debugPrint(
@@ -1531,11 +1564,26 @@ class PlayerService {
   }
 
   Future<void> pause() {
+    debugPrint('[PlayerService] pause() called');
     return _enqueuePlaybackRequest(_pauseInternal);
   }
 
   Future<void> _pauseInternal() async {
-    debugPrint('[Playback] pause() called');
+    debugPrint(
+      '[Playback] pause() called, hasAttachedEngine=${_playbackManager.hasAttachedEngine}',
+    );
+    // Optimistically update UI immediately so the pause button feels responsive.
+    if (isPlayingNotifier.value) {
+      isPlayingNotifier.value = false;
+    }
+    // If no engine has been attached yet (e.g. pausing a restored-but-not-started
+    // track), there is nothing to pause — the optimistic update above is enough.
+    if (!_playbackManager.hasAttachedEngine) {
+      debugPrint(
+        '[Playback] pause(): no engine attached, returning after optimistic update',
+      );
+      return;
+    }
     try {
       await _playbackManager.pause();
     } catch (e) {
@@ -1577,18 +1625,30 @@ class PlayerService {
           ? positionNotifier.value
           : _consumeRestoredPositionForSong(song);
       await _prepareImmediatePlaybackAsset(song);
-      await _playbackManager.playTrack(song, initialPosition: resumePosition);
+      await _runWithSuppressedSequenceStateUpdates(() async {
+        await _playbackManager.playTrack(song, initialPosition: resumePosition);
+      });
     }
 
     _ensurePositionSaveTimer();
   }
 
   Future<void> togglePlayPause() {
+    debugPrint(
+      '[PlayerService] togglePlayPause called, isPlaying=${isPlayingNotifier.value}',
+    );
     return _enqueuePlaybackRequest(() async {
-      if (isPlayingNotifier.value) {
-        await _pauseInternal();
-      } else {
-        await _resumeInternal();
+      debugPrint(
+        '[PlayerService] togglePlayPause executing, isPlaying=${isPlayingNotifier.value}',
+      );
+      try {
+        if (isPlayingNotifier.value) {
+          await _pauseInternal();
+        } else {
+          await _resumeInternal();
+        }
+      } catch (e, stack) {
+        debugPrint('[PlayerService] togglePlayPause error: $e\n$stack');
       }
     });
   }
@@ -1603,11 +1663,20 @@ class PlayerService {
   }
 
   Future<void> next() {
+    debugPrint('[PlayerService] next() called');
     return _enqueuePlaybackRequest(_nextInternal);
   }
 
   Future<void> _nextInternal() async {
-    if (_playlist.isEmpty) return;
+    debugPrint(
+      '[PlayerService] _nextInternal() called, playlist.length=${_playlist.length}, currentIndex=$_currentIndex',
+    );
+    if (_playlist.isEmpty) {
+      debugPrint(
+        '[PlayerService] _nextInternal: playlist is empty, returning early',
+      );
+      return;
+    }
 
     debugPrint(
       'next(): currentIndex=$_currentIndex, playlistLength=${_playlist.length}, loopMode=${loopModeNotifier.value}',
@@ -1628,16 +1697,25 @@ class PlayerService {
     }
 
     debugPrint('next(): End of playlist, pausing');
-    await pause();
+    await _pauseInternal();
     await seek(Duration.zero);
   }
 
   Future<void> previous() {
+    debugPrint('[PlayerService] previous() called');
     return _enqueuePlaybackRequest(_previousInternal);
   }
 
   Future<void> _previousInternal() async {
-    if (_playlist.isEmpty) return;
+    debugPrint(
+      '[PlayerService] _previousInternal() called, playlist.length=${_playlist.length}, currentIndex=$_currentIndex',
+    );
+    if (_playlist.isEmpty) {
+      debugPrint(
+        '[PlayerService] _previousInternal: playlist is empty, returning early',
+      );
+      return;
+    }
 
     if (positionNotifier.value.inSeconds > 3) {
       await seek(Duration.zero);
@@ -1808,7 +1886,7 @@ class PlayerService {
     }
 
     _notifyQueueChanged();
-    await play(entry.song);
+    await _playInternal(entry.song);
   }
 
   Future<void> clearQueue() async {
@@ -1960,6 +2038,24 @@ class PlayerService {
       const Duration(seconds: 5),
       (_) => _savePosition(),
     );
+  }
+
+  void _publishRestoredPlaybackState(Song song, {required Duration position}) {
+    if (currentSongNotifier.value != song) {
+      currentSongNotifier.value = song;
+    }
+    if (isPlayingNotifier.value) {
+      isPlayingNotifier.value = false;
+    }
+    if (positionNotifier.value != position) {
+      positionNotifier.value = position;
+    }
+    if (bufferedPositionNotifier.value != Duration.zero) {
+      bufferedPositionNotifier.value = Duration.zero;
+    }
+    if (durationNotifier.value != song.duration) {
+      durationNotifier.value = song.duration;
+    }
   }
 
   void dispose() {

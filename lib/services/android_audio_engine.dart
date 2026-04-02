@@ -49,6 +49,7 @@ class AndroidAudioEngine implements AudioEngine {
   PlaybackState _state = PlaybackState.empty(AudioEngineType.android);
   Song? _loadedTrack;
   List<String> _playlistSignature = const <String>[];
+  bool _awaitingInitialSeek = false;
 
   @override
   Stream<PlaybackState> get playbackStateStream => _controller.stream;
@@ -105,6 +106,7 @@ class AndroidAudioEngine implements AudioEngine {
 
   void _syncTrackFromIndex(int? index) {
     if (_shouldSuppressTrackSync()) return;
+    if (_awaitingInitialSeek) return;
     final nextTrack = _resolveTrack(index);
     if (nextTrack != null && _shouldIgnoreTrack(nextTrack)) {
       return;
@@ -162,12 +164,21 @@ class AndroidAudioEngine implements AudioEngine {
       await player.seek(Duration.zero, index: index);
     } else {
       debugPrint('[Playback] Android load(${track.id}) rebuilding playlist');
-      final sources = await _sourcesBuilder();
-      if (sources.isEmpty) {
-        throw StateError('No audio sources available for playback');
+      _awaitingInitialSeek = true;
+      try {
+        final sources = await _sourcesBuilder();
+        if (sources.isEmpty) {
+          throw StateError('No audio sources available for playback');
+        }
+        await player.setAudioSources(
+          sources,
+          initialIndex: index,
+          preload: true,
+        );
+        await player.seek(Duration.zero, index: index);
+      } finally {
+        _awaitingInitialSeek = false;
       }
-      await player.setAudioSources(sources, initialIndex: index, preload: true);
-      await player.seek(Duration.zero, index: index);
       _playlistSignature = nextSignature;
     }
 
@@ -185,7 +196,21 @@ class AndroidAudioEngine implements AudioEngine {
   @override
   Future<void> play() async {
     final player = await _ensurePlayer();
-    await player.play();
+    // just_audio keeps this future alive while playback is active, which would
+    // block the PlayerService command queue until the track ends.
+    try {
+      final playback = player.play();
+      unawaited(
+        playback.catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[Playback] Android play() failed: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[Playback] Android play() failed immediately: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      rethrow;
+    }
   }
 
   @override

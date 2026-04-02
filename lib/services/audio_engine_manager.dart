@@ -51,9 +51,18 @@ class AudioEngineManager {
     debugPrint('[Engine] Attached: $engineLabel');
 
     if (engineType != null) {
-      final cleared = PlaybackState.empty(engineType);
-      _latestState = cleared;
-      _controller.add(cleared);
+      // Preserve the last-known track while the engine is initialising so the
+      // UI (mini-player, ambient background) doesn't flash to empty/black.
+      final transitional = PlaybackState(
+        currentTrack: _latestState?.currentTrack,
+        isPlaying: false,
+        position: _latestState?.position ?? Duration.zero,
+        bufferedPosition: Duration.zero,
+        duration: _latestState?.duration ?? Duration.zero,
+        engine: engineType,
+      );
+      _latestState = transitional;
+      _controller.add(transitional);
     }
 
     _engineSubscription = engine.playbackStateStream.listen((state) {
