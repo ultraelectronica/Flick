@@ -32,6 +32,7 @@ class RustAudioEngine implements AudioEngine {
   final List<VoidCallback> _notifierUnsubscribers = [];
   PlaybackState _state = PlaybackState.empty(AudioEngineType.usb);
   Song? _loadedTrack;
+  Duration? _pendingSeekPosition;
 
   @override
   Stream<PlaybackState> get playbackStateStream => _controller.stream;
@@ -54,12 +55,16 @@ class RustAudioEngine implements AudioEngine {
     });
 
     addListener(_rustAudioService.positionNotifier, () {
-      _emit(_state.copyWith(position: _rustAudioService.positionNotifier.value));
+      _emit(
+        _state.copyWith(position: _rustAudioService.positionNotifier.value),
+      );
       _syncBufferedFromLevel();
     });
 
     addListener(_rustAudioService.durationNotifier, () {
-      _emit(_state.copyWith(duration: _rustAudioService.durationNotifier.value));
+      _emit(
+        _state.copyWith(duration: _rustAudioService.durationNotifier.value),
+      );
       _syncBufferedFromLevel();
     });
 
@@ -87,6 +92,7 @@ class RustAudioEngine implements AudioEngine {
     await _ensureInitialized();
     _attachListeners();
     _loadedTrack = track;
+    _pendingSeekPosition = Duration.zero;
     _emit(
       _state.copyWith(
         currentTrack: track,
@@ -108,12 +114,28 @@ class RustAudioEngine implements AudioEngine {
       return;
     }
 
+    final rustState = _rustAudioService.stateNotifier.value;
+    if (rustState == RustPlaybackState.paused) {
+      await _rustAudioService.resume();
+      final pendingSeek = _pendingSeekPosition;
+      if (pendingSeek != null && pendingSeek > Duration.zero) {
+        await _rustAudioService.seek(pendingSeek);
+      }
+      _pendingSeekPosition = null;
+      return;
+    }
+
     final path = await _resolvePlaybackPath(track);
     if (path == null || path.isEmpty) {
       throw StateError('Failed to resolve Rust playback path');
     }
 
     await _rustAudioService.play(path);
+    final pendingSeek = _pendingSeekPosition;
+    if (pendingSeek != null && pendingSeek > Duration.zero) {
+      await _rustAudioService.seek(pendingSeek);
+    }
+    _pendingSeekPosition = null;
   }
 
   @override
@@ -134,6 +156,19 @@ class RustAudioEngine implements AudioEngine {
   Future<void> seek(Duration position) async {
     await _ensureInitialized();
     _attachListeners();
+    _pendingSeekPosition = position;
+    _emit(_state.copyWith(position: position));
+
+    final rustState = _rustAudioService.stateNotifier.value;
+    final canSeekImmediately =
+        rustState == RustPlaybackState.playing ||
+        rustState == RustPlaybackState.paused ||
+        rustState == RustPlaybackState.buffering ||
+        rustState == RustPlaybackState.crossfading;
+    if (!canSeekImmediately) {
+      return;
+    }
+
     await _rustAudioService.seek(position);
   }
 

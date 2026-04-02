@@ -150,11 +150,17 @@ class AudioRouteManager {
 
   Future<void> _syncRouteSelectionInternal({required String reason}) async {
     final desired = await _resolvePreferredEngineType(refresh: true);
-    await switchEngine(
-      desired,
-      initializeNewEngine: _isPlaybackActive(),
-      reason: reason,
-    );
+    if (selectedEngineType == desired) {
+      return;
+    }
+
+    selectedEngineNotifier.value = desired;
+    if (_isPlaybackActive() && initializedEngineType != desired) {
+      debugPrint(
+        '[Engine] Route changed to ${desired.name}; '
+        'new engine will attach on the next playback request ($reason)',
+      );
+    }
   }
 
   Future<AudioEngineType> _resolvePreferredEngineType({
@@ -169,15 +175,16 @@ class AudioRouteManager {
       return AudioEngineType.usb;
     }
 
-    // Internal DAP routes still travel through Android's AudioTrack / mixer
-    // path, which commonly floors playback at 48 kHz. Keep those devices on
-    // the Android engine unless the user explicitly enables experimental
-    // HiFi Mode. We do not fake bit-perfect output by upsampling.
-    if (info.isLikelyDap && !hiFiModeEnabled) {
-      return AudioEngineType.android;
+    if (hiFiModeEnabled) {
+      debugPrint(
+        '[Engine] HiFi Mode requested on a non-USB route; '
+        'staying on Android (${info.routeType ?? 'unknown'})',
+      );
     }
 
-    return hiFiModeEnabled ? AudioEngineType.usb : AudioEngineType.android;
+    // The Rust engine is USB-DAC-only. Speaker, Bluetooth, wired, and
+    // internal DAP routes always stay on the Android engine.
+    return AudioEngineType.android;
   }
 
   void dispose() {

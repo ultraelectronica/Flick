@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart' as just_audio;
 import 'package:flick/models/audio_engine_type.dart';
 import 'package:flick/models/playback_state.dart';
@@ -47,6 +48,7 @@ class AndroidAudioEngine implements AudioEngine {
   just_audio.AudioPlayer? _player;
   PlaybackState _state = PlaybackState.empty(AudioEngineType.android);
   Song? _loadedTrack;
+  List<String> _playlistSignature = const <String>[];
 
   @override
   Stream<PlaybackState> get playbackStateStream => _controller.stream;
@@ -61,32 +63,44 @@ class AndroidAudioEngine implements AudioEngine {
   }
 
   void _attachListeners(just_audio.AudioPlayer player) {
-    _subscriptions.add(player.playerStateStream.listen((state) {
-      _emit(_state.copyWith(isPlaying: state.playing));
-    }));
+    _subscriptions.add(
+      player.playerStateStream.listen((state) {
+        _emit(_state.copyWith(isPlaying: state.playing));
+      }),
+    );
 
-    _subscriptions.add(player.positionStream.listen((pos) {
-      _emit(_state.copyWith(position: pos));
-      _syncTrackFromIndex(player.currentIndex);
-    }));
+    _subscriptions.add(
+      player.positionStream.listen((pos) {
+        _emit(_state.copyWith(position: pos));
+        _syncTrackFromIndex(player.currentIndex);
+      }),
+    );
 
-    _subscriptions.add(player.bufferedPositionStream.listen((pos) {
-      _emit(_state.copyWith(bufferedPosition: pos));
-    }));
+    _subscriptions.add(
+      player.bufferedPositionStream.listen((pos) {
+        _emit(_state.copyWith(bufferedPosition: pos));
+      }),
+    );
 
-    _subscriptions.add(player.durationStream.listen((dur) {
-      if (dur == null) return;
-      _emit(_state.copyWith(duration: dur));
-    }));
+    _subscriptions.add(
+      player.durationStream.listen((dur) {
+        if (dur == null) return;
+        _emit(_state.copyWith(duration: dur));
+      }),
+    );
 
-    _subscriptions.add(player.sequenceStateStream.listen((sequenceState) {
-      final index = sequenceState.currentIndex;
-      _syncTrackFromIndex(index);
-    }));
+    _subscriptions.add(
+      player.sequenceStateStream.listen((sequenceState) {
+        final index = sequenceState.currentIndex;
+        _syncTrackFromIndex(index);
+      }),
+    );
 
-    _subscriptions.add(player.currentIndexStream.listen((index) {
-      _syncTrackFromIndex(index);
-    }));
+    _subscriptions.add(
+      player.currentIndexStream.listen((index) {
+        _syncTrackFromIndex(index);
+      }),
+    );
   }
 
   void _syncTrackFromIndex(int? index) {
@@ -125,24 +139,37 @@ class AndroidAudioEngine implements AudioEngine {
   @override
   Future<void> load(Song track) async {
     final player = await _ensurePlayer();
-    final sources = await _sourcesBuilder();
-    if (sources.isEmpty) {
-      throw StateError('No audio sources available for playback');
-    }
     final playlist = _playlistProvider();
     var index = playlist.indexWhere((song) => song.id == track.id);
     if (index < 0) {
       index = 0;
     }
 
+    final nextSignature = playlist
+        .map((song) => song.id)
+        .toList(growable: false);
+    final canReusePlaylist =
+        _playlistSignature.isNotEmpty &&
+        listEquals(_playlistSignature, nextSignature);
+
     _loadedTrack = track;
-    await player.setAudioSources(
-      sources,
-      initialIndex: index,
-      preload: true,
-    );
     await _configurePlayer(player);
-    await player.seek(Duration.zero, index: index);
+
+    if (canReusePlaylist && player.sequence.isNotEmpty) {
+      debugPrint(
+        '[Playback] Android load(${track.id}) using existing playlist',
+      );
+      await player.seek(Duration.zero, index: index);
+    } else {
+      debugPrint('[Playback] Android load(${track.id}) rebuilding playlist');
+      final sources = await _sourcesBuilder();
+      if (sources.isEmpty) {
+        throw StateError('No audio sources available for playback');
+      }
+      await player.setAudioSources(sources, initialIndex: index, preload: true);
+      await player.seek(Duration.zero, index: index);
+      _playlistSignature = nextSignature;
+    }
 
     _emit(
       _state.copyWith(
@@ -194,6 +221,7 @@ class AndroidAudioEngine implements AudioEngine {
     }
     _subscriptions.clear();
     _player = null;
+    _playlistSignature = const <String>[];
     await _disposeEngine();
     await _controller.close();
   }

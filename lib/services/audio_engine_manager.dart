@@ -12,10 +12,15 @@ class AudioEngineManager {
 
   Stream<PlaybackState> get playbackState => _controller.stream;
   PlaybackState? get latestState => _latestState;
+  AudioEngineType? get activeEngineType => _currentEngineType;
+  bool get hasAttachedEngine => _currentEngine != null;
 
   AudioEngine? _currentEngine;
   StreamSubscription<PlaybackState>? _engineSubscription;
   PlaybackState? _latestState;
+  AudioEngineType? _currentEngineType;
+  bool _engineInitialized = false;
+  bool _isTransitioning = false;
   int _attachToken = 0;
 
   Future<void> attachEngine(
@@ -41,6 +46,8 @@ class AudioEngineManager {
     final engineLabel = engineType == null
         ? engine.runtimeType.toString()
         : (engineType == AudioEngineType.android ? 'Android' : 'USB');
+    _currentEngineType = engineType;
+    _engineInitialized = true;
     debugPrint('[Engine] Attached: $engineLabel');
 
     if (engineType != null) {
@@ -56,18 +63,83 @@ class AudioEngineManager {
     });
   }
 
+  Future<void> ensureEngine({
+    required AudioEngineType engineType,
+    required Future<AudioEngine> Function() createEngine,
+  }) async {
+    if (_engineInitialized &&
+        _currentEngine != null &&
+        _currentEngineType == engineType) {
+      debugPrint('[Engine] Prevented duplicate initialization');
+      return;
+    }
+
+    if (_isTransitioning) {
+      debugPrint('[Engine] Prevented duplicate initialization');
+      return;
+    }
+
+    _isTransitioning = true;
+    try {
+      final engine = await createEngine();
+      await attachEngine(engine, engineType: engineType);
+    } finally {
+      _isTransitioning = false;
+    }
+  }
+
+  Future<void> playTrack(
+    Song track, {
+    Duration initialPosition = Duration.zero,
+    bool autoPlay = true,
+  }) async {
+    _isTransitioning = true;
+    try {
+      final engine = _requireEngine();
+      debugPrint('[Playback] load(${track.id})');
+      await engine.load(track);
+      if (initialPosition > Duration.zero) {
+        await engine.seek(initialPosition);
+      }
+      if (autoPlay) {
+        debugPrint('[Playback] play()');
+        await engine.play();
+      }
+    } finally {
+      _isTransitioning = false;
+    }
+  }
+
+  void publishIdleState(AudioEngineType engineType) {
+    if (_currentEngine != null) {
+      return;
+    }
+
+    final idleState = PlaybackState.empty(engineType);
+    if (_latestState == idleState) {
+      return;
+    }
+
+    _currentEngineType = engineType;
+    _latestState = idleState;
+    _controller.add(idleState);
+  }
+
   Future<void> load(Song track) async {
     final engine = _requireEngine();
+    debugPrint('[Playback] load(${track.id})');
     await engine.load(track);
   }
 
   Future<void> play() async {
     final engine = _requireEngine();
+    debugPrint('[Playback] play()');
     await engine.play();
   }
 
   Future<void> pause() async {
     final engine = _requireEngine();
+    debugPrint('[Playback] pause()');
     await engine.pause();
   }
 
@@ -88,16 +160,25 @@ class AudioEngineManager {
       await _currentEngine!.dispose();
       _currentEngine = null;
     }
+    _currentEngineType = null;
+    _engineInitialized = false;
     await _controller.close();
   }
 
   Future<void> detachEngine({bool disposeCurrent = true}) async {
+    final previousEngineType = _currentEngineType;
     await _engineSubscription?.cancel();
     _engineSubscription = null;
     if (disposeCurrent && _currentEngine != null) {
       await _currentEngine!.dispose();
     }
     _currentEngine = null;
+    _currentEngineType = null;
+    _engineInitialized = false;
+    _attachToken += 1;
+    if (previousEngineType != null) {
+      publishIdleState(previousEngineType);
+    }
   }
 
   AudioEngine _requireEngine() {

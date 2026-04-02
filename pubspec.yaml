@@ -28,6 +28,7 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  audio_session: ^0.2.2
   crypto: ^3.0.3
   cupertino_icons: ^1.0.8
   fading_marquee_widget: ^1.2.0

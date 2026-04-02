@@ -12,9 +12,6 @@ class GlassmorphismContainer extends StatelessWidget {
   /// Blur intensity for the frosted glass effect
   final double blurSigma;
 
-  /// Whether to apply a live backdrop blur.
-  final bool enableBlur;
-
   /// Background color with transparency
   final Color? backgroundColor;
 
@@ -43,7 +40,6 @@ class GlassmorphismContainer extends StatelessWidget {
     super.key,
     required this.child,
     this.blurSigma = AppConstants.glassBlurSigma,
-    this.enableBlur = true,
     this.backgroundColor,
     this.borderColor,
     this.borderWidth = 1.0,
@@ -58,18 +54,6 @@ class GlassmorphismContainer extends StatelessWidget {
   Widget build(BuildContext context) {
     final effectiveBorderRadius =
         borderRadius ?? BorderRadius.circular(AppConstants.radiusLg);
-    final decoratedChild = Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: backgroundColor ?? AppColors.glassBackground,
-        borderRadius: effectiveBorderRadius,
-        border: Border.all(
-          color: borderColor ?? AppColors.glassBorder,
-          width: borderWidth,
-        ),
-      ),
-      child: child,
-    );
 
     return Container(
       margin: margin,
@@ -77,12 +61,21 @@ class GlassmorphismContainer extends StatelessWidget {
       height: height,
       child: ClipRRect(
         borderRadius: effectiveBorderRadius,
-        child: enableBlur && blurSigma > 0
-            ? BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-                child: decoratedChild,
-              )
-            : decoratedChild,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+          child: Container(
+            padding: padding,
+            decoration: BoxDecoration(
+              color: backgroundColor ?? AppColors.glassBackground,
+              borderRadius: effectiveBorderRadius,
+              border: Border.all(
+                color: borderColor ?? AppColors.glassBorder,
+                width: borderWidth,
+              ),
+            ),
+            child: child,
+          ),
+        ),
       ),
     );
   }
@@ -96,7 +89,6 @@ class GlassmorphismContainerStrong extends StatelessWidget {
   final BorderRadius? borderRadius;
   final double? width;
   final double? height;
-  final bool enableBlur;
 
   const GlassmorphismContainerStrong({
     super.key,
@@ -106,14 +98,12 @@ class GlassmorphismContainerStrong extends StatelessWidget {
     this.borderRadius,
     this.width,
     this.height,
-    this.enableBlur = true,
   });
 
   @override
   Widget build(BuildContext context) {
     return GlassmorphismContainer(
       blurSigma: AppConstants.glassBlurSigmaStrong,
-      enableBlur: enableBlur,
       backgroundColor: AppColors.glassBackgroundStrong,
       borderColor: AppColors.glassBorderStrong,
       padding: padding,
