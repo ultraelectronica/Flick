@@ -1,0 +1,200 @@
+import 'dart:async';
+
+import 'package:just_audio/just_audio.dart' as just_audio;
+import 'package:flick/models/audio_engine_type.dart';
+import 'package:flick/models/playback_state.dart';
+import 'package:flick/models/song.dart';
+import 'package:flick/services/audio_engine.dart';
+
+typedef AndroidAudioSourcesBuilder =
+    Future<List<just_audio.AudioSource>> Function();
+typedef AndroidPlaylistProvider = List<Song> Function();
+typedef AndroidPlayerProvider = Future<just_audio.AudioPlayer> Function();
+typedef AndroidPlayerConfigurator =
+    Future<void> Function(just_audio.AudioPlayer player);
+typedef AndroidEngineDisposer = Future<void> Function();
+typedef AndroidTrackSyncBlocker = bool Function();
+typedef AndroidTrackIgnorePredicate = bool Function(Song track);
+
+class AndroidAudioEngine implements AudioEngine {
+  AndroidAudioEngine({
+    required AndroidPlayerProvider playerProvider,
+    required AndroidAudioSourcesBuilder sourcesBuilder,
+    required AndroidPlaylistProvider playlistProvider,
+    required AndroidPlayerConfigurator configurePlayer,
+    required AndroidEngineDisposer disposeEngine,
+    required AndroidTrackSyncBlocker shouldSuppressTrackSync,
+    required AndroidTrackIgnorePredicate shouldIgnoreTrack,
+  }) : _playerProvider = playerProvider,
+       _sourcesBuilder = sourcesBuilder,
+       _playlistProvider = playlistProvider,
+       _configurePlayer = configurePlayer,
+       _disposeEngine = disposeEngine,
+       _shouldSuppressTrackSync = shouldSuppressTrackSync,
+       _shouldIgnoreTrack = shouldIgnoreTrack;
+
+  final AndroidPlayerProvider _playerProvider;
+  final AndroidAudioSourcesBuilder _sourcesBuilder;
+  final AndroidPlaylistProvider _playlistProvider;
+  final AndroidPlayerConfigurator _configurePlayer;
+  final AndroidEngineDisposer _disposeEngine;
+  final AndroidTrackSyncBlocker _shouldSuppressTrackSync;
+  final AndroidTrackIgnorePredicate _shouldIgnoreTrack;
+
+  final StreamController<PlaybackState> _controller =
+      StreamController<PlaybackState>.broadcast();
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  just_audio.AudioPlayer? _player;
+  PlaybackState _state = PlaybackState.empty(AudioEngineType.android);
+  Song? _loadedTrack;
+
+  @override
+  Stream<PlaybackState> get playbackStateStream => _controller.stream;
+
+  Future<just_audio.AudioPlayer> _ensurePlayer() async {
+    final existing = _player;
+    if (existing != null) return existing;
+    final player = await _playerProvider();
+    _player = player;
+    _attachListeners(player);
+    return player;
+  }
+
+  void _attachListeners(just_audio.AudioPlayer player) {
+    _subscriptions.add(player.playerStateStream.listen((state) {
+      _emit(_state.copyWith(isPlaying: state.playing));
+    }));
+
+    _subscriptions.add(player.positionStream.listen((pos) {
+      _emit(_state.copyWith(position: pos));
+      _syncTrackFromIndex(player.currentIndex);
+    }));
+
+    _subscriptions.add(player.bufferedPositionStream.listen((pos) {
+      _emit(_state.copyWith(bufferedPosition: pos));
+    }));
+
+    _subscriptions.add(player.durationStream.listen((dur) {
+      if (dur == null) return;
+      _emit(_state.copyWith(duration: dur));
+    }));
+
+    _subscriptions.add(player.sequenceStateStream.listen((sequenceState) {
+      final index = sequenceState.currentIndex;
+      _syncTrackFromIndex(index);
+    }));
+
+    _subscriptions.add(player.currentIndexStream.listen((index) {
+      _syncTrackFromIndex(index);
+    }));
+  }
+
+  void _syncTrackFromIndex(int? index) {
+    if (_shouldSuppressTrackSync()) return;
+    final nextTrack = _resolveTrack(index);
+    if (nextTrack != null && _shouldIgnoreTrack(nextTrack)) {
+      return;
+    }
+    if (nextTrack == _state.currentTrack) return;
+    _loadedTrack = nextTrack ?? _loadedTrack;
+    _emit(
+      _state.copyWith(
+        currentTrack: nextTrack,
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        duration: nextTrack?.duration ?? Duration.zero,
+      ),
+    );
+  }
+
+  Song? _resolveTrack(int? index) {
+    if (index == null) return _loadedTrack;
+    final playlist = _playlistProvider();
+    if (index < 0 || index >= playlist.length) {
+      return _loadedTrack;
+    }
+    return playlist[index];
+  }
+
+  void _emit(PlaybackState next) {
+    if (next == _state) return;
+    _state = next;
+    _controller.add(next);
+  }
+
+  @override
+  Future<void> load(Song track) async {
+    final player = await _ensurePlayer();
+    final sources = await _sourcesBuilder();
+    if (sources.isEmpty) {
+      throw StateError('No audio sources available for playback');
+    }
+    final playlist = _playlistProvider();
+    var index = playlist.indexWhere((song) => song.id == track.id);
+    if (index < 0) {
+      index = 0;
+    }
+
+    _loadedTrack = track;
+    await player.setAudioSources(
+      sources,
+      initialIndex: index,
+      preload: true,
+    );
+    await _configurePlayer(player);
+    await player.seek(Duration.zero, index: index);
+
+    _emit(
+      _state.copyWith(
+        currentTrack: track,
+        isPlaying: player.playing,
+        position: player.position,
+        bufferedPosition: player.bufferedPosition,
+        duration: player.duration ?? track.duration,
+      ),
+    );
+  }
+
+  @override
+  Future<void> play() async {
+    final player = await _ensurePlayer();
+    await player.play();
+  }
+
+  @override
+  Future<void> pause() async {
+    final player = await _ensurePlayer();
+    await player.pause();
+  }
+
+  @override
+  Future<void> stop() async {
+    final player = await _ensurePlayer();
+    await player.stop();
+    _emit(
+      _state.copyWith(
+        isPlaying: player.playing,
+        position: player.position,
+        bufferedPosition: player.bufferedPosition,
+        duration: player.duration ?? _state.duration,
+      ),
+    );
+  }
+
+  @override
+  Future<void> seek(Duration position) async {
+    final player = await _ensurePlayer();
+    await player.seek(position);
+  }
+
+  @override
+  Future<void> dispose() async {
+    for (final subscription in _subscriptions) {
+      await subscription.cancel();
+    }
+    _subscriptions.clear();
+    _player = null;
+    await _disposeEngine();
+    await _controller.close();
+  }
+}
