@@ -18,6 +18,8 @@ Future<void> main() async {
   // Initialize database FIRST (required by PlayerService)
   await Database.init();
 
+  await _restoreLastPlayedSong();
+
   runApp(const ProviderScope(child: FlickPlayerApp()));
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -32,12 +34,6 @@ Future<void> _bootstrapAppAfterFirstFrame() async {
       (Object e) => debugPrint('Notification permission request failed: $e'),
     ),
   );
-
-  try {
-    await _restoreLastPlayedSong();
-  } catch (e) {
-    debugPrint('Deferred audio bootstrap failed: $e');
-  }
 }
 
 /// Sets the highest available refresh rate mode on Android devices.
