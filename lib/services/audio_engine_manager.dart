@@ -1,234 +1,191 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flick/models/audio_engine_type.dart';
+import 'package:flick/models/playback_state.dart';
 import 'package:flick/models/song.dart';
-import 'package:flick/services/android_audio_device_service.dart';
-import 'package:flick/services/uac2_preferences_service.dart';
-
-enum AudioEngineType { android, usb }
-
-typedef AudioEnginePlayHandler =
-    Future<void> Function(Song track, AudioEngineType engineType);
-typedef AudioEngineVoidHandler =
-    Future<void> Function(AudioEngineType engineType);
-typedef AudioEngineSwitchHandler =
-    Future<void> Function({
-      required AudioEngineType? from,
-      required AudioEngineType to,
-      required bool initializeNewEngine,
-      required String reason,
-    });
-typedef AudioEnginePlaybackActiveReader = bool Function();
+import 'package:flick/services/audio_engine.dart';
 
 class AudioEngineManager {
-  AudioEngineManager({
-    AndroidAudioDeviceService? deviceService,
-    Uac2PreferencesService? preferencesService,
-    required AudioEnginePlayHandler onPlay,
-    required AudioEngineVoidHandler onPause,
-    required AudioEngineVoidHandler onStop,
-    required AudioEngineSwitchHandler onSwitchEngine,
-    required AudioEnginePlaybackActiveReader isPlaybackActive,
-  }) : _deviceService = deviceService ?? AndroidAudioDeviceService.instance,
-       _preferencesService = preferencesService ?? Uac2PreferencesService(),
-       _onPlay = onPlay,
-       _onPause = onPause,
-       _onStop = onStop,
-       _onSwitchEngine = onSwitchEngine,
-       _isPlaybackActive = isPlaybackActive;
+  final StreamController<PlaybackState> _controller =
+      StreamController<PlaybackState>.broadcast();
 
-  final AndroidAudioDeviceService _deviceService;
-  final Uac2PreferencesService _preferencesService;
-  final AudioEnginePlayHandler _onPlay;
-  final AudioEngineVoidHandler _onPause;
-  final AudioEngineVoidHandler _onStop;
-  final AudioEngineSwitchHandler _onSwitchEngine;
-  final AudioEnginePlaybackActiveReader _isPlaybackActive;
+  Stream<PlaybackState> get playbackState => _controller.stream;
+  PlaybackState? get latestState => _latestState;
+  AudioEngineType? get activeEngineType => _currentEngineType;
+  bool get hasAttachedEngine => _currentEngine != null;
 
-  final ValueNotifier<AudioEngineType> selectedEngineNotifier = ValueNotifier(
-    AudioEngineType.android,
-  );
-  final ValueNotifier<AudioEngineType?> initializedEngineNotifier =
-      ValueNotifier(null);
+  AudioEngine? _currentEngine;
+  StreamSubscription<PlaybackState>? _engineSubscription;
+  PlaybackState? _latestState;
+  AudioEngineType? _currentEngineType;
+  bool _engineInitialized = false;
+  bool _isTransitioning = false;
+  int _attachToken = 0;
 
-  bool _initialized = false;
-  Future<void>? _initializeInFlight;
-  Future<void>? _routeSyncInFlight;
-  VoidCallback? _deviceInfoListener;
-
-  AudioEngineType get selectedEngineType => selectedEngineNotifier.value;
-  AudioEngineType? get initializedEngineType => initializedEngineNotifier.value;
-
-  Future<void> initialize() async {
-    if (_initialized) return;
-
-    final inFlight = _initializeInFlight;
-    if (inFlight != null) {
-      await inFlight;
+  Future<void> attachEngine(
+    AudioEngine engine, {
+    AudioEngineType? engineType,
+    bool disposePrevious = true,
+  }) async {
+    if (identical(engine, _currentEngine)) {
       return;
     }
 
-    final future = _initializeInternal();
-    _initializeInFlight = future;
+    final previousEngine = _currentEngine;
+    final previousSubscription = _engineSubscription;
+    _currentEngine = engine;
+
+    await previousSubscription?.cancel();
+    if (disposePrevious && previousEngine != null) {
+      await previousEngine.dispose();
+    }
+
+    _attachToken += 1;
+    final activeToken = _attachToken;
+    final engineLabel = engineType == null
+        ? engine.runtimeType.toString()
+        : (engineType == AudioEngineType.android ? 'Android' : 'USB');
+    _currentEngineType = engineType;
+    _engineInitialized = true;
+    debugPrint('[Engine] Attached: $engineLabel');
+
+    if (engineType != null) {
+      final cleared = PlaybackState.empty(engineType);
+      _latestState = cleared;
+      _controller.add(cleared);
+    }
+
+    _engineSubscription = engine.playbackStateStream.listen((state) {
+      if (activeToken != _attachToken) return;
+      _latestState = state;
+      _controller.add(state);
+    });
+  }
+
+  Future<void> ensureEngine({
+    required AudioEngineType engineType,
+    required Future<AudioEngine> Function() createEngine,
+  }) async {
+    if (_engineInitialized &&
+        _currentEngine != null &&
+        _currentEngineType == engineType) {
+      debugPrint('[Engine] Prevented duplicate initialization');
+      return;
+    }
+
+    if (_isTransitioning) {
+      debugPrint('[Engine] Prevented duplicate initialization');
+      return;
+    }
+
+    _isTransitioning = true;
     try {
-      await future;
+      final engine = await createEngine();
+      await attachEngine(engine, engineType: engineType);
     } finally {
-      _initializeInFlight = null;
+      _isTransitioning = false;
     }
   }
 
-  Future<void> play(Song track) async {
-    await initialize();
-    final desired = await resolvePreferredEngineType(refresh: true);
-    await switchEngine(
-      desired,
-      initializeNewEngine: true,
-      reason: 'playback requested',
-    );
-    await _onPlay(track, desired);
+  Future<void> playTrack(
+    Song track, {
+    Duration initialPosition = Duration.zero,
+    bool autoPlay = true,
+  }) async {
+    _isTransitioning = true;
+    try {
+      final engine = _requireEngine();
+      debugPrint('[Playback] load(${track.id})');
+      await engine.load(track);
+      if (initialPosition > Duration.zero) {
+        await engine.seek(initialPosition);
+      }
+      if (autoPlay) {
+        debugPrint('[Playback] play()');
+        await engine.play();
+      }
+    } finally {
+      _isTransitioning = false;
+    }
+  }
+
+  void publishIdleState(AudioEngineType engineType) {
+    if (_currentEngine != null) {
+      return;
+    }
+
+    final idleState = PlaybackState.empty(engineType);
+    if (_latestState == idleState) {
+      return;
+    }
+
+    _currentEngineType = engineType;
+    _latestState = idleState;
+    _controller.add(idleState);
+  }
+
+  Future<void> load(Song track) async {
+    final engine = _requireEngine();
+    debugPrint('[Playback] load(${track.id})');
+    await engine.load(track);
+  }
+
+  Future<void> play() async {
+    final engine = _requireEngine();
+    debugPrint('[Playback] play()');
+    await engine.play();
   }
 
   Future<void> pause() async {
-    final engine = initializedEngineType;
-    if (engine == null) return;
-
-    debugPrint('[Playback] pause() called on ${engine.name} engine');
-    await _onPause(engine);
+    final engine = _requireEngine();
+    debugPrint('[Playback] pause()');
+    await engine.pause();
   }
 
   Future<void> stop() async {
-    final engine = initializedEngineType;
-    if (engine == null) return;
-
-    debugPrint('[Playback] stop() called on ${engine.name} engine');
-    await _onStop(engine);
+    final engine = _requireEngine();
+    await engine.stop();
   }
 
-  Future<void> switchEngine(
-    AudioEngineType type, {
-    bool initializeNewEngine = false,
-    String reason = 'manual switch',
-  }) async {
-    final previousInitialized = initializedEngineType;
-    final selectedChanged = selectedEngineType != type;
-    final needsInitialization =
-        initializeNewEngine && previousInitialized != type;
-    final needsDisposal =
-        previousInitialized != null && previousInitialized != type;
+  Future<void> seek(Duration position) async {
+    final engine = _requireEngine();
+    await engine.seek(position);
+  }
 
-    selectedEngineNotifier.value = type;
-
-    if (!selectedChanged && !needsInitialization && !needsDisposal) {
-      return;
+  Future<void> dispose() async {
+    await _engineSubscription?.cancel();
+    _engineSubscription = null;
+    if (_currentEngine != null) {
+      await _currentEngine!.dispose();
+      _currentEngine = null;
     }
+    _currentEngineType = null;
+    _engineInitialized = false;
+    await _controller.close();
+  }
 
-    final fromLabel = previousInitialized?.name ?? 'none';
-    debugPrint(
-      '[Engine] Switching from $fromLabel to ${type.name}'
-      ' (${initializeNewEngine ? 'initialize' : 'lazy'})'
-      ' because $reason',
-    );
-
-    if (needsDisposal || needsInitialization) {
-      await _onSwitchEngine(
-        from: previousInitialized,
-        to: type,
-        initializeNewEngine: initializeNewEngine,
-        reason: reason,
-      );
+  Future<void> detachEngine({bool disposeCurrent = true}) async {
+    final previousEngineType = _currentEngineType;
+    await _engineSubscription?.cancel();
+    _engineSubscription = null;
+    if (disposeCurrent && _currentEngine != null) {
+      await _currentEngine!.dispose();
     }
-
-    initializedEngineNotifier.value = initializeNewEngine
-        ? type
-        : (previousInitialized == type ? previousInitialized : null);
-  }
-
-  Future<AudioEngineType> resolvePreferredEngineType({
-    bool refresh = false,
-  }) async {
-    await initialize();
-    return _resolvePreferredEngineType(refresh: refresh);
-  }
-
-  Future<void> setHiFiModeEnabled(bool enabled) async {
-    await _preferencesService.setHiFiModeEnabled(enabled);
-    await _syncRouteSelection(
-      reason: enabled ? 'HiFi Mode enabled' : 'HiFi Mode disabled',
-    );
-  }
-
-  Future<bool> isHiFiModeEnabled() {
-    return _preferencesService.getHiFiModeEnabled();
-  }
-
-  Future<void> _initializeInternal() async {
-    await _deviceService.initialize();
-    selectedEngineNotifier.value = await _resolvePreferredEngineType();
-
-    _deviceInfoListener ??= () {
-      unawaited(_syncRouteSelection(reason: 'audio route change'));
-    };
-    _deviceService.deviceInfoNotifier.addListener(_deviceInfoListener!);
-    _initialized = true;
-  }
-
-  Future<void> _syncRouteSelection({required String reason}) async {
-    final inFlight = _routeSyncInFlight;
-    if (inFlight != null) {
-      await inFlight;
-      return;
-    }
-
-    final future = _syncRouteSelectionInternal(reason: reason);
-    _routeSyncInFlight = future;
-    try {
-      await future;
-    } finally {
-      if (identical(_routeSyncInFlight, future)) {
-        _routeSyncInFlight = null;
-      }
+    _currentEngine = null;
+    _currentEngineType = null;
+    _engineInitialized = false;
+    _attachToken += 1;
+    if (previousEngineType != null) {
+      publishIdleState(previousEngineType);
     }
   }
 
-  Future<void> _syncRouteSelectionInternal({required String reason}) async {
-    final desired = await _resolvePreferredEngineType(refresh: true);
-    await switchEngine(
-      desired,
-      initializeNewEngine: _isPlaybackActive(),
-      reason: reason,
-    );
-  }
-
-  Future<AudioEngineType> _resolvePreferredEngineType({
-    bool refresh = false,
-  }) async {
-    final info = refresh
-        ? await _deviceService.refresh()
-        : _deviceService.deviceInfoNotifier.value;
-    final hiFiModeEnabled = await _preferencesService.getHiFiModeEnabled();
-
-    if (info.hasUsbDac) {
-      return AudioEngineType.usb;
+  AudioEngine _requireEngine() {
+    final engine = _currentEngine;
+    if (engine == null) {
+      throw StateError('No audio engine attached');
     }
-
-    // Internal DAP routes still travel through Android's AudioTrack / mixer
-    // path, which commonly floors playback at 48 kHz. Keep those devices on
-    // the Android engine unless the user explicitly enables experimental
-    // HiFi Mode. We do not fake bit-perfect output by upsampling.
-    if (info.isLikelyDap && !hiFiModeEnabled) {
-      return AudioEngineType.android;
-    }
-
-    return hiFiModeEnabled ? AudioEngineType.usb : AudioEngineType.android;
-  }
-
-  void dispose() {
-    final listener = _deviceInfoListener;
-    if (listener != null) {
-      _deviceService.deviceInfoNotifier.removeListener(listener);
-    }
-    _deviceInfoListener = null;
-    selectedEngineNotifier.dispose();
-    initializedEngineNotifier.dispose();
+    return engine;
   }
 }

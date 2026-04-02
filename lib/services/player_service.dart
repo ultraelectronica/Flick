@@ -1,18 +1,24 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' as just_audio;
+import 'package:flick/models/audio_engine_type.dart';
+import 'package:flick/models/playback_state.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/src/rust/api/audio_api.dart' as rust_audio;
 import 'package:flick/services/notification_service.dart';
+import 'package:flick/services/android_audio_engine.dart';
+import 'package:flick/services/android_audio_device_service.dart';
 import 'package:flick/services/audio_engine_manager.dart';
+import 'package:flick/services/audio_route_manager.dart';
 import 'package:flick/services/last_played_service.dart';
 import 'package:flick/services/favorites_service.dart';
 import 'package:flick/data/repositories/recently_played_repository.dart';
-import 'package:flick/services/equalizer_service.dart';
 import 'package:flick/services/replay_play_tracker.dart';
+import 'package:flick/services/rust_audio_engine.dart';
 import 'package:flick/services/rust_audio_service.dart';
 import 'package:flick/services/uac2_service.dart';
 import 'package:flick/services/alac_converter_service.dart';
@@ -161,13 +167,12 @@ class PlayerService {
   }
 
   PlayerService._internal() {
-    _engineManager = AudioEngineManager(
-      onPlay: _playOnSelectedEngine,
-      onPause: _pauseSelectedEngine,
-      onStop: _stopSelectedEngine,
+    _playbackManager = AudioEngineManager();
+    _routeManager = AudioRouteManager(
       onSwitchEngine: _handleEngineSwitch,
       isPlaybackActive: () => isPlayingNotifier.value,
     );
+    _bindPlaybackState();
     _init();
   }
 
@@ -180,7 +185,12 @@ class PlayerService {
   final FavoritesService _favoritesService = FavoritesService();
   final RustAudioService _rustAudioService = RustAudioService();
   final Uac2Service _uac2Service = Uac2Service.instance;
-  late final AudioEngineManager _engineManager;
+  late final AudioRouteManager _routeManager;
+  late final AudioEngineManager _playbackManager;
+  AndroidAudioEngine? _androidEngine;
+  RustAudioEngine? _rustEngine;
+  StreamSubscription<PlaybackState>? _playbackStateSubscription;
+  PlaybackState? _lastPlaybackState;
   final RecentlyPlayedRepository _recentlyPlayedRepository =
       RecentlyPlayedRepository();
   final ReplayPlayTracker _replayPlayTracker = ReplayPlayTracker();
@@ -196,30 +206,26 @@ class PlayerService {
   bool _rustBackendAvailable = false;
   bool _justAudioListenersAttached = false;
   bool _rustListenersAttached = false;
-  bool _uac2RouteListenerAttached = false;
+  bool _audioSessionConfigured = false;
+  VoidCallback? _rustStateListener;
+  VoidCallback? _rustPositionListener;
+  VoidCallback? _rustDurationListener;
+  StreamSubscription<AudioInterruptionEvent>? _audioFocusSubscription;
   bool _audioInitialized = false;
   Future<void>? _audioInitInFlight;
   Future<void>? _appLaunchPreparationInFlight;
   Future<void> _playRequestQueue = Future<void>.value();
-  Future<void>? _playStartupInFlight;
   Future<bool>? _rustInitInFlight;
   Future<void>? _rustCapabilityRefreshInFlight;
-  Future<void>? _backendHandoffInFlight;
   bool _suppressSequenceStateUpdates = false;
-  bool _backendHandoffRecheckRequested = false;
-  // ignore: unused_field
-  bool _routeRecheckAfterPlayStartup = false;
-  // ignore: unused_field
-  bool _rustCapabilityInfoPrimed = false;
-  rust_audio.AudioCapabilityInfo? _lastRustCapabilityInfo;
-  String? _lastObservedUac2RouteSignature;
   DateTime? _autoSyncGuardUntil;
   String? _autoSyncGuardSongId;
+  String? _restoredSongId;
+  Duration _restoredPosition = Duration.zero;
   double _currentVolume = 1.0;
 
   // Timer to periodically save position
   Timer? _positionSaveTimer;
-  Timer? _backendHandoffDebounceTimer;
 
   // State Notifiers
   final ValueNotifier<Song?> currentSongNotifier = ValueNotifier(null);
@@ -358,9 +364,11 @@ class PlayerService {
   /// Android: current audio session ID from just_audio (for Equalizer attachment).
   /// Null when not set or on non-Android platforms.
   int? get androidAudioSessionId => _justAudioPlayer?.androidAudioSessionId;
+  Stream<PlaybackState> get playbackStateStream =>
+      _playbackManager.playbackState;
+  PlaybackState? get latestPlaybackState => _playbackManager.latestState;
   AudioEngineType get currentEngineType =>
-      _engineManager.initializedEngineType ??
-      _engineManager.selectedEngineType;
+      _routeManager.initializedEngineType ?? _routeManager.selectedEngineType;
 
   just_audio.AudioPlayer _requireJustAudioPlayer() {
     final player = _justAudioPlayer;
@@ -404,24 +412,42 @@ class PlayerService {
 
   Future<void> setHiFiModeEnabled(bool enabled) async {
     await initAudio();
-    await _engineManager.setHiFiModeEnabled(enabled);
+    await _routeManager.setHiFiModeEnabled(enabled);
   }
 
   Future<bool> isHiFiModeEnabled() async {
     await initAudio();
-    return _engineManager.isHiFiModeEnabled();
+    return _routeManager.isHiFiModeEnabled();
   }
 
   Future<void> _initializeAudio() async {
     debugPrint('[Engine] Initializing audio manager');
 
     try {
-      _setupRustAudioListeners();
-      await _engineManager.initialize();
+      await _routeManager.initialize();
+      _playbackManager.publishIdleState(_routeManager.selectedEngineType);
+      await _configureAndroidAudioSession();
       _audioInitialized = true;
     } finally {
       _audioInitInFlight = null;
     }
+  }
+
+  Future<void> _configureAndroidAudioSession() async {
+    if (!Platform.isAndroid || _audioSessionConfigured) {
+      return;
+    }
+
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+    _audioFocusSubscription ??= session.interruptionEventStream.listen((event) {
+      if (event.begin) {
+        debugPrint('[AudioFocus] lost');
+      } else {
+        debugPrint('[AudioFocus] gained');
+      }
+    });
+    _audioSessionConfigured = true;
   }
 
   Future<bool> _ensureRustBackendAvailable() async {
@@ -446,23 +472,6 @@ class PlayerService {
     }
   }
 
-  Future<bool> _waitForRustPlaybackStart({
-    Duration timeout = const Duration(milliseconds: 1500),
-  }) async {
-    final deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      final state = _rustAudioService.stateNotifier.value;
-      if (state == RustPlaybackState.playing ||
-          state == RustPlaybackState.crossfading ||
-          state == RustPlaybackState.buffering ||
-          state == RustPlaybackState.paused) {
-        return true;
-      }
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-    return false;
-  }
-
   Future<void> _refreshRustCapabilityInfo() async {
     if (!Platform.isAndroid) return;
 
@@ -477,9 +486,7 @@ class PlayerService {
       if (!rustAvailable) return;
 
       final capabilityInfo = await _uac2Service.getAndroidAudioCapabilityInfo();
-      _lastRustCapabilityInfo = capabilityInfo;
       await _applyRustCapabilityInfo(capabilityInfo);
-      _rustCapabilityInfoPrimed = true;
     }();
 
     _rustCapabilityRefreshInFlight = future;
@@ -504,28 +511,6 @@ class PlayerService {
         maxSampleRate: prewarmSampleRate,
       ),
     );
-  }
-
-  String _uac2RouteSignature(Uac2DeviceStatus? status) {
-    if (status == null) return 'none';
-
-    final device = status.device;
-    return <String>[
-      status.routeType.name,
-      status.routeLabel ?? '',
-      status.isExternalRoute ? '1' : '0',
-      '${device.vendorId}',
-      '${device.productId}',
-      device.serial ?? '',
-      device.deviceName ?? '',
-      device.productName,
-    ].join('|');
-  }
-
-  bool _isRustStatePlaying(RustPlaybackState state) {
-    return state == RustPlaybackState.playing ||
-        state == RustPlaybackState.crossfading ||
-        state == RustPlaybackState.buffering;
   }
 
   Uac2AudioFormat? _deriveUac2FormatFromSong(Song? song) {
@@ -583,133 +568,144 @@ class PlayerService {
 
     final player = _requireJustAudioPlayer();
 
-    _justAudioSubscriptions.add(player.errorStream.listen((error) {
-      if (_usingRustBackend) return;
-      final song = currentSongNotifier.value;
-      if (song == null) return;
-      final message = error.toString();
-      if (message.contains('Loading interrupted')) {
-        debugPrint(
-          'Ignoring just_audio interruption for ${song.title} during player transition',
-        );
-        return;
-      }
-
-      debugPrint('just_audio error for ${song.title}: $error');
-      unawaited(_tryRustFallbackPlayback(song, force: true));
-    }));
-
-    _justAudioSubscriptions.add(player.playerStateStream.listen((state) {
-      if (_usingRustBackend) return;
-      final wasPlaying = isPlayingNotifier.value;
-      isPlayingNotifier.value = state.playing;
-      unawaited(
-        _syncUac2PlaybackStatus(
-          currentSongNotifier.value,
-          isPlaying: state.playing,
-        ),
-      );
-
-      if (wasPlaying != state.playing && currentSongNotifier.value != null) {
-        // Update full notification state to ensure icon and time update properly
-        _updateNotificationState();
-      }
-
-      if (!_suppressSequenceStateUpdates &&
-          state.processingState == just_audio.ProcessingState.completed &&
-          shouldHandleManualCompletion(
-            usingRustBackend: false,
-            loopMode: loopModeNotifier.value,
-          )) {
-        _onSongFinished();
-      }
-    }));
-
-    _justAudioSubscriptions.add(player.positionStream.listen((pos) {
-      if (_usingRustBackend) return;
-      if (!_suppressSequenceStateUpdates) {
-        final activeIndex = player.currentIndex;
-        if (activeIndex != null && activeIndex != _currentIndex) {
-          _syncCurrentSongFromIndex(activeIndex, fromListener: true);
+    _justAudioSubscriptions.add(
+      player.errorStream.listen((error) {
+        if (_usingRustBackend) return;
+        final song = currentSongNotifier.value;
+        if (song == null) return;
+        final message = error.toString();
+        if (message.contains('Loading interrupted')) {
+          debugPrint(
+            'Ignoring just_audio interruption for ${song.title} during player transition',
+          );
+          return;
         }
-      }
 
-      // When repeat-one loops, just_audio may not fire completed; detect
-      // position wrapping back to start so the notification progress bar resets.
-      final prev = _lastPosition;
-      _lastPosition = pos;
-      positionNotifier.value = pos;
-      _updateAutoSyncGuardFromProgress(pos);
-      _trackReplayProgress(pos);
+        debugPrint('just_audio error for ${song.title}: $error');
+      }),
+    );
 
-      // Update notification on loop wrap-around
-      if (currentSongNotifier.value != null &&
-          durationNotifier.value.inSeconds > 0 &&
-          prev.inSeconds > 5 &&
-          pos.inSeconds < 2) {
-        _updateNotificationState();
-      }
+    _justAudioSubscriptions.add(
+      player.playerStateStream.listen((state) {
+        if (_usingRustBackend) return;
+        final wasPlaying = isPlayingNotifier.value;
+        unawaited(
+          _syncUac2PlaybackStatus(
+            currentSongNotifier.value,
+            isPlaying: state.playing,
+          ),
+        );
 
-      // Periodically update notification with current position (throttled to every 2 seconds)
-      final now = DateTime.now();
-      if (currentSongNotifier.value != null &&
-          isPlayingNotifier.value &&
-          now.difference(_lastNotificationUpdate).inSeconds >= 2) {
-        _lastNotificationUpdate = now;
-        _updateNotificationState();
-      }
-    }));
-
-    _justAudioSubscriptions.add(player.bufferedPositionStream.listen((pos) {
-      if (_usingRustBackend) return;
-      bufferedPositionNotifier.value = pos;
-    }));
-
-    _justAudioSubscriptions.add(player.durationStream.listen((dur) {
-      if (_usingRustBackend) return;
-      if (dur != null) {
-        durationNotifier.value = dur;
-        if (currentSongNotifier.value != null && isPlayingNotifier.value) {
+        if (wasPlaying != state.playing && currentSongNotifier.value != null) {
+          // Update full notification state to ensure icon and time update properly
           _updateNotificationState();
         }
-      }
-    }));
+
+        if (!_suppressSequenceStateUpdates &&
+            state.processingState == just_audio.ProcessingState.completed &&
+            shouldHandleManualCompletion(
+              usingRustBackend: false,
+              loopMode: loopModeNotifier.value,
+            )) {
+          _onSongFinished();
+        }
+      }),
+    );
+
+    _justAudioSubscriptions.add(
+      player.positionStream.listen((pos) {
+        if (_usingRustBackend) return;
+        if (!_suppressSequenceStateUpdates) {
+          final activeIndex = player.currentIndex;
+          if (activeIndex != null && activeIndex != _currentIndex) {
+            _syncCurrentSongFromIndex(activeIndex, fromListener: true);
+          }
+        }
+
+        // When repeat-one loops, just_audio may not fire completed; detect
+        // position wrapping back to start so the notification progress bar resets.
+        final prev = _lastPosition;
+        _lastPosition = pos;
+        _updateAutoSyncGuardFromProgress(pos);
+        _trackReplayProgress(pos);
+
+        // Update notification on loop wrap-around
+        if (currentSongNotifier.value != null &&
+            durationNotifier.value.inSeconds > 0 &&
+            prev.inSeconds > 5 &&
+            pos.inSeconds < 2) {
+          _updateNotificationState();
+        }
+
+        // Periodically update notification with current position (throttled to every 2 seconds)
+        final now = DateTime.now();
+        if (currentSongNotifier.value != null &&
+            isPlayingNotifier.value &&
+            now.difference(_lastNotificationUpdate).inSeconds >= 2) {
+          _lastNotificationUpdate = now;
+          _updateNotificationState();
+        }
+      }),
+    );
+
+    _justAudioSubscriptions.add(
+      player.bufferedPositionStream.listen((pos) {
+        if (_usingRustBackend) return;
+      }),
+    );
+
+    _justAudioSubscriptions.add(
+      player.durationStream.listen((dur) {
+        if (_usingRustBackend) return;
+        if (dur != null) {
+          if (currentSongNotifier.value != null && isPlayingNotifier.value) {
+            _updateNotificationState();
+          }
+        }
+      }),
+    );
 
     // Listen to sequence state changes for gapless transitions
-    _justAudioSubscriptions.add(player.sequenceStateStream.listen((sequenceState) {
-      if (_usingRustBackend) return;
-      // Skip updates during playlist rebuild to prevent wrong song display
-      if (_isRebuildingPlaylist || _suppressSequenceStateUpdates) return;
+    _justAudioSubscriptions.add(
+      player.sequenceStateStream.listen((sequenceState) {
+        if (_usingRustBackend) return;
+        // Skip updates during playlist rebuild to prevent wrong song display
+        if (_isRebuildingPlaylist || _suppressSequenceStateUpdates) return;
 
-      if (sequenceState.currentIndex != null) {
-        _syncCurrentSongFromIndex(
-          sequenceState.currentIndex!,
-          fromListener: true,
-        );
-      }
-    }));
+        if (sequenceState.currentIndex != null) {
+          _syncCurrentSongFromIndex(
+            sequenceState.currentIndex!,
+            fromListener: true,
+          );
+        }
+      }),
+    );
 
     // Some engines/transition paths may emit currentIndex without a matching
     // sequenceState transition callback timing. Keep UI in sync either way.
-    _justAudioSubscriptions.add(player.currentIndexStream.listen((newIndex) {
-      if (_usingRustBackend) return;
-      if (_isRebuildingPlaylist || _suppressSequenceStateUpdates) return;
-      if (newIndex == null) return;
-      _syncCurrentSongFromIndex(newIndex, fromListener: true);
-    }));
+    _justAudioSubscriptions.add(
+      player.currentIndexStream.listen((newIndex) {
+        if (_usingRustBackend) return;
+        if (_isRebuildingPlaylist || _suppressSequenceStateUpdates) return;
+        if (newIndex == null) return;
+        _syncCurrentSongFromIndex(newIndex, fromListener: true);
+      }),
+    );
 
-    _justAudioSubscriptions.add(player.positionDiscontinuityStream.listen((discontinuity) {
-      if (_usingRustBackend) return;
-      if (_isRebuildingPlaylist || _suppressSequenceStateUpdates) return;
-      if (discontinuity.reason !=
-          just_audio.PositionDiscontinuityReason.autoAdvance) {
-        return;
-      }
+    _justAudioSubscriptions.add(
+      player.positionDiscontinuityStream.listen((discontinuity) {
+        if (_usingRustBackend) return;
+        if (_isRebuildingPlaylist || _suppressSequenceStateUpdates) return;
+        if (discontinuity.reason !=
+            just_audio.PositionDiscontinuityReason.autoAdvance) {
+          return;
+        }
 
-      final newIndex = discontinuity.event.currentIndex;
-      if (newIndex == null) return;
-      _syncCurrentSongFromIndex(newIndex, fromListener: true);
-    }));
+        final newIndex = discontinuity.event.currentIndex;
+        if (newIndex == null) return;
+        _syncCurrentSongFromIndex(newIndex, fromListener: true);
+      }),
+    );
   }
 
   void _syncCurrentSongFromIndex(int newIndex, {bool fromListener = false}) {
@@ -737,14 +733,6 @@ class PlayerService {
       debugPrint(
         'Track transition: ${currentSongNotifier.value?.title} -> ${newSong.title}',
       );
-      currentSongNotifier.value = newSong;
-      _startReplayTracking(newSong);
-      positionNotifier.value = Duration.zero;
-      unawaited(_savePosition());
-      unawaited(
-        _syncUac2PlaybackStatus(newSong, isPlaying: isPlayingNotifier.value),
-      );
-      _updateNotificationState();
     }
   }
 
@@ -784,7 +772,7 @@ class PlayerService {
     if (_rustListenersAttached) return;
     _rustListenersAttached = true;
 
-    _rustAudioService.stateNotifier.addListener(() {
+    _rustStateListener = () {
       if (!_usingRustBackend) return;
 
       final rustState = _rustAudioService.stateNotifier.value;
@@ -792,20 +780,20 @@ class PlayerService {
           rustState == RustPlaybackState.playing ||
           rustState == RustPlaybackState.crossfading;
 
-      isPlayingNotifier.value = isPlaying;
       unawaited(
         _syncUac2PlaybackStatus(
           currentSongNotifier.value,
           isPlaying: isPlaying,
         ),
       );
-    });
+    };
+    _rustAudioService.stateNotifier.addListener(_rustStateListener!);
 
-    _rustAudioService.positionNotifier.addListener(() {
+    _rustPositionListener = () {
       if (!_usingRustBackend) return;
 
-      positionNotifier.value = _rustAudioService.positionNotifier.value;
-      _trackReplayProgress(positionNotifier.value);
+      final pos = _rustAudioService.positionNotifier.value;
+      _trackReplayProgress(pos);
 
       final now = DateTime.now();
       if (currentSongNotifier.value != null &&
@@ -814,12 +802,13 @@ class PlayerService {
         _lastNotificationUpdate = now;
         _updateNotificationState();
       }
-    });
+    };
+    _rustAudioService.positionNotifier.addListener(_rustPositionListener!);
 
-    _rustAudioService.durationNotifier.addListener(() {
+    _rustDurationListener = () {
       if (!_usingRustBackend) return;
-      durationNotifier.value = _rustAudioService.durationNotifier.value;
-    });
+    };
+    _rustAudioService.durationNotifier.addListener(_rustDurationListener!);
 
     _rustAudioService.onTrackEnded = (_) {
       if (!_usingRustBackend) return;
@@ -827,266 +816,71 @@ class PlayerService {
     };
   }
 
-  // ignore: unused_element
-  void _setupUac2RouteListener() {
-    if (_uac2RouteListenerAttached) return;
-    _uac2RouteListenerAttached = true;
-    _lastObservedUac2RouteSignature = _uac2RouteSignature(
-      _uac2Service.currentDeviceStatus,
-    );
-    _uac2Service.addStatusListener(_handleUac2StatusChanged);
-  }
+  void _bindPlaybackState() {
+    _playbackStateSubscription?.cancel();
+    _playbackStateSubscription = _playbackManager.playbackState.listen((state) {
+      final previous = _lastPlaybackState;
+      _lastPlaybackState = state;
 
-  void _handleUac2StatusChanged(Uac2DeviceStatus? status) {
-    if (!Platform.isAndroid) return;
-
-    final routeSignature = _uac2RouteSignature(status);
-    if (routeSignature == _lastObservedUac2RouteSignature) {
-      return;
-    }
-    _lastObservedUac2RouteSignature = routeSignature;
-
-    _rustCapabilityInfoPrimed = false;
-    _lastRustCapabilityInfo = null;
-
-    final song = currentSongNotifier.value;
-    if (song?.filePath == null) {
-      unawaited(_refreshRustCapabilityInfo());
-      return;
-    }
-
-    _backendHandoffDebounceTimer?.cancel();
-    _backendHandoffDebounceTimer = Timer(
-      const Duration(milliseconds: 350),
-      () => unawaited(() async {
-        await _refreshRustCapabilityInfo();
-        await _reconcileBackendWithPreferredRoute(
-          reason:
-              'UAC2 route update (${status?.routeType.name ?? 'unavailable'})',
-        );
-      }()),
-    );
-  }
-
-  Future<void> _reconcileBackendWithPreferredRoute({
-    required String reason,
-  }) async {
-    if (_playStartupInFlight != null) {
-      _routeRecheckAfterPlayStartup = true;
-      return;
-    }
-
-    final inFlight = _backendHandoffInFlight;
-    if (inFlight != null) {
-      _backendHandoffRecheckRequested = true;
-      return;
-    }
-
-    final operation = _performBackendRouteReconciliation(reason: reason);
-    _backendHandoffInFlight = operation;
-    try {
-      await operation;
-    } finally {
-      _backendHandoffInFlight = null;
-      if (_backendHandoffRecheckRequested) {
-        _backendHandoffRecheckRequested = false;
-        unawaited(
-          _reconcileBackendWithPreferredRoute(
-            reason: 'pending backend route recheck',
-          ),
-        );
+      if (currentSongNotifier.value != state.currentTrack) {
+        currentSongNotifier.value = state.currentTrack;
       }
-    }
-  }
-
-  Future<void> _performBackendRouteReconciliation({
-    required String reason,
-  }) async {
-    final song = currentSongNotifier.value;
-    if (song == null || song.filePath == null) return;
-
-    final shouldUseRust = await _shouldPreferRustBackend(song);
-    if (shouldUseRust == _usingRustBackend) {
-      return;
-    }
-
-    final resumePlayback = isPlayingNotifier.value;
-    final position = positionNotifier.value;
-
-    if (shouldUseRust) {
-      if (!resumePlayback) {
-        return;
+      if (isPlayingNotifier.value != state.isPlaying) {
+        isPlayingNotifier.value = state.isPlaying;
       }
-      await _handoffJustAudioPlaybackToRust(
-        song: song,
-        position: position,
-        resumePlayback: resumePlayback,
-        reason: reason,
-      );
-      return;
-    }
+      if (positionNotifier.value != state.position) {
+        positionNotifier.value = state.position;
+      }
+      if (bufferedPositionNotifier.value != state.bufferedPosition) {
+        bufferedPositionNotifier.value = state.bufferedPosition;
+      }
+      if (durationNotifier.value != state.duration) {
+        durationNotifier.value = state.duration;
+      }
 
-    await _handoffRustPlaybackToJustAudio(
-      song: song,
-      position: position,
-      resumePlayback: resumePlayback,
-      reason: reason,
-    );
-  }
+      final shouldUseRust = state.engine == AudioEngineType.usb;
+      if (_usingRustBackend != shouldUseRust) {
+        _usingRustBackend = shouldUseRust;
+      }
 
-  Future<void> _loadJustAudioAtPosition(Duration position) async {
-    final player = await _ensureAndroidEngineInitialized();
-    final sources = await _buildAudioSources();
-    final resumeIndex = _currentIndex >= 0 ? _currentIndex : 0;
-    await _runWithSuppressedSequenceStateUpdates(() async {
-      await player.setAudioSources(
-        sources,
-        initialIndex: resumeIndex,
-        preload: true,
-      );
-      await player.setSpeed(playbackSpeedNotifier.value);
-      await player.setVolume(_currentVolume);
-      await _updateLoopMode();
-      await player.seek(position, index: resumeIndex);
+      final previousTrackId = previous?.currentTrack?.id;
+      final currentTrackId = state.currentTrack?.id;
+      if (previousTrackId != currentTrackId) {
+        if (currentTrackId != null && currentTrackId == _restoredSongId) {
+          _clearRestoredPlaybackContext(songId: currentTrackId);
+        }
+        if (_autoSyncGuardSongId != null &&
+            _autoSyncGuardSongId == currentTrackId) {
+          _clearAutoSyncGuard();
+        }
+        if (state.currentTrack != null) {
+          debugPrint('[Playback] Track changed: ${state.currentTrack!.title}');
+        } else {
+          debugPrint('[Playback] Track cleared');
+        }
+        if (state.currentTrack != null) {
+          _startReplayTracking(
+            state.currentTrack!,
+            initialPosition: state.position,
+          );
+          unawaited(
+            _syncUac2PlaybackStatus(
+              state.currentTrack,
+              isPlaying: state.isPlaying,
+            ),
+          );
+          unawaited(_updateNotificationState());
+          unawaited(
+            _savePosition(song: state.currentTrack, position: state.position),
+          );
+        } else {
+          _clearReplayTracking();
+        }
+      } else if (previous?.isPlaying != state.isPlaying &&
+          state.currentTrack != null) {
+        unawaited(_updateNotificationState());
+      }
     });
-  }
-
-  Future<bool> _handoffRustPlaybackToJustAudio({
-    required Song song,
-    required Duration position,
-    required bool resumePlayback,
-    required String reason,
-  }) async {
-    final player = await _ensureAndroidEngineInitialized();
-    try {
-      if (resumePlayback) {
-        await _rustAudioService.pause();
-      }
-
-      await _loadJustAudioAtPosition(position);
-      await _rustAudioService.stop();
-      _usingRustBackend = false;
-
-      if (resumePlayback) {
-        await player.play();
-        await reapplyEqualizer();
-      }
-
-      isPlayingNotifier.value = resumePlayback;
-      positionNotifier.value = position;
-      durationNotifier.value = song.duration;
-      bufferedPositionNotifier.value = Duration.zero;
-      _ensurePositionSaveTimer();
-      unawaited(_syncUac2PlaybackStatus(song, isPlaying: resumePlayback));
-      unawaited(_updateNotificationState());
-
-      debugPrint(
-        'Switched playback backend to just_audio for ${song.title} ($reason)',
-      );
-      return true;
-    } catch (e) {
-      _usingRustBackend = true;
-      try {
-        await player.stop();
-      } catch (_) {}
-      if (resumePlayback) {
-        try {
-          await _rustAudioService.resume();
-        } catch (_) {}
-      }
-      debugPrint(
-        'Failed to switch playback backend to just_audio for ${song.title} ($reason): $e',
-      );
-      return false;
-    }
-  }
-
-  Future<bool> _handoffJustAudioPlaybackToRust({
-    required Song song,
-    required Duration position,
-    required bool resumePlayback,
-    required String reason,
-  }) async {
-    final rustAvailable = await _ensureRustBackendAvailable();
-    if (!rustAvailable) {
-      return false;
-    }
-
-    final player = await _ensureAndroidEngineInitialized();
-
-    final path = await _resolveRustPath(song);
-    if (path == null || path.isEmpty) {
-      debugPrint('Rust handoff skipped: failed to resolve playable path');
-      return false;
-    }
-
-    try {
-      if (resumePlayback) {
-        await player.pause();
-      }
-
-      await _uac2Service.syncPlaybackStatus(
-        song: song,
-        isPlaying: false,
-        formatOverride: _deriveUac2FormatFromSong(song),
-      );
-      await _rustAudioService.play(path);
-      if (position > Duration.zero) {
-        await _rustAudioService.seek(position);
-      }
-      if (!resumePlayback) {
-        await _rustAudioService.pause();
-      }
-
-      final started = await _waitForRustPlaybackStart();
-      if (!started) {
-        throw StateError('Rust playback did not start within timeout');
-      }
-
-      await player.stop();
-      _usingRustBackend = true;
-      await _rustAudioService.setPlaybackSpeed(playbackSpeedNotifier.value);
-      await _rustAudioService.setVolume(_currentVolume);
-      await _rustAudioService.setCrossfade(
-        enabled: _rustAudioService.crossfadeEnabledNotifier.value,
-        durationSecs: _rustAudioService.crossfadeDurationNotifier.value,
-      );
-      await reapplyEqualizer();
-
-      final rustState = _rustAudioService.stateNotifier.value;
-      isPlayingNotifier.value =
-          resumePlayback && _isRustStatePlaying(rustState);
-      positionNotifier.value = position;
-      durationNotifier.value =
-          _rustAudioService.durationNotifier.value > Duration.zero
-          ? _rustAudioService.durationNotifier.value
-          : song.duration;
-      bufferedPositionNotifier.value = Duration.zero;
-      _ensurePositionSaveTimer();
-      unawaited(
-        _syncUac2PlaybackStatus(song, isPlaying: isPlayingNotifier.value),
-      );
-      unawaited(_updateNotificationState());
-
-      debugPrint(
-        'Switched playback backend to Rust for ${song.title} ($reason)',
-      );
-      return true;
-    } catch (e) {
-      try {
-        await _rustAudioService.stop();
-      } catch (_) {}
-      if (resumePlayback) {
-        try {
-          await player.play();
-        } catch (_) {}
-      }
-      _usingRustBackend = false;
-      debugPrint(
-        'Failed to switch playback backend to Rust for ${song.title} ($reason): $e',
-      );
-      return false;
-    }
   }
 
   Future<void> _toggleFavoriteFromNotification() async {
@@ -1137,7 +931,11 @@ class PlayerService {
     await _savePosition();
     _positionSaveTimer?.cancel();
     _clearReplayTracking();
-    await _engineManager.stop();
+    try {
+      await _playbackManager.stop();
+    } catch (e) {
+      debugPrint('Stop failed: $e');
+    }
     cancelSleepTimer();
   }
 
@@ -1335,51 +1133,6 @@ class PlayerService {
     );
   }
 
-  Future<bool> _shouldPreferRustBackend(Song song) async {
-    final preferredEngine = await _engineManager.resolvePreferredEngineType(
-      refresh: true,
-    );
-    return preferredEngine == AudioEngineType.usb;
-  }
-
-  Future<bool> _primeRustBackendForSong(Song song) async {
-    if (Platform.isAndroid) {
-      await _uac2Service.initialize();
-    }
-
-    final rustAvailable = await _ensureRustBackendAvailable();
-    if (!rustAvailable) {
-      return false;
-    }
-
-    if (!Platform.isAndroid) {
-      return true;
-    }
-
-    final playbackFormat = _deriveUac2FormatFromSong(song);
-    final preferredSampleRate =
-        playbackFormat?.sampleRate ?? _lastRustCapabilityInfo?.maxSampleRate;
-    if (playbackFormat != null) {
-      await _uac2Service.syncPlaybackStatus(
-        song: song,
-        isPlaying: false,
-        formatOverride: playbackFormat,
-      );
-    }
-
-    final capabilityInfo = _lastRustCapabilityInfo;
-    if (capabilityInfo != null) {
-      await _applyRustCapabilityInfo(
-        capabilityInfo,
-        prewarmSampleRate: playbackFormat?.sampleRate,
-      );
-    }
-
-    return _rustAudioService.prepareEngine(
-      preferredSampleRate: preferredSampleRate,
-    );
-  }
-
   Future<String?> _resolveRustPath(Song song) async {
     final resolvedPath = await _resolvePreparedPlaybackPath(song);
     if (resolvedPath == null || resolvedPath.isEmpty) return null;
@@ -1410,8 +1163,13 @@ class PlayerService {
       return existingPlayer;
     }
 
+    await _configureAndroidAudioSession();
     debugPrint('[Engine] Initializing Android engine');
-    final player = just_audio.AudioPlayer();
+    final player = just_audio.AudioPlayer(
+      handleInterruptions: true,
+      androidApplyAudioAttributes: true,
+      handleAudioSessionActivation: true,
+    );
     _justAudioPlayer = player;
     _setupJustAudioListeners();
     await player.setVolume(_currentVolume);
@@ -1419,7 +1177,43 @@ class PlayerService {
     return player;
   }
 
+  Future<void> _configureAndroidPlayer(just_audio.AudioPlayer player) async {
+    await player.setSpeed(playbackSpeedNotifier.value);
+    await player.setVolume(_currentVolume);
+    await _updateLoopMode();
+  }
+
+  AndroidAudioEngine _createAndroidEngine() {
+    return AndroidAudioEngine(
+      playerProvider: _ensureAndroidEngineInitialized,
+      sourcesBuilder: _buildAudioSources,
+      playlistProvider: () => List<Song>.from(_playlist),
+      configurePlayer: _configureAndroidPlayer,
+      disposeEngine: _disposeAndroidEngine,
+      shouldSuppressTrackSync: () =>
+          _isRebuildingPlaylist || _suppressSequenceStateUpdates,
+      shouldIgnoreTrack: _shouldIgnoreAutoSyncedSong,
+    );
+  }
+
+  RustAudioEngine _createRustEngine() {
+    return RustAudioEngine(
+      rustAudioService: _rustAudioService,
+      ensureInitialized: _ensureUsbEngineInitialized,
+      resolvePlaybackPath: _resolveRustPath,
+      disposeEngine: _disposeUsbEngine,
+    );
+  }
+
   Future<void> _ensureUsbEngineInitialized() async {
+    if (Platform.isAndroid) {
+      final deviceInfo = await AndroidAudioDeviceService.instance.refresh();
+      if (!deviceInfo.hasUsbDac) {
+        debugPrint('[Engine] USB init blocked: no USB DAC detected');
+        throw StateError('Rust USB engine requires a USB DAC');
+      }
+    }
+
     if (!_rustAudioService.isInitialized) {
       debugPrint('[Engine] Initializing USB engine');
     }
@@ -1433,6 +1227,8 @@ class PlayerService {
       await _uac2Service.initialize();
       await _refreshRustCapabilityInfo();
     }
+
+    _setupRustAudioListeners();
   }
 
   Future<void> _disposeAndroidEngine() async {
@@ -1462,6 +1258,25 @@ class PlayerService {
     if (!_rustAudioService.isInitialized) return;
 
     debugPrint('[Engine] Disposing USB engine');
+    if (_rustListenersAttached) {
+      if (_rustStateListener != null) {
+        _rustAudioService.stateNotifier.removeListener(_rustStateListener!);
+      }
+      if (_rustPositionListener != null) {
+        _rustAudioService.positionNotifier.removeListener(
+          _rustPositionListener!,
+        );
+      }
+      if (_rustDurationListener != null) {
+        _rustAudioService.durationNotifier.removeListener(
+          _rustDurationListener!,
+        );
+      }
+      _rustStateListener = null;
+      _rustPositionListener = null;
+      _rustDurationListener = null;
+      _rustListenersAttached = false;
+    }
     try {
       await _rustAudioService.stop();
     } catch (_) {}
@@ -1479,284 +1294,102 @@ class PlayerService {
     required bool initializeNewEngine,
     required String reason,
   }) async {
-    final song = currentSongNotifier.value;
-    final resumeFromPosition = positionNotifier.value;
-    final shouldResumePlayback =
-        initializeNewEngine &&
-        isPlayingNotifier.value &&
-        song?.filePath != null;
-
-    switch (from) {
-      case AudioEngineType.android:
-        await _disposeAndroidEngine();
-        break;
-      case AudioEngineType.usb:
-        await _disposeUsbEngine();
-        break;
-      case null:
-        break;
-    }
-
     if (!initializeNewEngine) {
+      await _playbackManager.detachEngine();
       _usingRustBackend = false;
       return;
     }
 
-    switch (to) {
-      case AudioEngineType.android:
-        await _ensureAndroidEngineInitialized();
-        _usingRustBackend = false;
-        if (shouldResumePlayback && song != null) {
-          await _playWithAndroidEngine(
-            song,
-            initialPosition: resumeFromPosition,
-            autoPlay: true,
-            logCall: false,
-          );
+    await _playbackManager.ensureEngine(
+      engineType: to,
+      createEngine: () async {
+        switch (to) {
+          case AudioEngineType.android:
+            _androidEngine = _createAndroidEngine();
+            return _androidEngine!;
+          case AudioEngineType.usb:
+            _rustEngine = _createRustEngine();
+            return _rustEngine!;
         }
-        break;
-      case AudioEngineType.usb:
-        await _ensureUsbEngineInitialized();
-        if (shouldResumePlayback && song != null) {
-          await _playWithUsbEngine(
-            song,
-            initialPosition: resumeFromPosition,
-            autoPlay: true,
-            logCall: false,
-          );
-        }
-        break;
-    }
+      },
+    );
+    _usingRustBackend = to == AudioEngineType.usb;
 
     debugPrint(
       '[Engine] Switch complete: ${from?.name ?? 'none'} -> ${to.name} ($reason)',
     );
   }
 
-  Future<void> _playOnSelectedEngine(
-    Song song,
-    AudioEngineType engineType,
-  ) async {
-    switch (engineType) {
-      case AudioEngineType.android:
-        await _playWithAndroidEngine(song);
-        return;
-      case AudioEngineType.usb:
-        await _playWithUsbEngine(song);
-        return;
+  Song? _songAtCurrentIndex() {
+    if (_currentIndex < 0 || _currentIndex >= _playlist.length) {
+      return null;
     }
+    return _playlist[_currentIndex];
   }
 
-  Future<void> _playWithAndroidEngine(
-    Song song, {
-    Duration initialPosition = Duration.zero,
-    bool autoPlay = true,
-    bool logCall = true,
+  void _rememberRestoredPlaybackContext(Song song, Duration position) {
+    _restoredSongId = song.id;
+    _restoredPosition = position;
+  }
+
+  Duration _consumeRestoredPositionForSong(Song song) {
+    if (_restoredSongId != song.id) {
+      return Duration.zero;
+    }
+
+    final restoredPosition = _restoredPosition;
+    _clearRestoredPlaybackContext(songId: song.id);
+    return restoredPosition;
+  }
+
+  void _clearRestoredPlaybackContext({String? songId}) {
+    if (songId != null && _restoredSongId != songId) {
+      return;
+    }
+
+    _restoredSongId = null;
+    _restoredPosition = Duration.zero;
+  }
+
+  Future<AudioEngineType> _normalizeRequestedEngine(
+    AudioEngineType desiredEngine, {
+    required String reason,
   }) async {
-    if (logCall) {
-      debugPrint('[Playback] play() called via android engine');
+    if (desiredEngine != AudioEngineType.usb || !Platform.isAndroid) {
+      return desiredEngine;
     }
 
-    final player = await _ensureAndroidEngineInitialized();
-    final sources = await _buildAudioSources();
-
-    await _runWithSuppressedSequenceStateUpdates(() async {
-      await player.setAudioSources(
-        sources,
-        initialIndex: _currentIndex,
-        preload: true,
-      );
-      await player.setSpeed(playbackSpeedNotifier.value);
-      await player.setVolume(_currentVolume);
-      await _updateLoopMode();
-      await player.seek(initialPosition, index: _currentIndex);
-    });
-
-    if (autoPlay) {
-      await player.play();
+    final deviceInfo = await AndroidAudioDeviceService.instance.refresh();
+    if (deviceInfo.hasUsbDac) {
+      return desiredEngine;
     }
 
-    await reapplyEqualizer();
-    _usingRustBackend = false;
-    isPlayingNotifier.value = autoPlay;
-    positionNotifier.value = initialPosition;
-    durationNotifier.value = song.duration;
-    bufferedPositionNotifier.value = Duration.zero;
-    await _syncUac2PlaybackStatus(song, isPlaying: autoPlay);
-    unawaited(_updateNotificationState());
+    debugPrint(
+      '[Engine] USB engine requested without a USB DAC; '
+      'falling back to Android ($reason)',
+    );
+    return AudioEngineType.android;
   }
 
-  Future<void> _playWithUsbEngine(
-    Song song, {
-    Duration initialPosition = Duration.zero,
-    bool autoPlay = true,
-    bool logCall = true,
+  Future<AudioEngineType> _ensureEngineReady(
+    AudioEngineType desiredEngine, {
+    required String reason,
   }) async {
-    if (logCall) {
-      debugPrint('[Playback] play() called via usb engine');
-    }
-
-    await _ensureUsbEngineInitialized();
-    final prepared = await _primeRustBackendForSong(song);
-    if (!prepared) {
-      throw StateError('USB engine is not ready for ${song.title}');
-    }
-
-    final path = await _resolveRustPath(song);
-    if (path == null || path.isEmpty) {
-      throw StateError('Failed to resolve USB playback path for ${song.title}');
-    }
-
-    await _uac2Service.syncPlaybackStatus(
-      song: song,
-      isPlaying: false,
-      formatOverride: _deriveUac2FormatFromSong(song),
+    final normalizedEngine = await _normalizeRequestedEngine(
+      desiredEngine,
+      reason: reason,
     );
-    await _rustAudioService.play(path);
-    if (initialPosition > Duration.zero) {
-      await _rustAudioService.seek(initialPosition);
-    }
-    if (!autoPlay) {
-      await _rustAudioService.pause();
-    }
-
-    final started = await _waitForRustPlaybackStart();
-    if (!started) {
-      throw StateError('USB playback did not start for ${song.title}');
-    }
-
-    await _rustAudioService.setPlaybackSpeed(playbackSpeedNotifier.value);
-    await _rustAudioService.setVolume(_currentVolume);
-    await _rustAudioService.setCrossfade(
-      enabled: _rustAudioService.crossfadeEnabledNotifier.value,
-      durationSecs: _rustAudioService.crossfadeDurationNotifier.value,
+    await _routeManager.switchEngine(
+      normalizedEngine,
+      initializeNewEngine: true,
+      reason: reason,
     );
-    await reapplyEqualizer();
-
-    _usingRustBackend = true;
-    final rustState = _rustAudioService.stateNotifier.value;
-    isPlayingNotifier.value = autoPlay && _isRustStatePlaying(rustState);
-    positionNotifier.value = initialPosition;
-    durationNotifier.value =
-        _rustAudioService.durationNotifier.value > Duration.zero
-        ? _rustAudioService.durationNotifier.value
-        : song.duration;
-    bufferedPositionNotifier.value = Duration.zero;
-    await _syncUac2PlaybackStatus(song, isPlaying: isPlayingNotifier.value);
-    unawaited(_updateNotificationState());
-  }
-
-  Future<void> _pauseSelectedEngine(AudioEngineType engineType) async {
-    switch (engineType) {
-      case AudioEngineType.android:
-        final player = _justAudioPlayer;
-        if (player != null) {
-          await player.pause();
-        }
-        break;
-      case AudioEngineType.usb:
-        await _rustAudioService.pause();
-        break;
-    }
-
-    await _syncUac2PlaybackStatus(currentSongNotifier.value, isPlaying: false);
-    await _savePosition();
-    unawaited(_updateNotificationState());
-  }
-
-  Future<void> _stopSelectedEngine(AudioEngineType engineType) async {
-    switch (engineType) {
-      case AudioEngineType.android:
-        final player = _justAudioPlayer;
-        if (player != null) {
-          await player.pause();
-          await player.seek(Duration.zero);
-        }
-        break;
-      case AudioEngineType.usb:
-        await _rustAudioService.stop();
-        break;
-    }
-
-    isPlayingNotifier.value = false;
-    positionNotifier.value = Duration.zero;
-    bufferedPositionNotifier.value = Duration.zero;
-    await _syncUac2PlaybackStatus(null, isPlaying: false);
-    _notificationService.hideNotification();
-  }
-
-  Future<bool> _tryRustFallbackPlayback(Song song, {bool force = false}) async {
-    if (!force && !await _shouldPreferRustBackend(song)) {
-      return false;
-    }
-
-    final rustAvailable = await _ensureRustBackendAvailable();
-    if (!rustAvailable) {
-      return false;
-    }
-
-    final path = await _resolveRustPath(song);
-    if (path == null || path.isEmpty) {
-      debugPrint('Rust fallback skipped: failed to resolve playable path');
-      return false;
-    }
-
-    try {
-      _usingRustBackend = true;
-      final player = _justAudioPlayer;
-      if (player != null) {
-        await player.stop();
-      }
-      await _uac2Service.syncPlaybackStatus(
-        song: song,
-        isPlaying: false,
-        formatOverride: _deriveUac2FormatFromSong(song),
-      );
-      await _rustAudioService.play(path);
-
-      final started = await _waitForRustPlaybackStart();
-      if (!started) {
-        throw StateError('Rust playback did not start within timeout');
-      }
-
-      final rustState = _rustAudioService.stateNotifier.value;
-      isPlayingNotifier.value =
-          rustState == RustPlaybackState.playing ||
-          rustState == RustPlaybackState.crossfading;
-      positionNotifier.value = Duration.zero;
-      durationNotifier.value =
-          _rustAudioService.durationNotifier.value > Duration.zero
-          ? _rustAudioService.durationNotifier.value
-          : song.duration;
-      bufferedPositionNotifier.value = Duration.zero;
-      await _rustAudioService.setPlaybackSpeed(playbackSpeedNotifier.value);
-      await _rustAudioService.setVolume(_currentVolume);
-      await _rustAudioService.setCrossfade(
-        enabled: _rustAudioService.crossfadeEnabledNotifier.value,
-        durationSecs: _rustAudioService.crossfadeDurationNotifier.value,
-      );
-      await reapplyEqualizer();
-      unawaited(_updateNotificationState());
-      unawaited(
-        _syncUac2PlaybackStatus(song, isPlaying: isPlayingNotifier.value),
-      );
-
-      _ensurePositionSaveTimer();
-
-      debugPrint('Using Rust fallback backend for ${song.title} @ $path');
-      return true;
-    } catch (e) {
-      _usingRustBackend = false;
-      try {
-        await _rustAudioService.stop();
-      } catch (_) {}
-      debugPrint('Rust fallback playback failed: $e');
-      return false;
-    }
+    return normalizedEngine;
   }
 
   /// Play a specific song.
   Future<void> play(Song song, {List<Song>? playlist}) {
+    debugPrint('[UI] tap(${song.id})');
     return _enqueuePlaybackRequest(
       () => _playInternal(song, playlist: playlist),
     );
@@ -1773,60 +1406,81 @@ class PlayerService {
     try {
       debugPrint(
         '[Playback] play() called for ${song.title} '
-        '(selected engine: ${_engineManager.selectedEngineType.name})',
+        '(selected engine: ${_routeManager.selectedEngineType.name})',
       );
 
       _positionSaveTimer?.cancel();
 
       if (playlist != null) {
         _replacePlaybackContext(playlist);
-        _setCurrentIndex(_playlist.indexOf(song));
+        _setCurrentIndex(_playlist.indexWhere((entry) => entry.id == song.id));
         _insertQueuedEntriesAfterCurrent();
       } else {
-        if (!_playlist.contains(song)) {
+        final existingIndex = _playlist.indexWhere(
+          (entry) => entry.id == song.id,
+        );
+        if (existingIndex == -1) {
           _replacePlaybackContext([song]);
           _setCurrentIndex(0);
           _insertQueuedEntriesAfterCurrent();
         } else {
-          _setCurrentIndex(_playlist.indexOf(song));
+          _setCurrentIndex(existingIndex);
         }
       }
 
-      currentSongNotifier.value = song;
-      _armAutoSyncGuard(song);
-      _startReplayTracking(song);
+      if (_currentIndex == -1) {
+        _setCurrentIndex(0);
+      }
 
-      positionNotifier.value = Duration.zero;
-      durationNotifier.value = song.duration;
-      unawaited(_savePosition());
+      _armAutoSyncGuard(song);
+      _consumeQueueEntryAt(_currentIndex);
+      _clearRestoredPlaybackContext(songId: song.id);
 
       if (song.filePath != null) {
         await _prepareImmediatePlaybackAsset(song);
-        await _engineManager.play(song);
+        final desiredEngine = await _routeManager.resolvePreferredEngineType(
+          refresh: true,
+        );
+        final activeEngine = await _ensureEngineReady(
+          desiredEngine,
+          reason: 'playback requested',
+        );
+        debugPrint('[Engine] Playback route resolved to ${activeEngine.name}');
+        await _playbackManager.playTrack(song);
         _ensurePositionSaveTimer();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint(
         '[Playback] play() failed for ${song.title} '
         'on ${currentEngineType.name}: $e',
       );
+      debugPrintStack(stackTrace: stackTrace);
+      rethrow;
     }
   }
 
-  Future<void> _savePosition() async {
-    final song = currentSongNotifier.value;
-    if (song != null) {
-      try {
-        await _lastPlayedService.saveLastPlayed(
-          song.id,
-          positionNotifier.value,
-          playlistSongIds: _playlist.map((s) => s.id).toList(),
-          currentIndex: _currentIndex,
-          wasPlaying: isPlayingNotifier.value,
-        );
-      } catch (e) {
-        debugPrint('Failed to save last played position: $e');
-      }
+  Future<void> _playSongAtCurrentIndex() async {
+    final song = _songAtCurrentIndex();
+    if (song == null) {
+      return;
+    }
+    await _playInternal(song);
+  }
+
+  Future<void> _savePosition({Song? song, Duration? position}) async {
+    final resolvedSong = song ?? currentSongNotifier.value;
+    if (resolvedSong == null) return;
+
+    try {
+      await _lastPlayedService.saveLastPlayed(
+        resolvedSong.id,
+        position ?? positionNotifier.value,
+        playlistSongIds: _playlist.map((s) => s.id).toList(),
+        currentIndex: _currentIndex,
+        wasPlaying: isPlayingNotifier.value,
+      );
+    } catch (e) {
+      debugPrint('Failed to save last played position: $e');
     }
   }
 
@@ -1864,40 +1518,14 @@ class PlayerService {
         _setCurrentIndex(0);
       }
 
-      currentSongNotifier.value = _playlist[_currentIndex];
-      final restoredSong = currentSongNotifier.value;
-      if (restoredSong != null) {
-        _startReplayTracking(
-          restoredSong,
-          initialPosition: lastPlayed.position,
-        );
-      }
+      final restoredSong = _playlist[_currentIndex];
+      _rememberRestoredPlaybackContext(restoredSong, lastPlayed.position);
 
-      if (restoredSong?.filePath != null) {
-        try {
-          positionNotifier.value = lastPlayed.position;
-          durationNotifier.value =
-              currentSongNotifier.value?.duration ?? Duration.zero;
-
-          final isFav = await _favoritesService.isFavorite(restoredSong!.id);
-          await _notificationService.showNotification(
-            song: restoredSong,
-            isPlaying: false,
-            position: lastPlayed.position,
-            isShuffle: isShuffleNotifier.value,
-            isFavorite: isFav,
-          );
-          await _syncUac2PlaybackStatus(restoredSong, isPlaying: false);
-        } catch (e) {
-          debugPrint("Error restoring last played: $e");
-        }
-      }
-
-      if (lastPlayed.wasPlaying && restoredSong?.filePath != null) {
+      if (restoredSong.filePath != null) {
         debugPrint(
-          '[Playback] Restored active session for ${restoredSong!.title}; resuming once',
+          '[Playback] Restored ${restoredSong.title} at '
+          '${lastPlayed.position.inMilliseconds}ms; waiting for explicit playback',
         );
-        await _resumeInternal();
       }
     }
   }
@@ -1907,10 +1535,12 @@ class PlayerService {
   }
 
   Future<void> _pauseInternal() async {
-    // Immediately update the playing state for responsive UI
-    isPlayingNotifier.value = false;
     debugPrint('[Playback] pause() called');
-    await _engineManager.pause();
+    try {
+      await _playbackManager.pause();
+    } catch (e) {
+      debugPrint('Pause failed: $e');
+    }
   }
 
   Future<void> resume() {
@@ -1920,65 +1550,37 @@ class PlayerService {
   Future<void> _resumeInternal() async {
     await initAudio();
 
-    final song = currentSongNotifier.value;
+    final song = currentSongNotifier.value ?? _songAtCurrentIndex();
     if (song == null || song.filePath == null) {
       return;
     }
 
     debugPrint('[Playback] resume() called');
-    final desiredEngine = await _engineManager.resolvePreferredEngineType(
+    final desiredEngine = await _routeManager.resolvePreferredEngineType(
       refresh: true,
     );
-    await _engineManager.switchEngine(
+    final activeEngine = await _ensureEngineReady(
       desiredEngine,
-      initializeNewEngine: true,
       reason: 'resume requested',
     );
+    debugPrint('[Engine] Resume route resolved to ${activeEngine.name}');
 
-    // Immediately update the playing state for responsive UI
-    isPlayingNotifier.value = true;
-
-    if (desiredEngine == AudioEngineType.usb) {
-      final rustState = _rustAudioService.stateNotifier.value;
-      final needsFreshPlay =
-          !_rustAudioService.isInitialized ||
-          (rustState != RustPlaybackState.paused &&
-              !_isRustStatePlaying(rustState));
-      if (needsFreshPlay) {
-        await _playWithUsbEngine(
-          song,
-          initialPosition: positionNotifier.value,
-          autoPlay: true,
-          logCall: false,
-        );
-      } else {
-        await _rustAudioService.resume();
-        await _syncUac2PlaybackStatus(song, isPlaying: true);
-        unawaited(_updateNotificationState());
-      }
-      _ensurePositionSaveTimer();
-      return;
+    final latestState = _playbackManager.latestState;
+    final canResumeDirectly =
+        latestState != null &&
+        latestState.engine == activeEngine &&
+        latestState.currentTrack?.id == song.id;
+    if (canResumeDirectly) {
+      await _playbackManager.play();
+    } else {
+      final resumePosition = positionNotifier.value > Duration.zero
+          ? positionNotifier.value
+          : _consumeRestoredPositionForSong(song);
+      await _prepareImmediatePlaybackAsset(song);
+      await _playbackManager.playTrack(song, initialPosition: resumePosition);
     }
 
-    final player = await _ensureAndroidEngineInitialized();
-    try {
-      if (player.processingState == just_audio.ProcessingState.idle) {
-        await _loadJustAudioAtPosition(positionNotifier.value);
-      }
-      await player.play();
-    } on just_audio.PlayerInterruptedException catch (error) {
-      debugPrint(
-        'Ignoring just_audio interruption during resume for '
-        '${song.title}: ${error.message}',
-      );
-      isPlayingNotifier.value = player.playing;
-      return;
-    }
-
-    await reapplyEqualizer();
     _ensurePositionSaveTimer();
-    await _syncUac2PlaybackStatus(song, isPlaying: true);
-    unawaited(_updateNotificationState());
   }
 
   Future<void> togglePlayPause() {
@@ -1992,104 +1594,64 @@ class PlayerService {
   }
 
   Future<void> seek(Duration position) async {
-    if (_usingRustBackend) {
-      try {
-        await _rustAudioService.seek(position);
-        positionNotifier.value = position;
-      } catch (e) {
-        debugPrint('Rust fallback seek failed: $e');
-      }
-    } else {
-      final player = _justAudioPlayer;
-      if (player != null) {
-        await player.seek(position);
-      }
+    try {
+      await _playbackManager.seek(position);
+    } catch (e) {
+      debugPrint('Seek failed: $e');
     }
     unawaited(_updateNotificationState());
   }
 
-  bool _shouldOptimisticallySyncJustAudioSkip() {
-    return shouldOptimisticallySyncSkipForLoopMode(loopModeNotifier.value);
+  Future<void> next() {
+    return _enqueuePlaybackRequest(_nextInternal);
   }
 
-  Future<void> next() async {
+  Future<void> _nextInternal() async {
     if (_playlist.isEmpty) return;
 
     debugPrint(
       'next(): currentIndex=$_currentIndex, playlistLength=${_playlist.length}, loopMode=${loopModeNotifier.value}',
     );
 
-    if (_usingRustBackend) {
-      if (_currentIndex < _playlist.length - 1) {
-        _setCurrentIndex(_currentIndex + 1);
-        await play(_playlist[_currentIndex]);
-      } else if (loopModeNotifier.value == LoopMode.all) {
-        _setCurrentIndex(0);
-        await play(_playlist[_currentIndex]);
-      } else {
-        await pause();
-        await seek(Duration.zero);
-      }
-      return;
-    }
-
     if (_currentIndex < _playlist.length - 1) {
       final targetIndex = _currentIndex + 1;
-      debugPrint('next(): Advancing to index $_currentIndex');
-      final player = _justAudioPlayer;
-      if (player == null) return;
-      await player.seekToNext();
-      if (_shouldOptimisticallySyncJustAudioSkip()) {
-        _syncCurrentSongFromIndex(targetIndex);
-      }
-    } else if (loopModeNotifier.value == LoopMode.all) {
-      debugPrint('next(): LoopMode.all, wrapping to index 0');
-      final player = _justAudioPlayer;
-      if (player == null) return;
-      await player.seek(Duration.zero, index: 0);
-      if (!isPlayingNotifier.value) {
-        await player.play();
-      }
-      _syncCurrentSongFromIndex(0);
-    } else {
-      debugPrint('next(): End of playlist, pausing');
-      await pause();
-      await seek(Duration.zero);
-    }
-  }
-
-  Future<void> previous() async {
-    if (_playlist.isEmpty) return;
-
-    if (_usingRustBackend) {
-      if (positionNotifier.value.inSeconds > 3) {
-        await seek(Duration.zero);
-      } else {
-        if (_currentIndex > 0) {
-          _setCurrentIndex(_currentIndex - 1);
-          await play(_playlist[_currentIndex]);
-        } else {
-          await seek(Duration.zero);
-        }
-      }
+      _setCurrentIndex(targetIndex);
+      await _playSongAtCurrentIndex();
       return;
     }
+
+    if (loopModeNotifier.value == LoopMode.all) {
+      debugPrint('next(): LoopMode.all, wrapping to index 0');
+      _setCurrentIndex(0);
+      await _playSongAtCurrentIndex();
+      return;
+    }
+
+    debugPrint('next(): End of playlist, pausing');
+    await pause();
+    await seek(Duration.zero);
+  }
+
+  Future<void> previous() {
+    return _enqueuePlaybackRequest(_previousInternal);
+  }
+
+  Future<void> _previousInternal() async {
+    if (_playlist.isEmpty) return;
 
     if (positionNotifier.value.inSeconds > 3) {
       await seek(Duration.zero);
-    } else {
-      if (_currentIndex > 0) {
-        final targetIndex = _currentIndex - 1;
-        final player = _justAudioPlayer;
-        if (player == null) return;
-        await player.seekToPrevious();
-        if (_shouldOptimisticallySyncJustAudioSkip()) {
-          _syncCurrentSongFromIndex(targetIndex);
-        }
-      } else {
-        await seek(Duration.zero);
-      }
+      return;
     }
+
+    if (_currentIndex > 0) {
+      final targetIndex = _currentIndex - 1;
+      _setCurrentIndex(targetIndex);
+      await _playSongAtCurrentIndex();
+      return;
+    }
+
+    await seek(Duration.zero);
   }
 
   /// Rebuild the current playlist with updated settings
@@ -2229,29 +1791,19 @@ class PlayerService {
     }
   }
 
-  Future<void> playFromQueueIndex(int index) async {
+  Future<void> playFromQueueIndex(int index) {
+    return _enqueuePlaybackRequest(() => _playFromQueueIndexInternal(index));
+  }
+
+  Future<void> _playFromQueueIndexInternal(int index) async {
     if (index < 0 || index >= _queuedEntries.length) return;
     final entry = _queuedEntries.removeAt(index);
     final playlistIndex = _findPlaylistIndexForQueueEntry(entry.id);
     if (playlistIndex != -1) {
       _playlistQueueEntryIds[playlistIndex] = null;
       _notifyQueueChanged();
-      if (_usingRustBackend) {
-        _setCurrentIndex(playlistIndex);
-        await play(_playlist[playlistIndex]);
-        return;
-      }
       _setCurrentIndex(playlistIndex);
-      currentSongNotifier.value = _playlist[playlistIndex];
-      _startReplayTracking(_playlist[playlistIndex]);
-      positionNotifier.value = Duration.zero;
-      final player = _justAudioPlayer;
-      if (player == null) return;
-      await player.seek(Duration.zero, index: playlistIndex);
-      if (!isPlayingNotifier.value) {
-        await player.play();
-      }
-      unawaited(_updateNotificationState());
+      await _playSongAtCurrentIndex();
       return;
     }
 
@@ -2412,12 +1964,9 @@ class PlayerService {
 
   void dispose() {
     _positionSaveTimer?.cancel();
-    _backendHandoffDebounceTimer?.cancel();
+    unawaited(_audioFocusSubscription?.cancel());
     cancelSleepTimer();
     _notificationService.hideNotification();
-    if (_uac2RouteListenerAttached) {
-      _uac2Service.removeStatusListener(_handleUac2StatusChanged);
-    }
     if (_usingRustBackend) {
       unawaited(_rustAudioService.stop());
     }
@@ -2431,7 +1980,9 @@ class PlayerService {
       unawaited(player.dispose());
       _justAudioPlayer = null;
     }
-    _engineManager.dispose();
+    _playbackStateSubscription?.cancel();
+    unawaited(_playbackManager.dispose());
+    _routeManager.dispose();
 
     currentSongNotifier.dispose();
     isPlayingNotifier.dispose();

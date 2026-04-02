@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/utils/navigation_helper.dart';
+import 'package:flick/models/playback_state.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -72,12 +73,18 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<Song?>(
-      valueListenable: _playerService.currentSongNotifier,
-      builder: (context, song, child) {
+    return StreamBuilder<PlaybackState>(
+      stream: _playerService.playbackStateStream,
+      builder: (context, snapshot) {
+        final state = snapshot.data;
+        final song = state?.currentTrack;
         if (song == null) {
           return const SizedBox.shrink();
         }
+
+        final position = state?.position ?? Duration.zero;
+        final duration = state?.duration ?? Duration.zero;
+        final isPlaying = state?.isPlaying ?? false;
 
         return GestureDetector(
           onTap: () {
@@ -109,25 +116,16 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer> {
                 children: [
                   // Progress Bar at bottom (optional, or background fill?)
                   // Let's keep it simple for now, maybe add a thin line at bottom later.
-                  ValueListenableBuilder<Duration>(
-                    valueListenable: _playerService.positionNotifier,
-                    builder: (context, position, _) {
-                      final duration = _playerService.durationNotifier.value;
-                      if (duration.inMilliseconds == 0) {
-                        return const SizedBox.shrink();
-                      }
-                      final progress =
-                          position.inMilliseconds / duration.inMilliseconds;
-
-                      return Align(
-                        alignment: Alignment.bottomLeft,
-                        child: FractionallySizedBox(
-                          widthFactor: progress.clamp(0.0, 1.0),
-                          child: Container(height: 2, color: AppColors.accent),
-                        ),
-                      );
-                    },
-                  ),
+                  if (duration.inMilliseconds > 0)
+                    Align(
+                      alignment: Alignment.bottomLeft,
+                      child: FractionallySizedBox(
+                        widthFactor:
+                            (position.inMilliseconds / duration.inMilliseconds)
+                                .clamp(0.0, 1.0),
+                        child: Container(height: 2, color: AppColors.accent),
+                      ),
+                    ),
 
                   Row(
                     children: [
@@ -226,17 +224,12 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer> {
                           );
                         },
                       ),
-                      ValueListenableBuilder<bool>(
-                        valueListenable: _playerService.isPlayingNotifier,
-                        builder: (context, isPlaying, _) {
-                          return IconButton(
-                            onPressed: () => _playerService.togglePlayPause(),
-                            icon: Icon(
-                              isPlaying ? LucideIcons.pause : LucideIcons.play,
-                              color: AppColors.textPrimary,
-                            ),
-                          );
-                        },
+                      IconButton(
+                        onPressed: () => _playerService.togglePlayPause(),
+                        icon: Icon(
+                          isPlaying ? LucideIcons.pause : LucideIcons.play,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                       const SizedBox(width: 8),
                     ],

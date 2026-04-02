@@ -1,18 +1,16 @@
 import 'dart:async';
-import 'dart:math' as math;
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
-import 'package:flick/core/utils/app_haptics.dart';
 import 'package:flick/core/utils/responsive.dart';
 import 'package:flick/core/utils/navigation_helper.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/models/song_view_mode.dart';
 import 'package:flick/features/songs/widgets/orbit_scroll.dart';
-import 'package:flick/features/songs/widgets/orbit_selection_deck.dart';
 import 'package:flick/features/songs/widgets/song_fast_index_overlay.dart';
 import 'package:flick/features/songs/widgets/song_actions_bottom_sheet.dart';
 import 'package:flick/providers/providers.dart';
@@ -69,10 +67,6 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     final songsAsync = ref.watch(songsProvider);
     final viewMode = ref.watch(songsViewModeProvider);
     final navBarAlwaysVisible = ref.watch(navBarAlwaysVisibleProvider);
-    final currentSong = ref.watch(currentSongProvider);
-    final orbitDeckReserveHeight = OrbitSelectionDeck.reserveHeightForContext(
-      context,
-    );
 
     final shouldReserveBottomSpace =
         viewMode != SongViewMode.list || navBarAlwaysVisible;
@@ -184,8 +178,6 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                         viewMode,
                         tokenToIndexMap,
                         shouldReserveBottomSpace,
-                        currentSong,
-                        orbitDeckReserveHeight,
                       );
                     },
                   ),
@@ -196,7 +188,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                 SizedBox(
                   height:
                       shouldReserveBottomSpace && viewMode != SongViewMode.list
-                      ? orbitDeckReserveHeight
+                      ? AppConstants.navBarHeight + 90
                       : 0,
                 ),
               ],
@@ -212,12 +204,10 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     SongViewMode viewMode,
     Map<String, int> tokenToIndexMap,
     bool shouldReserveBottomSpace,
-    Song? currentSong,
-    double orbitDeckReserveHeight,
   ) {
     final content = viewMode == SongViewMode.list
         ? _buildListView(songs)
-        : _buildOrbitView(songs, currentSong, orbitDeckReserveHeight);
+        : _buildOrbitView(songs);
 
     if (tokenToIndexMap.isEmpty) {
       return content;
@@ -243,9 +233,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     }
 
     final railTopInset = AppConstants.spacingSm;
-    final railBottomInset = viewMode == SongViewMode.orbit
-        ? orbitDeckReserveHeight - AppConstants.spacingLg
-        : shouldReserveBottomSpace
+    final railBottomInset = shouldReserveBottomSpace
         ? AppConstants.spacingSm
         : AppConstants.navBarHeight + 90 + AppConstants.spacingSm;
 
@@ -276,101 +264,34 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     );
   }
 
-  Widget _buildOrbitView(
-    List<Song> songs,
-    Song? currentSong,
-    double orbitDeckReserveHeight,
-  ) {
-    final selectedIndex = _selectedSongIndex(songs);
-    final selectedSong = songs[selectedIndex];
-    final deckLeftInset = context.responsive(
-      AppConstants.spacingMd,
-      AppConstants.spacingLg,
-      AppConstants.spacingLg,
-      AppConstants.spacingXl,
-    );
-    final deckRightInset = context.responsive(
-      AppConstants.spacingXl + 40.0,
-      AppConstants.spacingXl + 42.0,
-      AppConstants.spacingXl + 48.0,
-      AppConstants.spacingXl + 56.0,
-    );
-    final deckBottomInset = context.responsive(
-      math.max(AppConstants.spacingXs, orbitDeckReserveHeight * 0.04),
-      math.max(AppConstants.spacingSm, orbitDeckReserveHeight * 0.05),
-      math.max(AppConstants.spacingMd, orbitDeckReserveHeight * 0.06),
-      math.max(AppConstants.spacingMd, orbitDeckReserveHeight * 0.06),
-    );
-
-    return Stack(
-      children: [
-        OrbitScroll(
-          controller: _orbitScrollController,
-          songs: songs,
-          selectedIndex: selectedIndex,
-          currentSongId: currentSong?.id,
-          onSelectedIndexChanged: (index) {
-            if (!mounted) return;
-            setState(() {
-              _selectedIndex = index;
-            });
-            _syncSelectedTokenForIndex(songs, index);
-          },
-          onSongActivated: (index) async {
-            await _playSongAndOpenPlayer(songs: songs, index: index);
-          },
-          onSongLongPressed: (index) {
-            _showSongOptions(songs[index]);
-          },
-          onSongSwipedLeft: (index) async {
-            await _queueSong(songs[index]);
-          },
-          onSongSwipedRight: (index) async {
-            await _favoriteSong(songs[index]);
-          },
-        ),
-        Positioned(
-          left: deckLeftInset,
-          right: deckRightInset,
-          bottom: deckBottomInset,
-          child: AnimatedSwitcher(
-            duration: AppConstants.animationNormal,
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            transitionBuilder: (child, animation) {
-              return FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.08),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              );
-            },
-            child: OrbitSelectionDeck(
-              key: ValueKey(selectedSong.id),
-              song: selectedSong,
-              selectedIndex: selectedIndex,
-              totalSongs: songs.length,
-              isNowPlaying: currentSong?.id == selectedSong.id,
-              onPlay: () {
-                unawaited(
-                  _playSongAndOpenPlayer(songs: songs, index: selectedIndex),
-                );
-              },
-              onQueue: () {
-                unawaited(_queueSong(selectedSong));
-              },
-              onFavorite: () {
-                unawaited(_favoriteSong(selectedSong));
-              },
-              onMore: () => _showSongOptions(selectedSong),
-            ),
-          ),
-        ),
-      ],
+  Widget _buildOrbitView(List<Song> songs) {
+    return GestureDetector(
+      onLongPress: () {
+        if (songs.isNotEmpty && _selectedIndex < songs.length) {
+          SongActionsBottomSheet.show(context, songs[_selectedIndex]);
+        }
+      },
+      child: OrbitScroll(
+        controller: _orbitScrollController,
+        songs: songs,
+        selectedIndex: _selectedIndex.clamp(0, songs.length - 1).toInt(),
+        onSelectedIndexChanged: (index) {
+          if (!mounted) return;
+          setState(() {
+            _selectedIndex = index;
+          });
+          _syncSelectedTokenForIndex(songs, index);
+        },
+        onSongSelected: (index) async {
+          await _playSongAndOpenPlayer(songs: songs, index: index);
+        },
+        onSongSwipedLeft: (index) async {
+          await _queueSong(songs[index]);
+        },
+        onSongSwipedRight: (index) async {
+          await _favoriteSong(songs[index]);
+        },
+      ),
     );
   }
 
@@ -410,7 +331,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                   await _playSongAndOpenPlayer(songs: songs, index: index);
                 },
                 onLongPress: () {
-                  _showSongOptions(song);
+                  SongActionsBottomSheet.show(context, song);
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
@@ -640,16 +561,11 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     if (targetIndex == null) return;
 
     _selectedFastToken = resolvedToken;
-    final didChangeSelection = targetIndex != _selectedIndex;
 
-    if (mounted && didChangeSelection) {
+    if (mounted && targetIndex != _selectedIndex) {
       setState(() {
         _selectedIndex = targetIndex;
       });
-    }
-
-    if (didChangeSelection) {
-      AppHaptics.selection();
     }
 
     if (viewMode == SongViewMode.list) {
@@ -753,18 +669,10 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     _selectedFastToken = _tokenForSong(songs[index], sortOption);
   }
 
-  int _selectedSongIndex(List<Song> songs) {
-    if (songs.isEmpty) {
-      return 0;
-    }
-    return _selectedIndex.clamp(0, songs.length - 1).toInt();
-  }
-
   Future<void> _playSongAndOpenPlayer({
     required List<Song> songs,
     required int index,
   }) async {
-    AppHaptics.confirm();
     // Always use the full unfiltered library (_cachedSongs) as the playlist
     // so shuffle works on all songs, not just search results
     final songToPlay = songs[index];
@@ -787,14 +695,12 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   }
 
   Future<void> _queueSong(Song song) async {
-    AppHaptics.confirm();
     await ref.read(playerProvider.notifier).addToQueue(song);
     if (!mounted) return;
     _showSongActionSnackBar('Queued "${song.title}"');
   }
 
   Future<void> _favoriteSong(Song song) async {
-    AppHaptics.confirm();
     _showSongActionSnackBar('Added "${song.title}" to favorites');
     unawaited(() async {
       try {
@@ -809,11 +715,6 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
 
       ref.invalidate(favoritesProvider);
     }());
-  }
-
-  void _showSongOptions(Song song) {
-    AppHaptics.tap();
-    SongActionsBottomSheet.show(context, song);
   }
 
   void _showSongActionSnackBar(String message) {
@@ -870,73 +771,39 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   }
 
   Widget _buildAmbientBackground() {
-    final size = MediaQuery.sizeOf(context);
-
     return Stack(
       children: [
-        Positioned.fill(
-          child: DecoratedBox(
+        // Top-left glow
+        Positioned(
+          top: -100,
+          left: -100,
+          child: Container(
+            width: 300,
+            height: 300,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  Colors.white.withValues(alpha: 0.03),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // Center-right glow (follows selected item area)
+        Positioned(
+          top: MediaQuery.of(context).size.height * 0.3,
+          right: -50,
+          child: Container(
+            width: 200,
+            height: 200,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
                 colors: [
                   Colors.white.withValues(alpha: 0.02),
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.18),
-                ],
-                stops: const [0.0, 0.32, 1.0],
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          top: -size.width * 0.24,
-          left: -size.width * 0.18,
-          child: Container(
-            width: size.width * 0.72,
-            height: size.width * 0.72,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  Colors.white.withValues(alpha: 0.04),
-                  AppColors.accent.withValues(alpha: 0.03),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          top: size.height * 0.26,
-          right: -size.width * 0.08,
-          child: Container(
-            width: size.width * 0.46,
-            height: size.width * 0.46,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  Colors.white.withValues(alpha: 0.025),
-                  AppColors.accent.withValues(alpha: 0.02),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          bottom: -size.height * 0.08,
-          left: size.width * 0.12,
-          right: size.width * 0.12,
-          child: Container(
-            height: size.height * 0.22,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
-              gradient: RadialGradient(
-                colors: [
-                  Colors.white.withValues(alpha: 0.04),
                   Colors.transparent,
                 ],
               ),
@@ -1307,10 +1174,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
         ],
       ),
       child: IconButton(
-        onPressed: () {
-          AppHaptics.tap();
-          onTap();
-        },
+        onPressed: onTap,
         icon: Icon(
           icon,
           color: context.adaptiveTextSecondary,
@@ -1326,9 +1190,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     final sourceSongs = songsAsync.value?.songs ?? const <Song>[];
     if (sourceSongs.isEmpty) return;
 
-    AppHaptics.emphasis();
-    final shuffledPlaylist = List<Song>.from(sourceSongs)
-      ..shuffle(math.Random());
+    final shuffledPlaylist = List<Song>.from(sourceSongs)..shuffle(Random());
     final randomSong = shuffledPlaylist.first;
 
     await ref

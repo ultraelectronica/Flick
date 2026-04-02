@@ -84,13 +84,12 @@ class CachedImageWidget extends StatefulWidget {
 
 class _CachedImageWidgetState extends State<CachedImageWidget> {
   String? _resolvedImagePath;
-  int _resolutionEpoch = 0;
 
   @override
   void initState() {
     super.initState();
-    _resolvedImagePath = _initialImagePath(widget.imagePath);
-    _resolveImagePath();
+    _resolvedImagePath = _usablePath(widget.imagePath);
+    _resolveEmbeddedArtwork();
   }
 
   @override
@@ -98,14 +97,14 @@ class _CachedImageWidgetState extends State<CachedImageWidget> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.imagePath != widget.imagePath ||
         oldWidget.audioSourcePath != widget.audioSourcePath) {
-      _resolvedImagePath = _initialImagePath(widget.imagePath);
-      _resolveImagePath();
+      _resolvedImagePath = _usablePath(widget.imagePath);
+      _resolveEmbeddedArtwork();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final imagePath = _resolvedImagePath;
+    final imagePath = _resolvedImagePath ?? _usablePath(widget.imagePath);
     if (imagePath == null) {
       return SizedBox(
         width: widget.width,
@@ -123,32 +122,24 @@ class _CachedImageWidgetState extends State<CachedImageWidget> {
     return _buildNetworkImage(imagePath);
   }
 
-  String? _initialImagePath(String? path) {
-    if (path == null || path.isEmpty) {
-      return null;
-    }
-    return path;
-  }
-
-  Future<void> _resolveImagePath() async {
-    final resolutionEpoch = ++_resolutionEpoch;
-    final directPath = widget.imagePath;
-
-    if (directPath != null && directPath.isNotEmpty) {
-      if (directPath.startsWith('http')) {
-        _updateResolvedPathIfCurrent(directPath, resolutionEpoch);
-        return;
+  Future<void> _resolveEmbeddedArtwork() async {
+    final directPath = _usablePath(widget.imagePath);
+    if (directPath != null) {
+      if (_resolvedImagePath != directPath && mounted) {
+        setState(() {
+          _resolvedImagePath = directPath;
+        });
       }
-
-      if (await File(directPath).exists()) {
-        _updateResolvedPathIfCurrent(directPath, resolutionEpoch);
-        return;
-      }
+      return;
     }
 
     final audioSourcePath = widget.audioSourcePath;
     if (audioSourcePath == null || audioSourcePath.isEmpty) {
-      _updateResolvedPathIfCurrent(null, resolutionEpoch);
+      if (_resolvedImagePath != null && mounted) {
+        setState(() {
+          _resolvedImagePath = null;
+        });
+      }
       return;
     }
 
@@ -157,29 +148,28 @@ class _CachedImageWidgetState extends State<CachedImageWidget> {
       audioSourcePath: audioSourcePath,
     );
 
-    _updateResolvedPathIfCurrent(resolvedPath, resolutionEpoch);
-  }
-
-  void _updateResolvedPathIfCurrent(String? path, int resolutionEpoch) {
-    if (!mounted || resolutionEpoch != _resolutionEpoch) {
+    if (!mounted || audioSourcePath != widget.audioSourcePath) {
       return;
     }
 
-    final normalizedPath = _normalizeImagePath(path);
-    if (_resolvedImagePath == normalizedPath) {
-      return;
+    final usablePath = _usablePath(resolvedPath);
+    if (_resolvedImagePath != usablePath) {
+      setState(() {
+        _resolvedImagePath = usablePath;
+      });
     }
-
-    setState(() {
-      _resolvedImagePath = normalizedPath;
-    });
   }
 
-  String? _normalizeImagePath(String? path) {
+  String? _usablePath(String? path) {
     if (path == null || path.isEmpty) {
       return null;
     }
-    return path;
+
+    if (path.startsWith('http')) {
+      return path;
+    }
+
+    return File(path).existsSync() ? path : null;
   }
 
   Widget _buildFileImage(String imagePath) {
