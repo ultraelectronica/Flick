@@ -12,6 +12,8 @@ class Uac2PreferencesService {
   static const _keyFormatPreference = 'uac2_format_preference';
   static const _keyAutoSelectDevice = 'uac2_auto_select_device';
   static const _keyHiFiModeEnabled = 'uac2_hifi_mode_enabled';
+  static const _keyBitPerfectEnabled = 'uac2_bit_perfect_enabled';
+  static const _keyExclusiveDacModeEnabled = 'uac2_exclusive_dac_mode_enabled';
 
   Future<void> saveSelectedDevice(Uac2DeviceInfo device) async {
     try {
@@ -141,6 +143,37 @@ class Uac2PreferencesService {
     }
   }
 
+  Future<void> setBitPerfectEnabled(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyBitPerfectEnabled, enabled);
+      await prefs.setBool(_keyExclusiveDacModeEnabled, enabled);
+    } catch (e) {
+      debugPrint('Failed to save bit-perfect mode setting: $e');
+    }
+  }
+
+  Future<bool> getBitPerfectEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.containsKey(_keyBitPerfectEnabled)) {
+        return prefs.getBool(_keyBitPerfectEnabled) ?? false;
+      }
+      return prefs.getBool(_keyExclusiveDacModeEnabled) ?? false;
+    } catch (e) {
+      debugPrint('Failed to load bit-perfect mode setting: $e');
+      return false;
+    }
+  }
+
+  Future<void> setExclusiveDacModeEnabled(bool enabled) {
+    return setBitPerfectEnabled(enabled);
+  }
+
+  Future<bool> getExclusiveDacModeEnabled() {
+    return getBitPerfectEnabled();
+  }
+
   Future<void> setFormatPreference(Uac2FormatPreference preference) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -175,6 +208,8 @@ class Uac2PreferencesService {
       await prefs.remove(_keyFormatPreference);
       await prefs.remove(_keyAutoSelectDevice);
       await prefs.remove(_keyHiFiModeEnabled);
+      await prefs.remove(_keyBitPerfectEnabled);
+      await prefs.remove(_keyExclusiveDacModeEnabled);
     } catch (e) {
       debugPrint('Failed to clear preferences: $e');
     }

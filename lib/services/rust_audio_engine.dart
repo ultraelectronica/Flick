@@ -13,15 +13,18 @@ typedef RustPlaybackPathResolver = Future<String?> Function(Song track);
 
 class RustAudioEngine implements AudioEngine {
   RustAudioEngine({
+    required AudioEngineType playbackMode,
     required RustAudioService rustAudioService,
     required RustEngineInitializer ensureInitialized,
     required RustPlaybackPathResolver resolvePlaybackPath,
     required RustEngineDisposer disposeEngine,
-  }) : _rustAudioService = rustAudioService,
+  }) : _playbackMode = playbackMode,
+       _rustAudioService = rustAudioService,
        _ensureInitialized = ensureInitialized,
        _resolvePlaybackPath = resolvePlaybackPath,
        _disposeEngine = disposeEngine;
 
+  final AudioEngineType _playbackMode;
   final RustAudioService _rustAudioService;
   final RustEngineInitializer _ensureInitialized;
   final RustPlaybackPathResolver _resolvePlaybackPath;
@@ -30,7 +33,7 @@ class RustAudioEngine implements AudioEngine {
   final StreamController<PlaybackState> _controller =
       StreamController<PlaybackState>.broadcast();
   final List<VoidCallback> _notifierUnsubscribers = [];
-  PlaybackState _state = PlaybackState.empty(AudioEngineType.usb);
+  late PlaybackState _state = PlaybackState.empty(_playbackMode);
   Song? _loadedTrack;
   Duration? _pendingSeekPosition;
 
@@ -110,6 +113,12 @@ class RustAudioEngine implements AudioEngine {
     _attachListeners();
     final track = _loadedTrack;
     if (track == null) {
+      final currentPath = _rustAudioService.currentPath;
+      if (currentPath == null || currentPath.isEmpty) {
+        throw StateError(
+          'RustAudioEngine.play() was called before load(track) prepared a source',
+        );
+      }
       await _rustAudioService.resume();
       return;
     }

@@ -164,19 +164,18 @@ class RustAudioService {
   }
 
   /// Ensure the native engine is fully created for the requested output rate.
-  Future<bool> prepareEngine({int? preferredSampleRate}) async {
+  Future<void> prepareEngine({int? preferredSampleRate}) async {
     if (!_initialized) {
-      return false;
+      throw StateError('Rust audio engine manager is not initialized');
     }
 
     try {
       await rust_audio.audioPrepareEngine(
         preferredSampleRate: preferredSampleRate,
       );
-      return true;
     } catch (e) {
       debugPrint('Error preparing Rust audio engine: $e');
-      return false;
+      rethrow;
     }
   }
 
