@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flick/models/audio_output_diagnostics.dart';
 import 'package:flick/providers/providers.dart';
 import 'package:flick/services/uac2_service.dart';
 
@@ -9,7 +10,10 @@ class Uac2StatusIndicator extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final deviceStatus = ref.watch(uac2DeviceStatusProvider);
-    final isBitPerfect = ref.watch(uac2BitPerfectIndicatorProvider);
+    final diagnostics = ref.watch(audioOutputDiagnosticsProvider);
+    final isDirectUsb =
+        diagnostics?.pathManagement ==
+        AudioPathManagement.directUsbExperimental;
     final warningMessage = deviceStatus?.warningMessage;
 
     if (deviceStatus == null || deviceStatus.state == Uac2State.idle) {
@@ -51,7 +55,7 @@ class Uac2StatusIndicator extends ConsumerWidget {
               ),
             ),
           ],
-          if (isBitPerfect) ...[
+          if (isDirectUsb) ...[
             const SizedBox(width: 4),
             Icon(
               Icons.verified,

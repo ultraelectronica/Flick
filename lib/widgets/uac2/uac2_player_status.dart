@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
+import 'package:flick/models/audio_output_diagnostics.dart';
 import 'package:flick/providers/providers.dart';
 import 'package:flick/services/uac2_service.dart';
 
@@ -22,23 +23,26 @@ class Uac2PlayerStatus extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final deviceStatus = ref.watch(uac2DeviceStatusProvider);
-    final isBitPerfect = ref.watch(uac2BitPerfectIndicatorProvider);
+    final diagnostics = ref.watch(audioOutputDiagnosticsProvider);
+    final isDirectUsb =
+        diagnostics?.pathManagement ==
+        AudioPathManagement.directUsbExperimental;
 
     if (deviceStatus == null || deviceStatus.state == Uac2State.idle) {
       return const SizedBox.shrink();
     }
 
     if (compact) {
-      return _buildCompactStatus(context, deviceStatus, isBitPerfect);
+      return _buildCompactStatus(context, deviceStatus, isDirectUsb);
     }
 
-    return _buildFullStatus(context, deviceStatus, isBitPerfect);
+    return _buildFullStatus(context, deviceStatus, isDirectUsb);
   }
 
   Widget _buildCompactStatus(
     BuildContext context,
     Uac2DeviceStatus status,
-    bool isBitPerfect,
+    bool isDirectUsb,
   ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -65,7 +69,7 @@ class Uac2PlayerStatus extends ConsumerWidget {
               ),
             ),
           ],
-          if (isBitPerfect && showBitPerfect) ...[
+          if (isDirectUsb && showBitPerfect) ...[
             const SizedBox(width: 4),
             Icon(
               Icons.verified,
@@ -84,7 +88,7 @@ class Uac2PlayerStatus extends ConsumerWidget {
   Widget _buildFullStatus(
     BuildContext context,
     Uac2DeviceStatus status,
-    bool isBitPerfect,
+    bool isDirectUsb,
   ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -180,7 +184,7 @@ class Uac2PlayerStatus extends ConsumerWidget {
                       : '${status.currentFormat!.channels}ch',
                   context,
                 ),
-                if (isBitPerfect && showBitPerfect) ...[
+                if (isDirectUsb && showBitPerfect) ...[
                   const SizedBox(width: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -201,7 +205,7 @@ class Uac2PlayerStatus extends ConsumerWidget {
                         ),
                         const SizedBox(width: 2),
                         Text(
-                          'Bit-Perfect',
+                          'Direct USB',
                           style: TextStyle(
                             fontSize: 9,
                             color: Colors.green.shade400,
