@@ -4,7 +4,7 @@ pub mod api;
 pub mod audio;
 pub mod library_scan;
 
-/// Custom UAC 2.0 USB Audio (DAC/AMP detection and bit-perfect playback).
+/// Custom UAC 2.0 USB Audio (DAC/AMP detection and direct playback paths).
 /// Real implementation is gated by the `uac2` feature.
 pub mod uac2;
 
@@ -16,7 +16,7 @@ use std::{ffi::c_void, sync::OnceLock};
 #[cfg(target_os = "android")]
 use jni::{
     objects::{GlobalRef, JObject, JString},
-    sys::{jboolean, jint},
+    sys::{jboolean, jint, jstring},
     JNIEnv, JavaVM,
 };
 
@@ -186,12 +186,107 @@ pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeSetRus
 
 #[cfg(all(target_os = "android", feature = "uac2"))]
 #[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeSetRustDirectUsbLockEnabled(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    enabled: jboolean,
+) -> jboolean {
+    match crate::uac2::set_android_usb_lock_enabled(enabled != 0) {
+        Ok(()) => 1,
+        Err(error) => {
+            eprintln!("Failed to update Android direct USB lock state: {}", error);
+            0
+        }
+    }
+}
+
+#[cfg(all(target_os = "android", not(feature = "uac2")))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeSetRustDirectUsbLockEnabled(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    _enabled: jboolean,
+) -> jboolean {
+    0
+}
+
+#[cfg(all(target_os = "android", feature = "uac2"))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeGetRustAudioDebugStateJson(
+    env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+) -> jstring {
+    let engine_state = crate::api::audio_api::audio_get_runtime_debug_state();
+    let direct_usb_state = crate::uac2::android_direct_debug_state();
+    let payload = serde_json::json!({
+        "engine": engine_state,
+        "direct_usb": direct_usb_state,
+    });
+    let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+    env.new_string(json)
+        .map(|value| value.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(all(target_os = "android", not(feature = "uac2")))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeGetRustAudioDebugStateJson(
+    env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+) -> jstring {
+    let payload = serde_json::json!({
+        "engine": crate::api::audio_api::audio_get_runtime_debug_state(),
+        "direct_usb": {
+            "registered": false,
+            "idle_lock_held": false,
+            "stream_active": false,
+        },
+    });
+    let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+    env.new_string(json)
+        .map(|value| value.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(all(target_os = "android", feature = "uac2"))]
+#[no_mangle]
 pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeClearRustDirectUsbPlayback(
     _env: JNIEnv<'_>,
     _activity: JObject<'_>,
 ) -> jboolean {
     crate::uac2::clear_android_usb_device();
     1
+}
+
+#[cfg(all(target_os = "android", feature = "uac2"))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeMarkRustDirectUsbFallback(
+    mut env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    reason: JString<'_>,
+) -> jboolean {
+    let reason = {
+        let object: JObject<'_> = reason.into();
+        if object.is_null() {
+            None
+        } else {
+            env.get_string(&JString::from(object))
+                .ok()
+                .map(|value| value.to_string_lossy().into_owned())
+        }
+    };
+    crate::uac2::mark_android_usb_fallback(reason);
+    1
+}
+
+#[cfg(all(target_os = "android", not(feature = "uac2")))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeMarkRustDirectUsbFallback(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    _reason: JString<'_>,
+) -> jboolean {
+    0
 }
 
 #[cfg(all(target_os = "android", not(feature = "uac2")))]
