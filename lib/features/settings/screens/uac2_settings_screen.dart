@@ -5,6 +5,7 @@ import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/utils/responsive.dart';
+import 'package:flick/models/audio_output_diagnostics.dart';
 import 'package:flick/providers/providers.dart';
 import 'package:flick/services/uac2_service.dart';
 import 'package:flick/widgets/common/display_mode_wrapper.dart';
@@ -593,8 +594,7 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
   }
 
   Widget _buildStatusCard(BuildContext context, Uac2DeviceStatus status) {
-    final isBitPerfect = ref.watch(uac2BitPerfectIndicatorProvider);
-    final isRustBackend = ref.watch(rustBackendActiveProvider);
+    final diagnostics = ref.watch(audioOutputDiagnosticsProvider);
 
     return Container(
       padding: const EdgeInsets.all(AppConstants.spacingMd),
@@ -617,8 +617,24 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
             _buildInfoRow(
               context,
               'Playback Path',
-              _getPlaybackPathLabel(status, isRustBackend: isRustBackend),
+              _getPlaybackPathLabel(status, diagnostics: diagnostics),
               Icons.alt_route,
+            ),
+          ],
+          if (diagnostics != null) ...[
+            _buildDivider(),
+            _buildInfoRow(
+              context,
+              'Capability State',
+              diagnostics.capabilityStateLabel,
+              Icons.tune,
+            ),
+            _buildDivider(),
+            _buildInfoRow(
+              context,
+              'Backend',
+              diagnostics.backendDescription,
+              Icons.memory,
             ),
           ],
           if (status.currentFormat != null) ...[
@@ -647,27 +663,70 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
                   : '${status.currentFormat!.channels} channels',
               LucideIcons.radio,
             ),
-            if (status.routeType == Uac2RouteType.externalUsb ||
-                status.routeType == Uac2RouteType.dock) ...[
+            if (diagnostics != null) ...[
               _buildDivider(),
               _buildInfoRow(
                 context,
-                'DAC Output',
-                isRustBackend ? 'Active' : 'Unconfirmed',
-                Icons.usb,
-                valueColor: isRustBackend
-                    ? Colors.green.shade400
-                    : Colors.amber.shade300,
+                'Requested Output Rate',
+                diagnostics.requestedOutputSampleRate == null
+                    ? 'Unknown'
+                    : '${diagnostics.requestedOutputSampleRate! ~/ 1000}kHz',
+                Icons.speed,
+              ),
+              _buildDivider(),
+              _buildInfoRow(
+                context,
+                'Reported Output Rate',
+                diagnostics.reportedOutputSampleRate == null
+                    ? 'Unreported'
+                    : '${diagnostics.reportedOutputSampleRate! ~/ 1000}kHz',
+                Icons.graphic_eq,
               ),
             ],
           ],
-          if (isBitPerfect) ...[
+          if (diagnostics != null) ...[
             _buildDivider(),
-            _buildBitPerfectIndicator(context),
+            _buildInfoRow(
+              context,
+              'Mixer Management',
+              diagnostics.isMixerManaged
+                  ? 'Android-managed'
+                  : 'Direct USB device-managed',
+              Icons.account_tree_outlined,
+              valueColor: diagnostics.isMixerManaged
+                  ? Colors.amber.shade300
+                  : Colors.green.shade400,
+            ),
+            _buildDivider(),
+            _buildInfoRow(
+              context,
+              'DAC Claim',
+              diagnostics.directUsbRegistered
+                  ? (diagnostics.usbInterfaceClaimed
+                        ? 'Claimed by Flick'
+                        : 'Registered, not claimed')
+                  : 'Not registered',
+              Icons.usb,
+              valueColor: diagnostics.usbInterfaceClaimed
+                  ? Colors.green.shade400
+                  : Colors.amber.shade300,
+            ),
+            _buildDivider(),
+            _buildInfoRow(
+              context,
+              'Audio Focus',
+              diagnostics.audioFocusHeld ? 'Held' : 'Not held',
+              Icons.hearing,
+              valueColor: diagnostics.audioFocusHeld
+                  ? Colors.green.shade400
+                  : Colors.amber.shade300,
+            ),
           ],
-          // Suppress route-mismatch warning when bit-perfect (Rust direct USB)
-          // is active — the "Android may resample" caveat does not apply.
-          if (status.warningMessage != null && !isBitPerfect) ...[
+          if (diagnostics?.fallbackReason != null) ...[
+            _buildDivider(),
+            _buildWarningMessage(context, diagnostics!.fallbackReason!),
+          ],
+          if (status.warningMessage != null) ...[
             _buildDivider(),
             _buildWarningMessage(context, status.warningMessage!),
           ],
@@ -675,39 +734,6 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
             _buildDivider(),
             _buildErrorMessage(context, status.errorMessage!),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBitPerfectIndicator(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppConstants.spacingSm),
-      child: Row(
-        children: [
-          Icon(Icons.verified, color: Colors.green.shade400, size: 20),
-          const SizedBox(width: AppConstants.spacingMd),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Bit-Perfect',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.green.shade400,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Audio is being transmitted without modification',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: context.adaptiveTextTertiary,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -847,21 +873,23 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
 
   String _getPlaybackPathLabel(
     Uac2DeviceStatus status, {
-    bool isRustBackend = false,
+    AudioOutputDiagnostics? diagnostics,
   }) {
+    if (diagnostics != null) {
+      return diagnostics.capabilityStateLabel;
+    }
+
     switch (status.routeType) {
       case Uac2RouteType.internalDac:
         return 'Device DAC';
       case Uac2RouteType.externalUsb:
-        return isRustBackend ? 'Direct USB (bit-perfect)' : 'Android USB route';
+        return 'Android USB route';
       case Uac2RouteType.wired:
         return 'Wired output';
       case Uac2RouteType.bluetooth:
         return 'Bluetooth output';
       case Uac2RouteType.dock:
-        return isRustBackend
-            ? 'Direct dock (bit-perfect)'
-            : 'Android dock route';
+        return 'Android dock route';
       case Uac2RouteType.unknown:
         return status.routeLabel ?? 'Unknown';
     }

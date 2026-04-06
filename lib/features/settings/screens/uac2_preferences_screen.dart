@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
+import 'package:flick/models/audio_output_diagnostics.dart';
 import 'package:flick/providers/providers.dart';
 import 'package:flick/services/uac2_preferences_service.dart';
 import 'package:flick/services/uac2_service.dart';
@@ -26,6 +27,8 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     final formatPrefAsync = ref.watch(uac2FormatPreferenceProvider);
     final preferredFormatAsync = ref.watch(uac2PreferredFormatProvider);
     final hiFiModeAsync = ref.watch(uac2HiFiModeProvider);
+    final bitPerfectAsync = ref.watch(uac2BitPerfectEnabledProvider);
+    final diagnostics = ref.watch(audioOutputDiagnosticsProvider);
 
     return DisplayModeWrapper(
       child: Scaffold(
@@ -65,7 +68,9 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                       _buildAdvancedOptions(
                         context,
                         preferencesService,
+                        bitPerfectAsync,
                         hiFiModeAsync,
+                        diagnostics,
                       ),
                       const SizedBox(height: AppConstants.navBarHeight + 120),
                     ],
@@ -178,6 +183,9 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     AsyncValue<Uac2FormatPreference> formatPrefAsync,
     AsyncValue<Uac2AudioFormat?> preferredFormatAsync,
   ) {
+    final bitPerfectAsync = ref.watch(uac2BitPerfectEnabledProvider);
+    final isBitPerfectEnabled = bitPerfectAsync.value ?? false;
+    
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.6),
@@ -191,9 +199,17 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               context,
               icon: LucideIcons.settings,
               title: 'Format Strategy',
-              subtitle: _getFormatPreferenceLabel(formatPref),
-              onTap: () =>
-                  _showFormatPreferenceDialog(context, service, formatPref),
+              subtitle: isBitPerfectEnabled
+                  ? 'Disabled in bit-perfect mode (exact rate required)'
+                  : _getFormatPreferenceLabel(formatPref),
+              onTap: isBitPerfectEnabled
+                  ? () => _showBitPerfectBlockedDialog(
+                        context,
+                        'Format Strategy',
+                        'Format strategy is disabled in bit-perfect mode because exact sample rate matching is required. Disable bit-perfect mode to change format preferences.',
+                      )
+                  : () => _showFormatPreferenceDialog(context, service, formatPref),
+              isDisabled: isBitPerfectEnabled,
             ),
             loading: () => _buildLoadingTile(context),
             error: (_, _) => _buildErrorTile(context),
@@ -204,10 +220,19 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               context,
               icon: LucideIcons.music,
               title: 'Custom Format',
-              subtitle: format != null
-                  ? '${format.sampleRate ~/ 1000}kHz / ${format.bitDepth}bit / ${format.channels}ch'
-                  : 'Not set',
-              onTap: () => _showCustomFormatDialog(context, service, format),
+              subtitle: isBitPerfectEnabled
+                  ? 'Disabled in bit-perfect mode (exact rate required)'
+                  : format != null
+                      ? '${format.sampleRate ~/ 1000}kHz / ${format.bitDepth}bit / ${format.channels}ch'
+                      : 'Not set',
+              onTap: isBitPerfectEnabled
+                  ? () => _showBitPerfectBlockedDialog(
+                        context,
+                        'Custom Format',
+                        'Custom format is disabled in bit-perfect mode because exact sample rate matching is required. Disable bit-perfect mode to set custom formats.',
+                      )
+                  : () => _showCustomFormatDialog(context, service, format),
+              isDisabled: isBitPerfectEnabled,
             ),
             loading: () => _buildLoadingTile(context),
             error: (_, _) => _buildErrorTile(context),
@@ -220,7 +245,9 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
   Widget _buildAdvancedOptions(
     BuildContext context,
     Uac2PreferencesService service,
+    AsyncValue<bool> bitPerfectAsync,
     AsyncValue<bool> hiFiModeAsync,
+    AudioOutputDiagnostics? diagnostics,
   ) {
     return Container(
       decoration: BoxDecoration(
@@ -230,6 +257,47 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
       ),
       child: Column(
         children: [
+          _buildModeStatusTile(context, diagnostics),
+          _buildDivider(),
+          bitPerfectAsync.when(
+            data: (enabled) => _buildSwitchTile(
+              context,
+              icon: LucideIcons.lock,
+              title: 'Bit-perfect USB',
+              subtitle:
+                  'Try exclusive direct USB playback first. If unsupported, Flick falls back to Android-managed playback instead of failing silently.',
+              value: enabled,
+              onChanged: (value) async {
+                if (value && !enabled) {
+                  final confirmed = await _confirmEnableBitPerfectMode(
+                    context,
+                  );
+                  if (!confirmed) {
+                    return;
+                  }
+                }
+                await ref
+                    .read(uac2ServiceProvider)
+                    .setBitPerfectEnabled(value);
+                ref.invalidate(uac2BitPerfectEnabledProvider);
+              },
+            ),
+            loading: () => _buildLoadingTile(context),
+            error: (_, _) => _buildErrorTile(context),
+          ),
+          bitPerfectAsync.when(
+            data: (enabled) => enabled
+                ? Column(
+                    children: [
+                      _buildDivider(),
+                      _buildBitPerfectRestrictionsTile(context, diagnostics),
+                    ],
+                  )
+                : const SizedBox.shrink(),
+            loading: () => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
+          ),
+          _buildDivider(),
           hiFiModeAsync.when(
             data: (enabled) => _buildSwitchTile(
               context,
@@ -312,6 +380,192 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     );
   }
 
+  Widget _buildModeStatusTile(
+    BuildContext context,
+    AudioOutputDiagnostics? diagnostics,
+  ) {
+    final modeLabel = _currentPlaybackModeLabel(diagnostics);
+    final modeDescription = switch (diagnostics?.pathManagement) {
+      AudioPathManagement.directUsbExperimental =>
+        'Exclusive USB is active and bypassing the Android mixer.',
+      AudioPathManagement.androidManagedLowLatency =>
+        'Playback is using Android-managed output and may be resampled.',
+      AudioPathManagement.androidManagedShared =>
+        'Playback is using the standard Android output path.',
+      null => 'Playback mode will update after the next route or playback refresh.',
+    };
+
+    return Padding(
+      padding: const EdgeInsets.all(AppConstants.spacingMd),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.glassBackground,
+              borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+            ),
+            child: Icon(
+              LucideIcons.badgeInfo,
+              color: context.adaptiveTextSecondary,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: AppConstants.spacingMd),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Current Playback Mode',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: context.adaptiveTextPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  modeLabel,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.adaptiveTextSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  modeDescription,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.adaptiveTextTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _currentPlaybackModeLabel(AudioOutputDiagnostics? diagnostics) {
+    return diagnostics?.capabilityStateLabel ?? 'Waiting for playback';
+  }
+
+  Widget _buildBitPerfectRestrictionsTile(
+    BuildContext context,
+    AudioOutputDiagnostics? diagnostics,
+  ) {
+    final routeNote = switch (diagnostics?.pathManagement) {
+      AudioPathManagement.directUsbExperimental =>
+        'Exact-rate exclusive USB is active. If the DAC cannot verify the track sample rate, Flick falls back instead of resampling in direct mode.',
+      AudioPathManagement.androidManagedLowLatency ||
+      AudioPathManagement.androidManagedShared =>
+        'The current route is Android-managed. Bluetooth and Android fallback playback are not bit-perfect, and OEM system enhancements remain outside Flick control.',
+      null =>
+        'Bit-perfect USB only applies to the exclusive direct USB path. Android-managed and Bluetooth routes are not bit-perfect.',
+    };
+
+    const restrictions = <String>[
+      'Equalizer, compressor, limiter, and Android AudioEffect EQ are bypassed.',
+      'Software volume is fixed at 100% and playback speed is fixed at 1.0x.',
+      'Crossfade, mixing, and direct fallback-rate retries are disabled.',
+      'Adaptive direct resampling is disabled; exact sample-rate lock is required.',
+      'Hardware DAC volume still works when the DAC exposes it.',
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.all(AppConstants.spacingMd),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+            ),
+            child: Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.amber.shade300,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: AppConstants.spacingMd),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Bit-perfect Restrictions',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: context.adaptiveTextPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  routeNote,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.adaptiveTextSecondary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...restrictions.map(
+                  (restriction) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '\u2022 $restriction',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: context.adaptiveTextTertiary,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _confirmEnableBitPerfectMode(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        ),
+        title: Text(
+          'Enable Bit-perfect USB?',
+          style: TextStyle(color: context.adaptiveTextPrimary),
+        ),
+        content: Text(
+          'Bit-perfect USB disables EQ, compressor, limiter, software volume, playback speed, crossfade, and direct fallback-rate resampling. Bluetooth and Android-managed fallback playback are not bit-perfect.',
+          style: TextStyle(color: context.adaptiveTextSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: context.adaptiveTextSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(
+              'Enable',
+              style: TextStyle(color: AppColors.accent),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return confirmed ?? false;
+  }
+
   Widget _buildNavigationTile(
     BuildContext context, {
     required IconData icon,
@@ -319,62 +573,67 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     required String subtitle,
     required VoidCallback onTap,
     bool isDestructive = false,
+    bool isDisabled = false,
   }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: isDisabled ? null : onTap,
         borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-        child: Padding(
-          padding: const EdgeInsets.all(AppConstants.spacingMd),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: isDestructive
-                      ? Colors.red.withValues(alpha: 0.1)
-                      : AppColors.glassBackground,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+        child: Opacity(
+          opacity: isDisabled ? 0.5 : 1.0,
+          child: Padding(
+            padding: const EdgeInsets.all(AppConstants.spacingMd),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: isDestructive
+                        ? Colors.red.withValues(alpha: 0.1)
+                        : AppColors.glassBackground,
+                    borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: isDestructive
+                        ? Colors.red.shade400
+                        : context.adaptiveTextSecondary,
+                    size: 20,
+                  ),
                 ),
-                child: Icon(
-                  icon,
-                  color: isDestructive
-                      ? Colors.red.shade400
-                      : context.adaptiveTextSecondary,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: AppConstants.spacingMd),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: isDestructive
-                            ? Colors.red.shade400
-                            : context.adaptiveTextPrimary,
-                        fontWeight: FontWeight.w500,
+                const SizedBox(width: AppConstants.spacingMd),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: isDestructive
+                              ? Colors.red.shade400
+                              : context.adaptiveTextPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: context.adaptiveTextTertiary,
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: context.adaptiveTextTertiary,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              Icon(
-                LucideIcons.chevronRight,
-                color: context.adaptiveTextTertiary,
-                size: 20,
-              ),
-            ],
+                if (!isDisabled)
+                  Icon(
+                    LucideIcons.chevronRight,
+                    color: context.adaptiveTextTertiary,
+                    size: 20,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -687,11 +946,16 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
           TextButton(
             onPressed: () async {
               await service.clearAllPreferences();
+              await ref
+                  .read(uac2ServiceProvider)
+                  .setBitPerfectEnabled(false, persist: false);
               ref.invalidate(uac2AutoConnectProvider);
               ref.invalidate(uac2AutoSelectDeviceProvider);
               ref.invalidate(uac2FormatPreferenceProvider);
               ref.invalidate(uac2PreferredFormatProvider);
               ref.invalidate(uac2HiFiModeProvider);
+              ref.invalidate(uac2BitPerfectEnabledProvider);
+              ref.invalidate(uac2ExclusiveDacModeProvider);
               if (context.mounted) {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -702,6 +966,51 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               }
             },
             child: Text('Reset', style: TextStyle(color: Colors.red.shade400)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showBitPerfectBlockedDialog(
+    BuildContext context,
+    String featureName,
+    String message,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.amber.shade300,
+              size: 24,
+            ),
+            const SizedBox(width: AppConstants.spacingSm),
+            Expanded(
+              child: Text(
+                '$featureName Unavailable',
+                style: TextStyle(color: context.adaptiveTextPrimary),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: TextStyle(color: context.adaptiveTextSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text(
+              'OK',
+              style: TextStyle(color: AppColors.accent),
+            ),
           ),
         ],
       ),

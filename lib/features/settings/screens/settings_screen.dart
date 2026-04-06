@@ -427,7 +427,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             children: [
               _buildAboutLink(
                 'GitHub',
-                LucideIcons.github,
+                LucideIcons.squareCode,
                 'https://github.com/ultraelectronica/flick_player',
               ),
             ],
