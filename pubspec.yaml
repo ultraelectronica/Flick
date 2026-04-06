@@ -38,8 +38,8 @@ dependencies:
   flutter_cache_manager: ^3.4.1
   flutter_displaymode: ^0.7.0
   flutter_riverpod: ^3.0.3
-  flutter_rust_bridge: 2.11.1
-  flutter_secure_storage: ^9.0.0
+  flutter_rust_bridge: ^2.12.0
+  flutter_secure_storage: ^10.0.0
   flutter_svg: ^2.2.3
   freezed_annotation: ^3.0.0
   http: ^1.2.0
@@ -69,8 +69,8 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   isar_community_generator: ^3.3.0
-  json_serializable: ^6.8.0
-  riverpod_generator: ^4.0.0+1
+  json_serializable: 6.11.2
+  riverpod_generator: 4.0.0+1
   riverpod_lint: ^3.0.3
 
 flutter_launcher_icons:
@@ -81,10 +81,10 @@ flutter_launcher_icons:
   adaptive_icon_monochrome: "assets/icons/reverse_flick_logo.png"
 
 # Resolve conflict between riverpod_generator and isar_community_generator
-# (analyzer/test/source_gen chain with flutter_test). See e.g.:
-# https://github.com/rrousselGit/riverpod/issues/4393
+# while keeping build_runner compatible with the cached toolchain versions.
 dependency_overrides:
-  analyzer: ">=7.4.5 <8.3.0"
+  analyzer: 8.1.1
+  dart_style: 3.1.2
   # Pin rive_native to a known‑good version to align with rive ^0.14.0 and
   # avoid transitive version‑solving issues. Remove once upstream constraints are fixed.
   rive_native: 0.1.4
