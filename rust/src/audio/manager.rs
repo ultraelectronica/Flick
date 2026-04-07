@@ -269,6 +269,9 @@ impl EngineManager {
                 .map_err(|error| format!("Existing engine shutdown task failed: {}", error))??;
         }
 
+        #[cfg(all(feature = "uac2", target_os = "android"))]
+        crate::uac2::force_release_usb_session();
+
         let new_handle =
             tokio::task::spawn_blocking(move || create_audio_engine(preferred_sample_rate))
                 .await
@@ -293,6 +296,9 @@ impl EngineManager {
                 .await
                 .map_err(|error| format!("Rust engine shutdown task failed: {}", error))??;
         }
+
+        #[cfg(all(feature = "uac2", target_os = "android"))]
+        crate::uac2::force_release_usb_session();
 
         Ok(())
     }

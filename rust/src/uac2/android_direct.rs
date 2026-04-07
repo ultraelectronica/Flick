@@ -14,8 +14,9 @@ use libusb1_sys::{
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rusb::{
-    disable_device_discovery, supports_detach_kernel_driver, Context, Device, DeviceHandle,
-    Direction, Error as UsbError, Speed, SyncType, TransferType, UsageType, UsbContext,
+    disable_device_discovery, supports_detach_kernel_driver, ConfigDescriptor, Context, Device,
+    DeviceHandle, Direction, Error as UsbError, Speed, SyncType, TransferType, UsageType,
+    UsbContext,
 };
 use serde::Serialize;
 use std::ffi::c_void;
@@ -551,6 +552,10 @@ static DIRECT_USB_LIFECYCLE_STATE: Lazy<Mutex<AndroidDirectUsbLifecycleState>> =
 static DIRECT_USB_DISCOVERY_DISABLED: Once = Once::new();
 static ANDROID_DIRECT_USB_ENABLED: AtomicBool = AtomicBool::new(true);
 
+/// Global guard: only one USB streaming session may be active at a time.
+/// Prevents "Resource busy" from concurrent or overlapping claim attempts.
+static USB_SESSION_ACTIVE: AtomicBool = AtomicBool::new(false);
+
 pub fn set_android_direct_usb_enabled(enabled: bool) {
     ANDROID_DIRECT_USB_ENABLED.store(enabled, Ordering::Release);
 }
@@ -559,16 +564,31 @@ fn android_direct_usb_enabled() -> bool {
     ANDROID_DIRECT_USB_ENABLED.load(Ordering::Acquire)
 }
 
+pub fn is_usb_session_active() -> bool {
+    USB_SESSION_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// Force-release the USB session guard. Called before re-initialization or on
+/// unrecoverable errors to ensure the next attempt can proceed.
+pub fn force_release_usb_session() {
+    if USB_SESSION_ACTIVE.swap(false, Ordering::SeqCst) {
+        eprintln!("Android USB direct: force-released USB session guard");
+    }
+}
+
 pub fn register_android_usb_device(device: AndroidDirectUsbDevice) -> Result<(), String> {
+    if USB_SESSION_ACTIVE.load(Ordering::SeqCst) {
+        eprintln!(
+            "Android USB direct: USB session active while registering '{}'; \
+             new idle lock will be created after the session ends",
+            device.product_name
+        );
+    }
+
     let existing_format = DIRECT_USB_STATE
         .lock()
         .as_ref()
         .and_then(|state| state.playback_format);
-    let existing_lock_requested = DIRECT_USB_STATE
-        .lock()
-        .as_ref()
-        .map(|state| state.lock_requested)
-        .unwrap_or(false);
 
     let capability_model = inspect_android_usb_capabilities(&device).ok();
     let dac_clock_policy =
@@ -589,7 +609,7 @@ pub fn register_android_usb_device(device: AndroidDirectUsbDevice) -> Result<(),
         device,
         requested_playback_format: existing_format,
         playback_format: existing_format,
-        lock_requested: existing_lock_requested,
+        lock_requested: true,
         stream_active: false,
         active_transport: None,
         capability_model,
@@ -608,9 +628,6 @@ pub fn register_android_usb_device(device: AndroidDirectUsbDevice) -> Result<(),
         packet_schedule_frames_preview: Vec::new(),
         runtime_stats: None,
     });
-    if existing_lock_requested {
-        ensure_android_usb_idle_lock()?;
-    }
     Ok(())
 }
 
@@ -659,7 +676,6 @@ pub fn set_android_usb_lock_enabled(enabled: bool) -> Result<(), String> {
             if enabled {
                 return Err("No Android direct USB DAC is registered".to_string());
             }
-            release_idle_lock();
             return Ok(());
         };
 
@@ -667,12 +683,8 @@ pub fn set_android_usb_lock_enabled(enabled: bool) -> Result<(), String> {
         state.stream_active
     };
 
-    if enabled {
-        if !stream_active {
-            ensure_android_usb_idle_lock()?;
-        }
-    } else {
-        release_idle_lock();
+    if enabled && !stream_active {
+        ensure_android_usb_idle_lock()?;
     }
 
     Ok(())
@@ -680,6 +692,7 @@ pub fn set_android_usb_lock_enabled(enabled: bool) -> Result<(), String> {
 
 pub fn clear_android_usb_device() {
     release_idle_lock();
+    USB_SESSION_ACTIVE.store(false, Ordering::SeqCst);
     if DIRECT_USB_LIFECYCLE_STATE.lock().engine_state != AndroidDirectUsbEngineState::Fallback {
         set_android_usb_engine_state(AndroidDirectUsbEngineState::Idle, None);
     }
@@ -736,6 +749,10 @@ pub fn android_direct_debug_state() -> AndroidDirectUsbDebugState {
     let state = DIRECT_USB_STATE.lock().clone();
     let idle_lock_held = DIRECT_USB_LOCK.lock().is_some();
     let lifecycle_state = DIRECT_USB_LIFECYCLE_STATE.lock().clone();
+    let usb_session_active = USB_SESSION_ACTIVE.load(Ordering::SeqCst);
+    if usb_session_active {
+        eprintln!("Android USB direct debug: USB_SESSION_ACTIVE=true");
+    }
 
     let Some(state) = state else {
         return AndroidDirectUsbDebugState {
@@ -882,6 +899,15 @@ pub fn negotiate_android_direct_output_sample_rate(
         if let Some(rate) = preferred_sample_rate {
             requested_format.sample_rate = rate.max(8_000);
         }
+
+        if state.stream_active || USB_SESSION_ACTIVE.load(Ordering::SeqCst) {
+            state.requested_playback_format = Some(requested_format);
+            if state.playback_format.map(|f| f.sample_rate) != Some(requested_format.sample_rate) {
+                state.playback_format = Some(requested_format);
+            }
+            return Ok(Some(requested_format.sample_rate));
+        }
+
         state.requested_playback_format = Some(requested_format);
         state.playback_format = Some(requested_format);
         state.clock_status = None;
@@ -916,7 +942,7 @@ fn negotiate_android_direct_playback_format(
         let speed = usb_device.speed();
         let capability_model = build_android_usb_capability_model(&usb_device, speed).ok();
         set_capability_model(capability_model.clone());
-        let clock = find_audio_control_clock(&usb_device);
+        let clock = find_audio_control_clock(&usb_device, &claimed_handle.handle);
 
         let candidate = match select_stream_candidate(&usb_device, requested_format, speed) {
             Ok(c) => c,
@@ -957,6 +983,12 @@ fn negotiate_android_direct_playback_format(
         let mut last_message = None;
 
         if let Some(clock) = clock {
+            if let Err(e) = claimed_handle.ensure_interface_claimed(clock.interface_number) {
+                log::error!(
+                    "[USB] Failed to claim AudioControl interface {}: {}",
+                    clock.interface_number, e,
+                );
+            }
             set_clock_status(Some(AndroidDirectUsbClockStatus {
                 interface_number: clock.interface_number,
                 clock_id: clock.clock_id,
@@ -980,8 +1012,8 @@ fn negotiate_android_direct_playback_format(
                 sampling_frequency_ranges_support_rate(ranges, requested_format.sample_rate)
             }) || supported_ranges.is_none()
             {
-                eprintln!(
-                    "Android USB direct [NEGOTIATION] engineType=USB_DAC_EXPERIMENTAL, usbClaimed={}, altSetting={}, endpointAddress=0x{:02x}, sampleRateSent={} Hz",
+                log::info!(
+                    "[USB] NEGOTIATION: usbClaimed={}, alt={}, endpoint=0x{:02x}, rate={}Hz",
                     claimed_handle.claimed_interfaces.contains(&candidate.interface_number),
                     candidate.alt_setting,
                     candidate.endpoint_address,
@@ -999,8 +1031,8 @@ fn negotiate_android_direct_playback_format(
                 rate_verified = clock_outcome.rate_verified;
                 reported_rate = clock_outcome.reported_sample_rate.or(current_rate);
                 last_message = clock_outcome.message.clone();
-                eprintln!(
-                    "Android USB direct [CLOCK] sampleRateConfirmed={} Hz, clockOk={}, rateVerified={}, clockId={}, interfaceNumber={}",
+                log::info!(
+                    "[USB] NEGOTIATION CLOCK: confirmed={}Hz, clockOk={}, rateVerified={}, clockId={}, iface={}",
                     clock_outcome.reported_sample_rate.unwrap_or(0),
                     clock_outcome.clock_ok,
                     clock_outcome.rate_verified,
@@ -1340,8 +1372,15 @@ fn android_direct_usb_engine_state_label(state: AndroidDirectUsbEngineState) -> 
 
 fn set_android_usb_engine_state(state: AndroidDirectUsbEngineState, reason: Option<String>) {
     let mut lifecycle_state = DIRECT_USB_LIFECYCLE_STATE.lock();
+    let previous = lifecycle_state.engine_state;
     lifecycle_state.engine_state = state;
     lifecycle_state.reason = reason;
+    if previous != state {
+        eprintln!(
+            "Android USB direct engine state: {:?} -> {:?}",
+            previous, state
+        );
+    }
     eprintln!(
         "[USB][STATE] {}{}",
         android_direct_usb_engine_state_label(state),
@@ -1506,6 +1545,9 @@ fn configure_kernel_driver_detach(handle: &DeviceHandle<Context>) {
     }
 }
 
+const CLAIM_RETRY_ATTEMPTS: u32 = 4;
+const CLAIM_RETRY_DELAY_MS: u64 = 80;
+
 fn claim_interface_with_recovery(
     handle: &DeviceHandle<Context>,
     interface_number: u8,
@@ -1515,51 +1557,64 @@ fn claim_interface_with_recovery(
         Err(initial_error) => {
             let mut details = vec![format!("initial claim failed: {}", initial_error)];
 
-            if !supports_detach_kernel_driver() {
-                return Err(format!(
-                    "Failed to claim USB interface {}: {}",
-                    interface_number,
-                    details.join("; ")
-                ));
-            }
-
-            match handle.kernel_driver_active(interface_number) {
-                Ok(true) => {
-                    details.push("kernel driver is active".to_string());
-                    match handle.detach_kernel_driver(interface_number) {
-                        Ok(()) => {
-                            details.push("detached kernel driver".to_string());
-                        }
-                        Err(error) => {
-                            details.push(format!("kernel-driver detach failed: {}", error));
+            if supports_detach_kernel_driver() {
+                match handle.kernel_driver_active(interface_number) {
+                    Ok(true) => {
+                        details.push("kernel driver is active".to_string());
+                        match handle.detach_kernel_driver(interface_number) {
+                            Ok(()) => {
+                                details.push("detached kernel driver".to_string());
+                            }
+                            Err(error) => {
+                                details.push(format!("kernel-driver detach failed: {}", error));
+                            }
                         }
                     }
+                    Ok(false) => {
+                        details.push("kernel driver is not active".to_string());
+                    }
+                    Err(error) => {
+                        details.push(format!("kernel_driver_active failed: {}", error));
+                    }
                 }
-                Ok(false) => {
-                    details.push("kernel driver is not active".to_string());
-                }
-                Err(error) => {
-                    details.push(format!("kernel_driver_active failed: {}", error));
-                }
-            }
 
-            match handle.claim_interface(interface_number) {
-                Ok(()) => {
+                if let Ok(()) = handle.claim_interface(interface_number) {
                     eprintln!(
                         "Android USB direct claimed interface {} after kernel-driver recovery",
                         interface_number
                     );
                     return Ok(());
                 }
-                Err(retry_error) => {
-                    details.push(format!("retry claim failed: {}", retry_error));
-                    return Err(format!(
-                        "Failed to claim USB interface {}: {}",
-                        interface_number,
-                        details.join("; ")
-                    ));
+            }
+
+            for attempt in 1..=CLAIM_RETRY_ATTEMPTS {
+                thread::sleep(Duration::from_millis(CLAIM_RETRY_DELAY_MS));
+                match handle.claim_interface(interface_number) {
+                    Ok(()) => {
+                        eprintln!(
+                            "Android USB direct claimed interface {} on retry {} after {}ms settle",
+                            interface_number,
+                            attempt,
+                            attempt as u64 * CLAIM_RETRY_DELAY_MS,
+                        );
+                        return Ok(());
+                    }
+                    Err(error) => {
+                        details.push(format!(
+                            "retry {} after {}ms: {}",
+                            attempt,
+                            attempt as u64 * CLAIM_RETRY_DELAY_MS,
+                            error
+                        ));
+                    }
                 }
             }
+
+            Err(format!(
+                "Failed to claim USB interface {}: {}",
+                interface_number,
+                details.join("; ")
+            ))
         }
     }
 }
@@ -1690,7 +1745,7 @@ fn build_android_usb_capability_model(
 fn cleanup_claimed_handle(
     mut claimed_handle: AndroidDirectUsbClaimedHandle,
     active_interface: Option<u8>,
-    keep_locked: bool,
+    _keep_locked: bool,
 ) {
     if let Some(interface_number) = active_interface {
         let _ = claimed_handle
@@ -1698,7 +1753,8 @@ fn cleanup_claimed_handle(
             .set_alternate_setting(interface_number, 0);
     }
 
-    if keep_locked {
+    let device_registered = DIRECT_USB_STATE.lock().is_some();
+    if device_registered {
         if let Ok(interfaces) = discover_audio_streaming_interfaces(&claimed_handle.handle.device())
         {
             for interface_number in interfaces {
@@ -1748,6 +1804,31 @@ fn ensure_android_usb_idle_lock() -> Result<(), String> {
 }
 
 pub fn create_android_usb_backend(
+    callback_data: Arc<AudioCallbackData>,
+    event_tx: Sender<AudioEvent>,
+    preferred_sample_rate: u32,
+) -> Result<Option<AndroidDirectUsbBackend>, String> {
+    if USB_SESSION_ACTIVE.swap(true, Ordering::SeqCst) {
+        let msg = "USB session already active: cannot create a second backend".to_string();
+        set_last_error(Some(msg.clone()));
+        set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(msg.clone()));
+        return Err(msg);
+    }
+
+    match create_android_usb_backend_inner(callback_data, event_tx, preferred_sample_rate) {
+        Ok(Some(backend)) => Ok(Some(backend)),
+        Ok(None) => {
+            USB_SESSION_ACTIVE.store(false, Ordering::SeqCst);
+            Ok(None)
+        }
+        Err(error) => {
+            USB_SESSION_ACTIVE.store(false, Ordering::SeqCst);
+            Err(error)
+        }
+    }
+}
+
+fn create_android_usb_backend_inner(
     callback_data: Arc<AudioCallbackData>,
     event_tx: Sender<AudioEvent>,
     preferred_sample_rate: u32,
@@ -1854,9 +1935,14 @@ pub fn create_android_usb_backend(
             return Err(error);
         }
     };
-    let clock = find_audio_control_clock(&device);
+    let clock = find_audio_control_clock(&device, &claimed_handle.handle);
+    let clock_detection_msg = match &clock {
+        Some(c) => format!("Clock found: interface={}, clockId={}", c.interface_number, c.clock_id),
+        None => "Clock NOT FOUND: no UAC2 clock entity in any AudioControl descriptor".to_string(),
+    };
+    log::info!("[USB] Clock entity for '{}': {}", state.device.product_name, clock_detection_msg);
 
-    set_last_error(None);
+    set_last_error(Some(format!("[clock-diag] {}", clock_detection_msg)));
     set_direct_mode_refusal_reason(None);
     set_usb_stream_stable(false);
     set_active_transport(Some(&candidate));
@@ -1934,35 +2020,11 @@ pub fn create_android_usb_backend(
         return Err(error);
     }
 
-    if supports_detach_kernel_driver() {
-        if claimed_handle
-            .handle
-            .kernel_driver_active(candidate.interface_number)
-            .unwrap_or(false)
-        {
-            let _ = claimed_handle
-                .handle
-                .detach_kernel_driver(candidate.interface_number);
-            thread::sleep(Duration::from_millis(100));
-        }
-    }
-
-    if let Err(error) = claimed_handle.ensure_interface_claimed(candidate.interface_number) {
-        set_last_error(Some(error.clone()));
-        set_direct_mode_refusal_reason(Some(error.clone()));
-        set_android_usb_engine_state(
-            AndroidDirectUsbEngineState::Error,
-            Some(error.clone()),
-        );
-        cleanup_claimed_handle(claimed_handle, None, lock_requested);
-        return Err(error);
-    }
-
     claimed_handle
         .handle
         .set_alternate_setting(candidate.interface_number, 0)
         .ok();
-    thread::sleep(Duration::from_millis(100));
+    thread::sleep(Duration::from_millis(50));
 
     let mut clock_control_attempted = state.clock_control_attempted;
     let mut clock_control_succeeded = state.clock_control_succeeded;
@@ -1973,6 +2035,12 @@ pub fn create_android_usb_backend(
         .and_then(|status| status.reported_sample_rate);
 
     if let Some(clock) = clock {
+        if let Err(e) = claimed_handle.ensure_interface_claimed(clock.interface_number) {
+            log::error!(
+                "[USB] Failed to claim AudioControl interface {}: {}",
+                clock.interface_number, e,
+            );
+        }
         match state.dac_mode {
             DacMode::FullControl => {
                 let clock_already_verified = state.clock_verification_passed
@@ -2010,20 +2078,21 @@ pub fn create_android_usb_backend(
                         reported_sample_rate,
                     );
 
-                    eprintln!(
-                        "Android USB direct [CLOCK] sampleRateConfirmed={} Hz, clockOk={}, rateVerified={}, clockId={}, interfaceNumber={}",
-                        clock_outcome.reported_sample_rate.unwrap_or(0),
+                    let clock_result_msg = format!(
+                        "[clock-diag] SET_CUR {}Hz: clockOk={}, rateVerified={}, reported={}Hz, clockId={}, iface={}{}",
+                        playback_format.sample_rate,
                         clock_outcome.clock_ok,
                         clock_outcome.rate_verified,
+                        clock_outcome.reported_sample_rate.unwrap_or(0),
                         clock.clock_id,
                         clock.interface_number,
+                        clock_outcome.message.as_ref().map(|m| format!(", msg={}", m)).unwrap_or_default(),
                     );
+                    log::info!("{}", clock_result_msg);
+                    set_last_error(Some(clock_result_msg));
 
-                    if let Some(message) = clock_outcome.message.as_ref() {
-                        eprintln!("Android USB direct: {}", message);
-                    }
                     if !clock_outcome.clock_ok {
-                        eprintln!(
+                        log::error!(
                             "[USB] SET_CUR {}Hz -> FAILED (continuing direct USB, reported={}Hz, verified={})",
                             playback_format.sample_rate,
                             clock_outcome
@@ -2034,7 +2103,7 @@ pub fn create_android_usb_backend(
                     }
 
                     if clock_outcome.known_mismatch {
-                        eprintln!(
+                        log::error!(
                             "[USB] SET_CUR {}Hz -> MISMATCH (continuing direct USB, DAC reports {}Hz, verified={})",
                             playback_format.sample_rate,
                             clock_outcome
@@ -2043,38 +2112,10 @@ pub fn create_android_usb_backend(
                             clock_verification_passed,
                         );
                     }
-
-                    if state.require_verified_rate && !clock_verification_passed {
-                        eprintln!(
-                            "[USB] DAC verification is unavailable for {}Hz on clock {} / interface {}; continuing direct USB with unverified rate",
-                            playback_format.sample_rate,
-                            clock.clock_id,
-                            clock.interface_number,
-                        );
-                    }
                 }
 
-                if let Err(error) = claimed_handle
-                    .handle
-                    .set_alternate_setting(candidate.interface_number, candidate.alt_setting)
-                {
-                    let msg = format!(
-                        "Failed to set USB alt setting {} on interface {}: {}",
-                        candidate.alt_setting, candidate.interface_number, error
-                    );
-                    set_last_error(Some(msg.clone()));
-                    set_direct_mode_refusal_reason(Some(msg.clone()));
-                    set_android_usb_engine_state(
-                        AndroidDirectUsbEngineState::Error,
-                        Some(msg.clone()),
-                    );
-                    cleanup_claimed_handle(claimed_handle, None, lock_requested);
-                    return Err(msg);
-                }
-                thread::sleep(Duration::from_millis(50));
-
-                eprintln!(
-                    "Android USB direct [VALIDATION] engineType=USB_DAC_EXPERIMENTAL, usbClaimed={}, altSetting={}, endpointAddress=0x{:02x}, sampleRateSent={} Hz",
+                log::info!(
+                    "[USB] VALIDATION: usbClaimed={}, alt={}, endpoint=0x{:02x}, rate={}Hz",
                     claimed_handle.claimed_interfaces.contains(&candidate.interface_number),
                     candidate.alt_setting,
                     candidate.endpoint_address,
@@ -2151,13 +2192,15 @@ pub fn create_android_usb_backend(
             true,
             reported_sample_rate,
         );
-        eprintln!(
-            "Android USB direct: no clock entity; using descriptor-advertised fixed rate {} Hz on alt setting {}",
-            playback_format.sample_rate, candidate.alt_setting
+        let msg = format!(
+            "[clock-diag] No clock entity; using descriptor-advertised fixed rate {}Hz on alt {}",
+            playback_format.sample_rate, candidate.alt_setting,
         );
+        log::info!("{}", msg);
+        set_last_error(Some(msg));
     } else {
         let message = format!(
-            "Android USB direct cannot verify {} Hz: no usable clock entity and alt setting {} does not advertise that rate; continuing with assumed stream rate",
+            "[clock-diag] Cannot verify {}Hz: no clock entity + alt {} does not advertise rate",
             playback_format.sample_rate, candidate.alt_setting
         );
         reported_sample_rate = Some(playback_format.sample_rate);
@@ -2167,8 +2210,28 @@ pub fn create_android_usb_backend(
             false,
             reported_sample_rate,
         );
-        eprintln!("{}", message);
+        log::error!("{}", message);
+        set_last_error(Some(message));
     }
+
+    if let Err(error) = claimed_handle
+        .handle
+        .set_alternate_setting(candidate.interface_number, candidate.alt_setting)
+    {
+        let msg = format!(
+            "Failed to set USB alt setting {} on interface {}: {}",
+            candidate.alt_setting, candidate.interface_number, error
+        );
+        set_last_error(Some(msg.clone()));
+        set_direct_mode_refusal_reason(Some(msg.clone()));
+        set_android_usb_engine_state(
+            AndroidDirectUsbEngineState::Error,
+            Some(msg.clone()),
+        );
+        cleanup_claimed_handle(claimed_handle, None, lock_requested);
+        return Err(msg);
+    }
+    thread::sleep(Duration::from_millis(50));
 
     if !claimed_handle
         .claimed_interfaces
@@ -2395,6 +2458,7 @@ impl AndroidDirectUsbBackend {
                 .join()
                 .map_err(|_| "Android USB direct output thread panicked".to_string())?;
         }
+        USB_SESSION_ACTIVE.store(false, Ordering::SeqCst);
         Ok(())
     }
 }
@@ -2402,6 +2466,7 @@ impl AndroidDirectUsbBackend {
 impl Drop for AndroidDirectUsbBackend {
     fn drop(&mut self) {
         let _ = self.stop();
+        USB_SESSION_ACTIVE.store(false, Ordering::SeqCst);
     }
 }
 
@@ -2792,6 +2857,7 @@ fn run_usb_output_loop(
     set_stream_active(false);
     set_runtime_stats(None);
     set_usb_stream_stable(false);
+    USB_SESSION_ACTIVE.store(false, Ordering::SeqCst);
     if stop.load(Ordering::Acquire) {
         set_android_usb_engine_state(AndroidDirectUsbEngineState::Idle, None);
     }
@@ -3097,7 +3163,10 @@ fn discover_audio_streaming_interfaces(device: &Device<Context>) -> Result<Vec<u
     Ok(interfaces)
 }
 
-fn find_audio_control_clock(device: &Device<Context>) -> Option<AudioControlClock> {
+fn find_audio_control_clock(
+    device: &Device<Context>,
+    handle: &DeviceHandle<Context>,
+) -> Option<AudioControlClock> {
     let config_descriptor = device.active_config_descriptor().ok()?;
 
     for interface in config_descriptor.interfaces() {
@@ -3109,6 +3178,29 @@ fn find_audio_control_clock(device: &Device<Context>) -> Option<AudioControlCloc
             }
 
             let extra = descriptor.extra();
+            log::info!(
+                "[USB] AudioControl interface {} alt {} extra bytes: {} bytes",
+                descriptor.interface_number(),
+                descriptor.setting_number(),
+                extra.len(),
+            );
+
+            if extra.is_empty() {
+                log::warn!(
+                    "[USB] AudioControl interface {} has empty extra bytes; \
+                     attempting raw GET_DESCRIPTOR fallback",
+                    descriptor.interface_number(),
+                );
+                if let Some(clock) = find_clock_from_raw_config_descriptor(
+                    handle,
+                    &config_descriptor,
+                    descriptor.interface_number(),
+                ) {
+                    return Some(clock);
+                }
+                continue;
+            }
+
             let mut index = 0usize;
             while index + 2 < extra.len() {
                 let length = extra[index] as usize;
@@ -3122,9 +3214,15 @@ fn find_audio_control_clock(device: &Device<Context>) -> Option<AudioControlCloc
                     && descriptor_subtype == UAC2_CLOCK_SOURCE
                     && length >= 4
                 {
+                    let clock_id = extra[index + 3];
+                    log::info!(
+                        "[USB] Found clock source: interface={} clockId={} (from extra bytes)",
+                        descriptor.interface_number(),
+                        clock_id,
+                    );
                     return Some(AudioControlClock {
                         interface_number: descriptor.interface_number(),
-                        clock_id: extra[index + 3],
+                        clock_id,
                     });
                 }
 
@@ -3133,6 +3231,115 @@ fn find_audio_control_clock(device: &Device<Context>) -> Option<AudioControlCloc
         }
     }
 
+    log::error!("[USB] No AudioControl clock source entity found in any interface descriptor");
+    None
+}
+
+fn find_clock_from_raw_config_descriptor(
+    handle: &DeviceHandle<Context>,
+    config_descriptor: &ConfigDescriptor,
+    ac_interface_number: u8,
+) -> Option<AudioControlClock> {
+    let config_value = config_descriptor.number();
+    let mut raw = vec![0u8; 1024];
+    let request_type: u8 = 0x80;
+    let descriptor_type_config: u8 = 0x02;
+    let read = handle
+        .read_control(
+            request_type,
+            0x06,
+            (descriptor_type_config as u16) << 8 | config_value as u16,
+            0,
+            &mut raw,
+            Duration::from_secs(1),
+        )
+        .ok()?;
+
+    if read < 4 {
+        log::error!(
+            "[USB] Raw GET_DESCRIPTOR returned only {} bytes; cannot parse config descriptor",
+            read,
+        );
+        return None;
+    }
+    let total_length = u16::from_le_bytes([raw[2], raw[3]]) as usize;
+    if total_length > read {
+        let mut full_raw = vec![0u8; total_length];
+        match handle.read_control(
+            request_type,
+            0x06,
+            (descriptor_type_config as u16) << 8 | config_value as u16,
+            0,
+            &mut full_raw,
+            Duration::from_secs(1),
+        ) {
+            Ok(n) => {
+                raw = full_raw;
+                raw.truncate(n);
+            }
+            Err(error) => {
+                log::error!(
+                    "[USB] Raw GET_DESCRIPTOR full read failed: {}; using partial {} bytes",
+                    error, read,
+                );
+                raw.truncate(read);
+            }
+        }
+    } else {
+        raw.truncate(read);
+    }
+
+    log::info!(
+        "[USB] Raw config descriptor: {} bytes for config {}",
+        raw.len(),
+        config_value,
+    );
+    parse_clock_from_raw_config(&raw, ac_interface_number)
+}
+
+fn parse_clock_from_raw_config(raw: &[u8], ac_interface_number: u8) -> Option<AudioControlClock> {
+    let mut pos = 0usize;
+    let mut inside_ac_interface = false;
+
+    while pos + 1 < raw.len() {
+        let b_length = raw[pos] as usize;
+        if b_length < 2 || pos + b_length > raw.len() {
+            break;
+        }
+        let b_descriptor_type = raw[pos + 1];
+
+        if b_descriptor_type == 0x04 && b_length >= 9 {
+            let iface_num = raw[pos + 2];
+            let iface_class = raw[pos + 5];
+            let iface_subclass = raw[pos + 6];
+            inside_ac_interface = iface_num == ac_interface_number
+                && iface_class == USB_CLASS_AUDIO
+                && iface_subclass == USB_SUBCLASS_AUDIOCONTROL;
+        }
+
+        if inside_ac_interface
+            && b_descriptor_type == USB_DT_CS_INTERFACE
+            && b_length >= 4
+            && raw.get(pos + 2).copied() == Some(UAC2_CLOCK_SOURCE)
+        {
+            let clock_id = raw[pos + 3];
+            log::info!(
+                "[USB] Found clock source via raw config descriptor: interface={} clockId={}",
+                ac_interface_number, clock_id,
+            );
+            return Some(AudioControlClock {
+                interface_number: ac_interface_number,
+                clock_id,
+            });
+        }
+
+        pos += b_length;
+    }
+
+    log::error!(
+        "[USB] Raw config descriptor fallback did not find a clock source for interface {}",
+        ac_interface_number,
+    );
     None
 }
 
@@ -3291,7 +3498,29 @@ fn apply_sampling_frequency(
     sample_rate: u32,
     settle_delay_ms: u64,
 ) -> AndroidDirectUsbClockApplyOutcome {
+    log::info!(
+        "[USB] apply_sampling_frequency: interface={} clockId={} targetRate={}Hz settleDelay={}ms",
+        interface_number, clock_id, sample_rate, settle_delay_ms,
+    );
+
     let supported_ranges = get_sampling_frequency_ranges(handle, interface_number, clock_id).ok();
+    match &supported_ranges {
+        Some(ranges) => {
+            log::info!(
+                "[USB] GET_RANGE: {} range(s) from clock {} on interface {}",
+                ranges.len(),
+                clock_id,
+                interface_number,
+            );
+        }
+        None => {
+            log::warn!(
+                "[USB] GET_RANGE: failed for clock {} on interface {}",
+                clock_id, interface_number,
+            );
+        }
+    }
+
     if let Some(ranges) = supported_ranges.as_ref() {
         if !sampling_frequency_ranges_support_rate(ranges, sample_rate) {
             return AndroidDirectUsbClockApplyOutcome {
@@ -3310,18 +3539,30 @@ fn apply_sampling_frequency(
         }
     }
 
-    if let Ok(current_rate) = get_sampling_frequency(handle, interface_number, clock_id) {
-        if current_rate == sample_rate {
-            return AndroidDirectUsbClockApplyOutcome {
-                clock_ok: true,
-                rate_verified: true,
-                reported_sample_rate: Some(current_rate),
-                known_mismatch: false,
-                message: Some(format!(
-                    "USB clock {} on interface {} is already running at {} Hz",
-                    clock_id, interface_number, current_rate
-                )),
-            };
+    match get_sampling_frequency(handle, interface_number, clock_id) {
+        Ok(current_rate) => {
+            log::info!(
+                "[USB] GET_CUR: clock {} on interface {} reports {}Hz (target={}Hz)",
+                clock_id, interface_number, current_rate, sample_rate,
+            );
+            if current_rate == sample_rate {
+                return AndroidDirectUsbClockApplyOutcome {
+                    clock_ok: true,
+                    rate_verified: true,
+                    reported_sample_rate: Some(current_rate),
+                    known_mismatch: false,
+                    message: Some(format!(
+                        "USB clock {} on interface {} is already running at {} Hz",
+                        clock_id, interface_number, current_rate
+                    )),
+                };
+            }
+        }
+        Err(error) => {
+            log::error!(
+                "[USB] GET_CUR: failed for clock {} on interface {}: {}",
+                clock_id, interface_number, error,
+            );
         }
     }
 
@@ -3330,9 +3571,16 @@ fn apply_sampling_frequency(
     let mut last_reported_rate = None;
 
     for attempt in 1..=3 {
+        log::info!(
+            "[USB] SET_CUR attempt {}/3: clock {} interface {} rate {}Hz",
+            attempt, clock_id, interface_number, sample_rate,
+        );
         match set_sampling_frequency(handle, interface_number, clock_id, sample_rate) {
-            Ok(()) => {}
+            Ok(()) => {
+                log::info!("[USB] SET_CUR attempt {}/3: succeeded", attempt);
+            }
             Err(error) => {
+                log::error!("[USB] SET_CUR attempt {}/3: failed: {}", attempt, error);
                 last_set_error = Some(error);
                 thread::sleep(Duration::from_millis(settle_delay_ms));
                 continue;
@@ -3344,9 +3592,9 @@ fn apply_sampling_frequency(
             Ok(reported_sample_rate) => {
                 last_reported_rate = Some(reported_sample_rate);
                 if reported_sample_rate == sample_rate {
-                    eprintln!(
-                        "Android USB direct set sampling frequency to {} Hz using clock {} on interface {}; device reports {} Hz after attempt {}",
-                        sample_rate, clock_id, interface_number, reported_sample_rate, attempt,
+                    log::info!(
+                        "[USB] SET_CUR verified: {} Hz on clock {} interface {} after attempt {}",
+                        sample_rate, clock_id, interface_number, attempt,
                     );
                     return AndroidDirectUsbClockApplyOutcome {
                         clock_ok: true,
