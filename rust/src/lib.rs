@@ -52,10 +52,14 @@ fn initialize_android_app_context(
     }
 }
 
-// JNI load only advertises the supported JNI version.
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn JNI_OnLoad(_vm: JavaVM, _reserved: *mut c_void) -> jni::sys::jint {
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Debug)
+            .with_tag("RustUSB"),
+    );
     jni::JNIVersion::V6.into()
 }
 
