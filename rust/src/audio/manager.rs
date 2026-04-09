@@ -309,11 +309,7 @@ fn selection_from_snapshot(
     high_res_mode: bool,
 ) -> EngineSelection {
     EngineSelection {
-        engine: if capability_snapshot.prefers_rust_engine() || high_res_mode {
-            AudioEngine::Rust
-        } else {
-            AudioEngine::Default
-        },
+        engine: AudioEngine::Rust,
         primary_capability: capability_snapshot.primary_capability(),
         capabilities: capability_snapshot.capabilities,
         high_res_mode,
@@ -386,9 +382,9 @@ mod tests {
     }
 
     #[test]
-    fn selection_prefers_default_when_only_standard_capability_exists() {
+    fn selection_uses_rust_when_only_standard_capability_exists() {
         let selection = selection_from_snapshot(AudioCapabilitySnapshot::standard(), false);
-        assert_eq!(selection.engine, AudioEngine::Default);
+        assert_eq!(selection.engine, AudioEngine::Rust);
         assert_eq!(selection.primary_capability, AudioCapability::Standard);
         assert!(!selection.high_res_mode);
     }

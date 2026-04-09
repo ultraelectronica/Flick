@@ -9,6 +9,11 @@ use crate::audio::decoder::DecoderThread;
 use crate::audio::dynamics::DynamicsChain;
 use crate::audio::equalizer::Equalizer;
 use crate::audio::source::{AudioSource, SourceProvider};
+use crate::audio::strategy::OutputStrategy;
+#[cfg(target_os = "android")]
+use crate::audio::strategy::{select_strategy, DeviceCaps, TrackInfo};
+#[cfg(target_os = "android")]
+use crate::audio::verifier::OutputVerification;
 #[cfg(all(feature = "uac2", target_os = "android"))]
 use crate::uac2::{
     android_direct_debug_state, android_direct_output_signature, create_android_usb_backend,
@@ -28,10 +33,23 @@ use oboe::{
     SampleRateConversionQuality, SharingMode, Stereo, Usage,
 };
 use parking_lot::Mutex;
+use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::thread;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AudioOutputRuntimeState {
+    pub strategy: String,
+    pub requested_sample_rate: u32,
+    pub actual_sample_rate: u32,
+    pub resampler_active: bool,
+    pub passthrough_allowed: bool,
+    pub verification_reason: Option<String>,
+    pub direct_usb_active: bool,
+    pub direct_usb_verified: bool,
+}
 
 /// Audio callback data shared between engine and audio thread.
 ///
@@ -139,6 +157,19 @@ impl AudioCallbackData {
     pub fn set_bit_perfect(&self, enabled: bool) {
         self.bit_perfect.store(enabled, Ordering::Relaxed);
     }
+
+    pub fn reconfigure_sample_rate(&self, sample_rate: u32) {
+        let buffer_size = (sample_rate as usize / 10) * self.channels;
+        let speed_buffer_size = buffer_size * 3;
+
+        *self.crossfader.lock() = Crossfader::disabled(sample_rate);
+        *self.sources.lock() = SourceProvider::new(sample_rate, self.channels);
+        *self.mix_buffer_a.lock() = vec![0.0; buffer_size];
+        *self.mix_buffer_b.lock() = vec![0.0; buffer_size];
+        *self.speed_buffer.lock() = vec![0.0; speed_buffer_size];
+        *self.speed_frac_pos.lock() = 0.0;
+        *self.dynamics.lock() = DynamicsChain::new(sample_rate);
+    }
 }
 
 /// Handle for controlling the audio engine from any thread.
@@ -159,6 +190,8 @@ pub struct AudioEngineHandle {
     channels: usize,
     /// Output/backend signature used to determine when the engine must be recreated.
     output_signature: String,
+    /// Runtime output state after strategy selection and verification.
+    output_runtime: AudioOutputRuntimeState,
     /// Active decoder threads (kept alive for the duration of playback)
     #[allow(dead_code)]
     decoders: Arc<Mutex<Vec<DecoderThread>>>,
@@ -350,6 +383,10 @@ impl AudioEngineHandle {
         &self.output_signature
     }
 
+    pub fn output_runtime(&self) -> &AudioOutputRuntimeState {
+        &self.output_runtime
+    }
+
     /// Shutdown the engine.
     pub fn shutdown(&self) -> Result<(), String> {
         self.shutdown.store(true, Ordering::Release);
@@ -372,8 +409,10 @@ fn device_supports_sample_rate(device: &cpal::Device, channels: u16, sample_rate
 
 #[cfg(not(target_os = "android"))]
 pub fn desired_output_signature(preferred_sample_rate: Option<u32>) -> String {
-    let _ = preferred_sample_rate;
-    "native-shared".to_string()
+    format!(
+        "native-shared:{}",
+        preferred_sample_rate.unwrap_or_default()
+    )
 }
 
 /// Initialize the audio engine and return a handle.
@@ -498,6 +537,16 @@ pub fn create_audio_engine(
         sample_rate: target_sample_rate,
         channels,
         output_signature: desired_output_signature(Some(target_sample_rate)),
+        output_runtime: AudioOutputRuntimeState {
+            strategy: OutputStrategy::MixerMatched.as_str().to_string(),
+            requested_sample_rate: target_sample_rate,
+            actual_sample_rate: target_sample_rate,
+            resampler_active: false,
+            passthrough_allowed: false,
+            verification_reason: None,
+            direct_usb_active: false,
+            direct_usb_verified: false,
+        },
         decoders,
         shutdown,
     })
@@ -515,7 +564,10 @@ pub fn desired_output_signature(preferred_sample_rate: Option<u32>) -> String {
         return signature;
     }
 
-    format!("android-shared:{}", preferred_sample_rate.unwrap_or(48_000))
+    format!(
+        "android-shared:requested:{}",
+        preferred_sample_rate.unwrap_or(48_000)
+    )
 }
 
 #[cfg(target_os = "android")]
@@ -534,57 +586,147 @@ fn parse_android_output_channels(output_signature: &str) -> Option<usize> {
 }
 
 #[cfg(target_os = "android")]
+fn android_output_signature_for_strategy(
+    strategy: OutputStrategy,
+    requested_sample_rate: u32,
+) -> String {
+    match strategy {
+        OutputStrategy::MixerBitPerfect => {
+            format!("android-shared:mixer-bit-perfect:{}", requested_sample_rate)
+        }
+        OutputStrategy::MixerMatched => {
+            format!("android-shared:mixer-matched:{}", requested_sample_rate)
+        }
+        OutputStrategy::UsbDirect => {
+            #[cfg(feature = "uac2")]
+            {
+                return android_direct_output_signature(Some(requested_sample_rate))
+                    .unwrap_or_else(|| {
+                        format!("android-uac2:requested:{}", requested_sample_rate)
+                    });
+            }
+
+            #[cfg(not(feature = "uac2"))]
+            {
+                format!("android-uac2:requested:{}", requested_sample_rate)
+            }
+        }
+        OutputStrategy::ResampledFallback => {
+            format!(
+                "android-shared:resampled-fallback:{}",
+                requested_sample_rate
+            )
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn build_output_runtime_state(
+    strategy: OutputStrategy,
+    verification: OutputVerification,
+    direct_usb_active: bool,
+    direct_usb_verified: bool,
+) -> AudioOutputRuntimeState {
+    AudioOutputRuntimeState {
+        strategy: verification
+            .resolved_strategy(strategy)
+            .as_str()
+            .to_string(),
+        requested_sample_rate: verification.requested_rate,
+        actual_sample_rate: verification.actual_rate,
+        resampler_active: verification.resampler_active,
+        passthrough_allowed: verification.bit_perfect,
+        verification_reason: verification.reason,
+        direct_usb_active,
+        direct_usb_verified,
+    }
+}
+
+#[cfg(target_os = "android")]
+struct AndroidManagedStream {
+    stream: AudioStreamAsync<Output, AndroidOutputCallbackState>,
+    actual_sample_rate: u32,
+}
+
+#[cfg(target_os = "android")]
 pub fn create_audio_engine(
     preferred_sample_rate: Option<u32>,
 ) -> Result<AudioEngineHandle, String> {
-    let target_sample_rate = preferred_sample_rate.unwrap_or(48_000);
-    #[cfg(feature = "uac2")]
-    validate_android_direct_request(Some(target_sample_rate))?;
+    let requested_sample_rate = preferred_sample_rate.unwrap_or(48_000);
 
-    // Determine channels and whether USB backend will be used
-    // Check the DAC state directly to avoid race conditions
     #[cfg(feature = "uac2")]
-    let (will_attempt_usb, channels) = {
-        let debug_state = android_direct_debug_state();
-        
+    let debug_state = android_direct_debug_state();
+    #[cfg(feature = "uac2")]
+    let will_attempt_usb = debug_state.registered;
+    #[cfg(not(feature = "uac2"))]
+    let will_attempt_usb = false;
+
+    #[cfg(feature = "uac2")]
+    if will_attempt_usb {
+        validate_android_direct_request(Some(requested_sample_rate))?;
+    }
+
+    let shared_supports_requested_rate = select_android_output_device(requested_sample_rate)
+        .map(|device| android_device_supports_sample_rate(&device, requested_sample_rate))
+        .unwrap_or(false);
+    let desired_strategy = if will_attempt_usb {
+        OutputStrategy::UsbDirect
+    } else {
+        select_strategy(
+            TrackInfo {
+                sample_rate: requested_sample_rate,
+                channels: ANDROID_DIRECT_CHANNELS,
+            },
+            &DeviceCaps {
+                api_level: None,
+                supports_mixer_bit_perfect: false,
+                supports_requested_rate: shared_supports_requested_rate,
+                direct_usb_available: false,
+                direct_usb_verified: false,
+            },
+        )
+    };
+
+    #[cfg(feature = "uac2")]
+    let channels = {
         eprintln!(
-            "create_audio_engine: target_rate={} Hz, debug_state: registered={}, effective_rate={:?}, requested_rate={:?}, effective_ch={:?}, requested_ch={:?}",
-            target_sample_rate,
+            "create_audio_engine: requested_rate={} Hz, strategy={:?}, debug_state: registered={}, effective_rate={:?}, requested_rate={:?}, effective_ch={:?}, requested_ch={:?}",
+            requested_sample_rate,
+            desired_strategy,
             debug_state.registered,
             debug_state.playback_format_sample_rate,
             debug_state.requested_playback_sample_rate,
             debug_state.playback_format_channels,
             debug_state.requested_playback_channels,
         );
-        
-        if !debug_state.registered {
-            eprintln!("create_audio_engine: DAC not registered, will use Oboe");
-            (false, ANDROID_DIRECT_CHANNELS)
+
+        if !will_attempt_usb {
+            ANDROID_DIRECT_CHANNELS
         } else {
-            // DAC is registered - attempt to use USB backend
-            // Check if a format is already set and matches our rate
-            let effective_matches = debug_state.playback_format_sample_rate == Some(target_sample_rate);
-            let requested_matches = debug_state.requested_playback_sample_rate == Some(target_sample_rate);
-            
+            let effective_matches =
+                debug_state.playback_format_sample_rate == Some(requested_sample_rate);
+            let requested_matches =
+                debug_state.requested_playback_sample_rate == Some(requested_sample_rate);
+
             let channels = if effective_matches {
-                debug_state.playback_format_channels
+                debug_state
+                    .playback_format_channels
                     .map(|c| c as usize)
                     .unwrap_or(ANDROID_DIRECT_CHANNELS)
             } else if requested_matches {
-                debug_state.requested_playback_channels
+                debug_state
+                    .requested_playback_channels
                     .map(|c| c as usize)
                     .unwrap_or(ANDROID_DIRECT_CHANNELS)
             } else {
-                // No format set yet or doesn't match - use default channels
-                // The backend will negotiate the format when created
                 ANDROID_DIRECT_CHANNELS
             };
-            
+
             eprintln!(
                 "create_audio_engine: DAC registered, will attempt USB backend with {} channels (format_matches: effective={}, requested={})",
                 channels, effective_matches, requested_matches
             );
-            (true, channels)
+            channels
         }
     };
 
@@ -594,9 +736,11 @@ pub fn create_audio_engine(
     // Create finished tracks channel (from audio callback to command thread)
     let (finished_tx, finished_rx) = bounded::<AudioSource>(32);
 
-    // Create shared data with correct channels
+    // Create shared data before the output path is opened. If the platform
+    // changes the actual stream rate, we reconfigure the processing state
+    // before any playback commands are accepted.
     let callback_data = Arc::new(AudioCallbackData::new(
-        target_sample_rate,
+        requested_sample_rate,
         channels,
         finished_tx,
     ));
@@ -624,37 +768,151 @@ pub fn create_audio_engine(
     // Callback data for command thread
     let callback_data_for_thread = Arc::clone(&callback_data);
 
-    // Attempt to create USB backend if DAC state indicates it's available
     #[cfg(feature = "uac2")]
-    let (direct_usb_backend, output_signature) = if will_attempt_usb {
+    let mut direct_usb_backend = None;
+
+    let mut final_sample_rate = requested_sample_rate;
+    let mut output_runtime = build_output_runtime_state(
+        desired_strategy,
+        OutputVerification::verify(requested_sample_rate, requested_sample_rate, false, true),
+        false,
+        false,
+    );
+    let mut output_signature =
+        android_output_signature_for_strategy(desired_strategy, requested_sample_rate);
+
+    #[cfg(feature = "uac2")]
+    if desired_strategy == OutputStrategy::UsbDirect {
         match create_android_usb_backend(
             Arc::clone(&callback_data_clone),
             event_tx_clone.clone(),
-            target_sample_rate,
-        )? {
-            Some(backend) => {
-                callback_data.set_bit_perfect(true);
-                eprintln!(
-                    "create_audio_engine: USB backend active — bit-perfect bypass ENABLED (all DSP skipped)"
+            requested_sample_rate,
+        ) {
+            Ok(Some(mut backend)) => {
+                let debug_state = android_direct_debug_state();
+                let actual_sample_rate = debug_state
+                    .clock_reported_sample_rate
+                    .or(debug_state.playback_format_sample_rate)
+                    .or(debug_state.requested_playback_sample_rate)
+                    .unwrap_or(requested_sample_rate);
+                let verification = OutputVerification::verify(
+                    requested_sample_rate,
+                    actual_sample_rate,
+                    true,
+                    debug_state.clock_verification_passed,
                 );
-                let signature = android_direct_output_signature(Some(target_sample_rate))
-                    .unwrap_or_else(|| desired_output_signature(Some(target_sample_rate)));
-                (Some(backend), signature)
+
+                if verification.bit_perfect {
+                    final_sample_rate = actual_sample_rate;
+                    callback_data.reconfigure_sample_rate(final_sample_rate);
+                    callback_data.set_bit_perfect(true);
+                    output_runtime = build_output_runtime_state(
+                        OutputStrategy::UsbDirect,
+                        verification,
+                        true,
+                        debug_state.clock_verification_passed,
+                    );
+                    output_signature = android_output_signature_for_strategy(
+                        OutputStrategy::UsbDirect,
+                        requested_sample_rate,
+                    );
+                    direct_usb_backend = Some(backend);
+                } else {
+                    let reason = verification
+                        .reason
+                        .clone()
+                        .unwrap_or_else(|| "USB direct verification failed".to_string());
+                    log::warn!(
+                        "[ENGINE] USB direct rejected after verification: {}. Falling back to Android-managed output.",
+                        reason
+                    );
+                    let _ = backend.stop();
+                    crate::uac2::force_release_usb_session();
+                    output_runtime = build_output_runtime_state(
+                        OutputStrategy::UsbDirect,
+                        verification,
+                        false,
+                        debug_state.clock_verification_passed,
+                    );
+                    output_signature = android_output_signature_for_strategy(
+                        OutputStrategy::ResampledFallback,
+                        requested_sample_rate,
+                    );
+                }
             }
-            None => {
-                return Err(format!(
-                    "Android direct USB backend was selected for {} Hz but no direct backend instance was created",
-                    target_sample_rate
-                ));
+            Ok(None) => {
+                log::warn!(
+                    "[ENGINE] Android direct USB was selected for {} Hz but no backend was created; falling back to Android-managed output",
+                    requested_sample_rate
+                );
+                output_runtime.verification_reason = Some(
+                    "USB direct backend was unavailable; Android-managed fallback active"
+                        .to_string(),
+                );
+                output_runtime.strategy = OutputStrategy::ResampledFallback.as_str().to_string();
+                output_signature = android_output_signature_for_strategy(
+                    OutputStrategy::ResampledFallback,
+                    requested_sample_rate,
+                );
+            }
+            Err(error) => {
+                log::warn!(
+                    "[ENGINE] Android direct USB init failed: {}. Falling back to Android-managed output.",
+                    error
+                );
+                output_runtime.verification_reason = Some(error);
+                output_runtime.strategy = OutputStrategy::ResampledFallback.as_str().to_string();
+                output_signature = android_output_signature_for_strategy(
+                    OutputStrategy::ResampledFallback,
+                    requested_sample_rate,
+                );
             }
         }
-    } else {
-        let signature = desired_output_signature(Some(target_sample_rate));
-        (None, signature)
-    };
+    }
 
+    let mut managed_stream = None;
+    #[cfg(feature = "uac2")]
+    let use_managed_fallback = direct_usb_backend.is_none();
     #[cfg(not(feature = "uac2"))]
-    let output_signature = desired_output_signature(Some(target_sample_rate));
+    let use_managed_fallback = true;
+
+    if use_managed_fallback {
+        let desired_shared_strategy = if desired_strategy == OutputStrategy::UsbDirect {
+            OutputStrategy::ResampledFallback
+        } else {
+            desired_strategy
+        };
+        let managed = open_android_output_stream(
+            Arc::clone(&callback_data_clone),
+            event_tx_clone.clone(),
+            requested_sample_rate,
+        )?;
+        let verification = OutputVerification::verify(
+            requested_sample_rate,
+            managed.actual_sample_rate,
+            matches!(desired_shared_strategy, OutputStrategy::MixerBitPerfect),
+            true,
+        );
+        let resolved_shared_strategy = verification.resolved_strategy(desired_shared_strategy);
+        final_sample_rate = managed.actual_sample_rate;
+        callback_data.reconfigure_sample_rate(final_sample_rate);
+        callback_data.set_bit_perfect(verification.bit_perfect);
+        output_runtime =
+            build_output_runtime_state(desired_shared_strategy, verification, false, false);
+        output_signature =
+            android_output_signature_for_strategy(resolved_shared_strategy, requested_sample_rate);
+        managed_stream = Some(managed);
+    }
+
+    log::info!(
+        "[ENGINE] requested_rate_hz={} actual_rate_hz={} strategy={} resampler_active={} passthrough_allowed={} channels={}",
+        requested_sample_rate,
+        final_sample_rate,
+        output_runtime.strategy,
+        output_runtime.resampler_active,
+        output_runtime.passthrough_allowed,
+        channels
+    );
 
     // Spawn the audio thread (which owns the Oboe stream)
     thread::Builder::new()
@@ -662,6 +920,7 @@ pub fn create_audio_engine(
         .spawn(move || {
             #[cfg(feature = "uac2")]
             let mut direct_usb_backend = direct_usb_backend;
+            let mut managed_stream = managed_stream;
 
             #[cfg(feature = "uac2")]
             if direct_usb_backend.is_some() {
@@ -672,7 +931,7 @@ pub fn create_audio_engine(
                     callback_data_for_thread,
                     state_clone,
                     decoders_clone,
-                    target_sample_rate,
+                    final_sample_rate,
                     shutdown_clone,
                 );
 
@@ -682,16 +941,11 @@ pub fn create_audio_engine(
                 return;
             }
 
-            let mut stream = match open_android_output_stream(
-                Arc::clone(&callback_data_clone),
-                event_tx_clone.clone(),
-                target_sample_rate,
-            ) {
-                Ok(stream) => stream,
-                Err(error) => {
-                    eprintln!("Failed to open Android managed output stream: {}", error);
+            let mut stream = match managed_stream.take() {
+                Some(stream) => stream.stream,
+                None => {
                     let _ = event_tx.try_send(AudioEvent::Error {
-                        message: format!("Failed to open Android managed output stream: {}", error),
+                        message: "No Android managed output stream was prepared".to_string(),
                     });
                     return;
                 }
@@ -712,7 +966,7 @@ pub fn create_audio_engine(
                 callback_data_for_thread,
                 state_clone,
                 decoders_clone,
-                target_sample_rate,
+                final_sample_rate,
                 shutdown_clone,
             );
 
@@ -727,9 +981,10 @@ pub fn create_audio_engine(
         command_tx,
         event_rx,
         state,
-        sample_rate: target_sample_rate,
+        sample_rate: final_sample_rate,
         channels,
         output_signature,
+        output_runtime,
         decoders,
         shutdown,
     })
@@ -818,12 +1073,13 @@ fn open_android_output_stream(
     callback_data: Arc<AudioCallbackData>,
     event_tx: Sender<AudioEvent>,
     target_sample_rate: u32,
-) -> Result<AudioStreamAsync<Output, AndroidOutputCallbackState>, String> {
+) -> Result<AndroidManagedStream, String> {
     let selected_device = select_android_output_device(target_sample_rate)?;
     let frames_per_callback = android_frames_per_callback(target_sample_rate);
     let attempts = [AudioApi::AAudio, AudioApi::Unspecified];
 
     let mut last_error = None;
+    let mut fallback_stream = None;
 
     for audio_api in attempts {
         let builder = oboe::AudioStreamBuilder::default()
@@ -889,9 +1145,22 @@ fn open_android_output_stream(
                 actual_rate,
                 target_sample_rate,
             ));
+            if fallback_stream.is_none() {
+                fallback_stream = Some(AndroidManagedStream {
+                    stream,
+                    actual_sample_rate: actual_rate.max(1) as u32,
+                });
+            }
             continue;
         }
 
+        return Ok(AndroidManagedStream {
+            stream,
+            actual_sample_rate: actual_rate.max(1) as u32,
+        });
+    }
+
+    if let Some(stream) = fallback_stream {
         return Ok(stream);
     }
 
