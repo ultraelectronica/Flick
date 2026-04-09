@@ -333,6 +333,12 @@ class RustAudioService {
   }
 
   /// Start periodic progress updates.
+  ///
+  /// Note: Uses background timer (not during build) to avoid blocking UI.
+  /// The Rust getters (audioGetProgress, audioGetState) are designed to be
+  /// cheap read-only operations that return cached state - no blocking I/O.
+  /// If progress updates ever cause frame drops, the Rust side should batch
+  /// state into a single struct to reduce FFI call overhead.
   void _startProgressUpdates({bool fast = true}) {
     _stopProgressUpdates();
 
