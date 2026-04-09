@@ -2510,15 +2510,17 @@ class MainActivity: FlutterActivity() {
             preferredSerial = preferredSerial,
         )
 
-        val hasVolumeControl = audioManager != null && !audioManager.isVolumeFixed
+        val directUsbRegistered = activeDirectUsbDeviceName != null
+        val hasSystemVolumeControl = audioManager != null && !audioManager.isVolumeFixed
+        val hasVolumeControl = hasSystemVolumeControl && !directUsbRegistered
         baseRoute["hasVolumeControl"] = hasVolumeControl
         baseRoute["volumeMode"] = if (hasVolumeControl) "system" else "unavailable"
-        baseRoute["volume"] = getRouteVolume()
-        baseRoute["muted"] = getRouteMuted()
+        baseRoute["volume"] = if (hasVolumeControl) getRouteVolume() else null
+        baseRoute["muted"] = if (hasVolumeControl) getRouteMuted() else null
         baseRoute["preferredUsbDeviceDetected"] = preferredUsbDevice != null
         baseRoute["preferredUsbDeviceName"] = preferredUsbDevice?.deviceName
         baseRoute["preferredUsbProductName"] = preferredUsbDevice?.productName
-        baseRoute["directUsbRegistered"] = activeDirectUsbDeviceName != null
+        baseRoute["directUsbRegistered"] = directUsbRegistered
         baseRoute["directUsbDeviceName"] = activeDirectUsbDeviceName
 
         return baseRoute

@@ -1643,6 +1643,14 @@ class PlayerService {
           '[Engine] Explicit bit-perfect mode: bypassing software volume, playback speed, and crossfade',
         );
       }
+      final routeStatus = _uac2Service.currentDeviceStatus;
+      if (playbackMode == AudioEngineType.usbDacExperimental &&
+          routeStatus != null &&
+          !routeStatus.hasVolumeControl) {
+        debugPrint(
+          '[Engine] Direct USB bit-perfect is active without Android route volume control; output level is full-scale unless the DAC itself provides hardware attenuation',
+        );
+      }
       await _rustAudioService.setVolume(1.0);
       await _rustAudioService.setPlaybackSpeed(1.0);
       await _rustAudioService.setCrossfade(
