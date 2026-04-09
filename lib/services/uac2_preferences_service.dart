@@ -8,6 +8,7 @@ enum Uac2FormatPreference { highestQuality, compatibility, custom }
 enum AudioEnginePreference { exoPlayer, rustOboe, isochronousUsb }
 
 class Uac2PreferencesService {
+  static final ValueNotifier<bool> developerModeNotifier = ValueNotifier(false);
   static const _keySelectedDevice = 'uac2_selected_device';
   static const _keyAutoConnect = 'uac2_auto_connect';
   static const _keyPreferredFormat = 'uac2_preferred_format';
@@ -17,6 +18,9 @@ class Uac2PreferencesService {
   static const _keyBitPerfectEnabled = 'uac2_bit_perfect_enabled';
   static const _keyExclusiveDacModeEnabled = 'uac2_exclusive_dac_mode_enabled';
   static const _keyAudioEnginePreference = 'audio_engine_preference';
+  static const _keyDeveloperModeEnabled = 'developer_mode_enabled';
+
+  static bool get isDeveloperModeEnabledSync => developerModeNotifier.value;
 
   Future<void> saveSelectedDevice(Uac2DeviceInfo device) async {
     try {
@@ -196,6 +200,37 @@ class Uac2PreferencesService {
     }
   }
 
+  Future<void> initializeDeveloperModeCache() async {
+    final enabled = await getDeveloperModeEnabled();
+    if (developerModeNotifier.value != enabled) {
+      developerModeNotifier.value = enabled;
+    }
+  }
+
+  Future<void> setDeveloperModeEnabled(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyDeveloperModeEnabled, enabled);
+      developerModeNotifier.value = enabled;
+    } catch (e) {
+      debugPrint('Failed to save developer mode setting: $e');
+    }
+  }
+
+  Future<bool> getDeveloperModeEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool(_keyDeveloperModeEnabled) ?? false;
+      if (developerModeNotifier.value != enabled) {
+        developerModeNotifier.value = enabled;
+      }
+      return enabled;
+    } catch (e) {
+      debugPrint('Failed to load developer mode setting: $e');
+      return developerModeNotifier.value;
+    }
+  }
+
   Future<void> setFormatPreference(Uac2FormatPreference preference) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -233,6 +268,8 @@ class Uac2PreferencesService {
       await prefs.remove(_keyBitPerfectEnabled);
       await prefs.remove(_keyExclusiveDacModeEnabled);
       await prefs.remove(_keyAudioEnginePreference);
+      await prefs.remove(_keyDeveloperModeEnabled);
+      developerModeNotifier.value = false;
     } catch (e) {
       debugPrint('Failed to clear preferences: $e');
     }

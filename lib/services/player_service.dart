@@ -22,6 +22,7 @@ import 'package:flick/services/replay_play_tracker.dart';
 import 'package:flick/services/android_audio_engine.dart';
 import 'package:flick/services/rust_audio_engine.dart';
 import 'package:flick/services/rust_audio_service.dart';
+import 'package:flick/services/uac2_preferences_service.dart';
 import 'package:flick/services/uac2_service.dart';
 import 'package:flick/services/alac_converter_service.dart';
 
@@ -183,6 +184,7 @@ class PlayerService {
   final NotificationService _notificationService = NotificationService();
   final LastPlayedService _lastPlayedService = LastPlayedService();
   final FavoritesService _favoritesService = FavoritesService();
+  final Uac2PreferencesService _preferencesService = Uac2PreferencesService();
   final RustAudioService _rustAudioService = RustAudioService();
   final Uac2Service _uac2Service = Uac2Service.instance;
   late final AudioSessionManager _sessionManager;
@@ -428,6 +430,12 @@ class PlayerService {
       isBitPerfectModeEnabled ||
       currentEngineType == AudioEngineType.usbDacExperimental;
 
+  void _debugLog(String message) {
+    if (Uac2PreferencesService.isDeveloperModeEnabledSync) {
+      debugPrint(message);
+    }
+  }
+
   /// Initialize the audio engine.
   /// Sets up just_audio with gapless playback support.
   Future<void> initAudio() async {
@@ -479,6 +487,7 @@ class PlayerService {
 
     try {
       await Future.wait<void>([
+        _preferencesService.initializeDeveloperModeCache(),
         _sessionManager.initialize(),
         _uac2Service.isBitPerfectEnabled(),
       ]);
@@ -1026,7 +1035,7 @@ class PlayerService {
       directUsbState?['last_error'] ?? directUsbState?['lastError'],
     );
 
-    debugPrint(
+    _debugLog(
       '[Diagnostics] $reason: mode=${mode.logLabel}, '
       'selected=${_sessionManager.selectedMode.logLabel}, '
       'path=$pathManagement, strategy=$outputStrategyLabel, '
@@ -1241,9 +1250,9 @@ class PlayerService {
           _clearAutoSyncGuard();
         }
         if (state.currentTrack != null) {
-          debugPrint('[Playback] Track changed: ${state.currentTrack!.title}');
+          _debugLog('[Playback] Track changed: ${state.currentTrack!.title}');
         } else {
-          debugPrint('[Playback] Track cleared');
+          _debugLog('[Playback] Track cleared');
         }
         if (state.currentTrack != null) {
           _startReplayTracking(
