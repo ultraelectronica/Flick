@@ -11,6 +11,7 @@ use libusb1_sys::{
     libusb_alloc_transfer, libusb_fill_iso_transfer, libusb_free_transfer, libusb_submit_transfer,
     libusb_transfer, libusb_transfer_cb_fn,
 };
+use log::{error as log_error, info as log_info};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rusb::{
@@ -21,7 +22,7 @@ use rusb::{
 use serde::Serialize;
 use std::ffi::c_void;
 use std::os::fd::RawFd;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex as StdMutex, Once};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -42,6 +43,9 @@ const UAC2_REQUEST_SET_CUR: u8 = 0x01;
 const UAC2_REQUEST_GET_CUR: u8 = 0x81;
 const UAC2_REQUEST_GET_RANGE: u8 = 0x82;
 const UAC2_CLOCK_SOURCE_SAM_FREQ_CONTROL: u16 = 0x0100;
+const UAC2_CLOCK_SOURCE_CLOCK_VALID_CONTROL: u16 = 0x0200;
+const UAC2_INPUT_TERMINAL: u8 = 0x02;
+const UAC2_OUTPUT_TERMINAL: u8 = 0x03;
 const FORMAT_TAG_PCM: u16 = 0x0001;
 const FORMAT_TAG_PCM8: u16 = 0x0002;
 const FORMAT_TAG_IEEE_FLOAT: u16 = 0x0003;
@@ -54,6 +58,8 @@ const ANDROID_USB_STABLE_TRANSFER_THRESHOLD: usize = 64;
 const ANDROID_USB_REQUIRE_VERIFIED_RATE_DEFAULT: bool = true;
 const ANDROID_USB_CLOCK_SETTLE_DELAY_MS_DEFAULT: u64 = 20;
 const ANDROID_USB_FEEDBACK_TIMEOUT_MS: u32 = 50;
+const ANDROID_USB_LOUD_RENDER_LOG_THRESHOLD: f32 = 0.1;
+const ANDROID_USB_LOUD_TRANSFER_LOG_INTERVAL: u64 = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DacClockPolicy {
@@ -310,6 +316,10 @@ struct AndroidDirectUsbRuntimeStats {
     underrun_count: AtomicU64,
     producer_frames: AtomicU64,
     consumer_frames: AtomicU64,
+    /// Max |f32| over the `pcm_samples` prefix that was actually pushed (post-convert).
+    last_push_max_abs_f32_bits: AtomicU32,
+    /// Max |linear i32| over the pushed prefix (matches USB encoding input scale).
+    last_push_max_abs_i32: AtomicU32,
 }
 
 #[derive(Debug)]
@@ -319,7 +329,6 @@ struct AndroidDirectUsbPcmRingBuffer {
     read_index: usize,
     write_index: usize,
     len_samples: usize,
-    last_frame: Vec<i32>,
 }
 
 struct AndroidDirectUsbLock {
@@ -354,6 +363,9 @@ struct AndroidIsoStreamCandidate {
     refresh: u8,
     synch_address: u8,
     feedback_endpoint: Option<AndroidUsbFeedbackEndpoint>,
+    /// bTerminalLink from the AS_GENERAL descriptor, used to trace the
+    /// UAC2 topology to the correct Clock Entity.
+    terminal_link: Option<u8>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -396,6 +408,7 @@ struct AndroidStreamingInterfaceFormat {
     subslot_size: u8,
     bit_resolution: u8,
     sample_rates: Vec<u32>,
+    terminal_link: Option<u8>,
 }
 
 #[derive(Debug)]
@@ -428,6 +441,8 @@ impl AndroidDirectUsbRuntimeStats {
             underrun_count: AtomicU64::new(0),
             producer_frames: AtomicU64::new(0),
             consumer_frames: AtomicU64::new(0),
+            last_push_max_abs_f32_bits: AtomicU32::new(0),
+            last_push_max_abs_i32: AtomicU32::new(0),
         }
     }
 
@@ -471,7 +486,6 @@ impl AndroidDirectUsbPcmRingBuffer {
             read_index: 0,
             write_index: 0,
             len_samples: 0,
-            last_frame: vec![0; channels.max(1)],
         }
     }
 
@@ -495,7 +509,7 @@ impl AndroidDirectUsbPcmRingBuffer {
         writable
     }
 
-    fn pop_into_or_pad(&mut self, output: &mut [i32], channels: usize) -> bool {
+    fn pop_into_or_pad(&mut self, output: &mut [i32], _channels: usize) -> bool {
         if output.is_empty() {
             return false;
         }
@@ -507,23 +521,10 @@ impl AndroidDirectUsbPcmRingBuffer {
         }
         self.len_samples -= readable;
 
-        if readable >= channels && self.last_frame.len() == channels {
-            let frame_start = readable - channels;
-            self.last_frame
-                .copy_from_slice(&output[frame_start..readable]);
-        }
-
         let underrun = readable < output.len();
         if underrun {
-            let mut index = readable;
-            while index < output.len() {
-                for channel in 0..channels {
-                    if index >= output.len() {
-                        break;
-                    }
-                    output[index] = *self.last_frame.get(channel).unwrap_or(&0);
-                    index += 1;
-                }
+            for sample in output[readable..].iter_mut() {
+                *sample = 0;
             }
         }
 
@@ -757,10 +758,9 @@ pub fn android_direct_debug_state() -> AndroidDirectUsbDebugState {
     let Some(state) = state else {
         return AndroidDirectUsbDebugState {
             idle_lock_held,
-            engine_state: Some(android_direct_usb_engine_state_label(
-                lifecycle_state.engine_state,
-            )
-            .to_string()),
+            engine_state: Some(
+                android_direct_usb_engine_state_label(lifecycle_state.engine_state).to_string(),
+            ),
             engine_state_reason: lifecycle_state.reason,
             ..Default::default()
         };
@@ -773,10 +773,9 @@ pub fn android_direct_debug_state() -> AndroidDirectUsbDebugState {
 
     AndroidDirectUsbDebugState {
         registered: true,
-        engine_state: Some(android_direct_usb_engine_state_label(
-            lifecycle_state.engine_state,
-        )
-        .to_string()),
+        engine_state: Some(
+            android_direct_usb_engine_state_label(lifecycle_state.engine_state).to_string(),
+        ),
         engine_state_reason: lifecycle_state.reason,
         requested_playback_sample_rate: state
             .requested_playback_format
@@ -942,7 +941,6 @@ fn negotiate_android_direct_playback_format(
         let speed = usb_device.speed();
         let capability_model = build_android_usb_capability_model(&usb_device, speed).ok();
         set_capability_model(capability_model.clone());
-        let clock = find_audio_control_clock(&usb_device, &claimed_handle.handle);
 
         let candidate = match select_stream_candidate(&usb_device, requested_format, speed) {
             Ok(c) => c,
@@ -952,6 +950,11 @@ fn negotiate_android_direct_playback_format(
                 return Err(error);
             }
         };
+
+        // Find clock entity AFTER selecting candidate so we can trace the
+        // topology using the candidate's bTerminalLink.
+        let clock =
+            find_audio_control_clock(&usb_device, &claimed_handle.handle, candidate.terminal_link);
 
         if let Err(error) = claimed_handle.ensure_interface_claimed(candidate.interface_number) {
             set_last_error(Some(error.clone()));
@@ -986,7 +989,8 @@ fn negotiate_android_direct_playback_format(
             if let Err(e) = claimed_handle.ensure_interface_claimed(clock.interface_number) {
                 log::error!(
                     "[USB] Failed to claim AudioControl interface {}: {}",
-                    clock.interface_number, e,
+                    clock.interface_number,
+                    e,
                 );
             }
             set_clock_status(Some(AndroidDirectUsbClockStatus {
@@ -1014,7 +1018,9 @@ fn negotiate_android_direct_playback_format(
             {
                 log::info!(
                     "[USB] NEGOTIATION: usbClaimed={}, alt={}, endpoint=0x{:02x}, rate={}Hz",
-                    claimed_handle.claimed_interfaces.contains(&candidate.interface_number),
+                    claimed_handle
+                        .claimed_interfaces
+                        .contains(&candidate.interface_number),
                     candidate.alt_setting,
                     candidate.endpoint_address,
                     requested_format.sample_rate,
@@ -1093,7 +1099,9 @@ fn negotiate_android_direct_playback_format(
                         requested_format.sample_rate
                     )
                 });
-                reported_rate = reported_rate.or(current_rate).or(Some(requested_format.sample_rate));
+                reported_rate = reported_rate
+                    .or(current_rate)
+                    .or(Some(requested_format.sample_rate));
                 last_message = Some(message);
             }
         } else if let Some(actual_rate) = choose_adaptive_sample_rate(
@@ -1786,10 +1794,7 @@ fn ensure_android_usb_idle_lock() -> Result<(), String> {
     let mut claimed_handle = open_claimed_usb_handle(&state.device).map_err(|error| {
         set_last_error(Some(error.clone()));
         set_direct_mode_refusal_reason(Some(error.clone()));
-        set_android_usb_engine_state(
-            AndroidDirectUsbEngineState::Error,
-            Some(error.clone()),
-        );
+        set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(error.clone()));
         error
     })?;
 
@@ -1820,9 +1825,7 @@ pub fn create_android_usb_backend(
             break;
         }
         if attempt == 0 {
-            eprintln!(
-                "Android USB direct: previous session still active, waiting for cleanup..."
-            );
+            eprintln!("Android USB direct: previous session still active, waiting for cleanup...");
         }
         thread::sleep(Duration::from_millis(100));
     }
@@ -1877,36 +1880,39 @@ fn create_android_usb_backend_inner(
             );
             return Ok(None);
         };
-        let requested_playback_format =
-            state.requested_playback_format.unwrap_or(effective_playback_format);
-        let (playback_format, use_requested_playback_format) =
-            if effective_playback_format.sample_rate == preferred_sample_rate {
-                (effective_playback_format, false)
-            } else if requested_playback_format.sample_rate == preferred_sample_rate {
-                eprintln!(
+        let requested_playback_format = state
+            .requested_playback_format
+            .unwrap_or(effective_playback_format);
+        let (playback_format, use_requested_playback_format) = if effective_playback_format
+            .sample_rate
+            == preferred_sample_rate
+        {
+            (effective_playback_format, false)
+        } else if requested_playback_format.sample_rate == preferred_sample_rate {
+            eprintln!(
                     "Android USB direct backend: preferred {} Hz matched requested playback format for '{}' while effective playback format was {} Hz; using requested format",
                     preferred_sample_rate,
                     state.device.product_name,
                     effective_playback_format.sample_rate,
                 );
-                (requested_playback_format, true)
-            } else {
-                eprintln!(
+            (requested_playback_format, true)
+        } else {
+            eprintln!(
                     "Android USB direct backend skipped: preferred {} Hz did not match effective {} Hz or requested {} Hz for '{}'",
                     preferred_sample_rate,
                     effective_playback_format.sample_rate,
                     requested_playback_format.sample_rate,
                     state.device.product_name,
                 );
-                set_android_usb_engine_state(
-                    AndroidDirectUsbEngineState::Error,
-                    Some(format!(
-                        "Prepared playback rate did not match requested startup rate {} Hz",
-                        preferred_sample_rate
-                    )),
-                );
-                return Ok(None);
-            };
+            set_android_usb_engine_state(
+                AndroidDirectUsbEngineState::Error,
+                Some(format!(
+                    "Prepared playback rate did not match requested startup rate {} Hz",
+                    preferred_sample_rate
+                )),
+            );
+            return Ok(None);
+        };
         debug_assert_eq!(playback_format.sample_rate, preferred_sample_rate);
         (
             state.clone(),
@@ -1929,10 +1935,7 @@ fn create_android_usb_backend_inner(
     let mut claimed_handle = open_claimed_usb_handle(&state.device).map_err(|error| {
         set_last_error(Some(error.clone()));
         set_direct_mode_refusal_reason(Some(error.clone()));
-        set_android_usb_engine_state(
-            AndroidDirectUsbEngineState::Error,
-            Some(error.clone()),
-        );
+        set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(error.clone()));
         error
     })?;
     let requested_playback_format = state.requested_playback_format.unwrap_or(playback_format);
@@ -1945,20 +1948,23 @@ fn create_android_usb_backend_inner(
         Err(error) => {
             set_last_error(Some(error.clone()));
             set_direct_mode_refusal_reason(Some(error.clone()));
-            set_android_usb_engine_state(
-                AndroidDirectUsbEngineState::Error,
-                Some(error.clone()),
-            );
+            set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(error.clone()));
             cleanup_claimed_handle(claimed_handle, None, lock_requested);
             return Err(error);
         }
     };
-    let clock = find_audio_control_clock(&device, &claimed_handle.handle);
+    let clock = find_audio_control_clock(&device, &claimed_handle.handle, candidate.terminal_link);
     let clock_detection_msg = match &clock {
-        Some(c) => format!("Clock found: interface={}, clockId={}", c.interface_number, c.clock_id),
+        Some(c) => format!(
+            "Clock found: interface={}, clockId={}, via_terminal_link={:?}",
+            c.interface_number, c.clock_id, candidate.terminal_link,
+        ),
         None => "Clock NOT FOUND: no UAC2 clock entity in any AudioControl descriptor".to_string(),
     };
-    log::info!("[USB] Clock entity for '{}': {}", state.device.product_name, clock_detection_msg);
+    eprintln!(
+        "[USB] Clock entity for '{}': {}",
+        state.device.product_name, clock_detection_msg
+    );
 
     set_last_error(Some(format!("[clock-diag] {}", clock_detection_msg)));
     set_direct_mode_refusal_reason(None);
@@ -2030,10 +2036,7 @@ fn create_android_usb_backend_inner(
     if let Err(error) = claimed_handle.ensure_interface_claimed(candidate.interface_number) {
         set_last_error(Some(error.clone()));
         set_direct_mode_refusal_reason(Some(error.clone()));
-        set_android_usb_engine_state(
-            AndroidDirectUsbEngineState::Error,
-            Some(error.clone()),
-        );
+        set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(error.clone()));
         cleanup_claimed_handle(claimed_handle, None, lock_requested);
         return Err(error);
     }
@@ -2056,88 +2059,73 @@ fn create_android_usb_backend_inner(
         if let Err(e) = claimed_handle.ensure_interface_claimed(clock.interface_number) {
             log::error!(
                 "[USB] Failed to claim AudioControl interface {}: {}",
-                clock.interface_number, e,
+                clock.interface_number,
+                e,
             );
         }
         match state.dac_mode {
             DacMode::FullControl => {
-                let clock_already_verified = state.clock_verification_passed
-                    && state.clock_status.as_ref().is_some_and(|status| {
-                        status.interface_number == clock.interface_number
-                            && status.clock_id == clock.clock_id
-                            && status.reported_sample_rate == Some(playback_format.sample_rate)
-                    });
+                // ALWAYS send SET_CUR + verify, even if a previous negotiation
+                // already programmed the clock. The alt-setting reset to 0 above
+                // can cause some DACs to revert to a default rate (384kHz etc.),
+                // and cached state from a prior session cannot be trusted.
+                let clock_outcome = apply_sampling_frequency(
+                    &claimed_handle.handle,
+                    clock.interface_number,
+                    clock.clock_id,
+                    playback_format.sample_rate,
+                    clock_settle_delay_ms,
+                );
+                clock_control_attempted = true;
+                clock_control_succeeded = clock_outcome.clock_ok;
+                reported_sample_rate = clock_outcome.reported_sample_rate;
+                clock_verification_passed = clock_outcome.rate_verified
+                    && clock_outcome.reported_sample_rate == Some(playback_format.sample_rate);
+                set_clock_verification(
+                    clock_control_attempted,
+                    clock_control_succeeded,
+                    clock_verification_passed,
+                    reported_sample_rate,
+                );
 
-                if clock_already_verified {
+                let clock_result_msg = format!(
+                    "[clock-diag] SET_CUR {}Hz: clockOk={}, rateVerified={}, reported={}Hz, clockId={}, iface={}{}",
+                    playback_format.sample_rate,
+                    clock_outcome.clock_ok,
+                    clock_outcome.rate_verified,
+                    clock_outcome.reported_sample_rate.unwrap_or(0),
+                    clock.clock_id,
+                    clock.interface_number,
+                    clock_outcome.message.as_ref().map(|m| format!(", msg={}", m)).unwrap_or_default(),
+                );
+                eprintln!("{}", clock_result_msg);
+                set_last_error(Some(clock_result_msg));
+
+                if !clock_outcome.clock_ok {
                     eprintln!(
-                        "Android USB direct: reusing verified USB clock {} on interface {} at {} Hz; skipping redundant SET_CUR before alt {}",
-                        clock.clock_id,
-                        clock.interface_number,
+                        "[USB] SET_CUR {}Hz -> FAILED: DAC reported={}Hz, verified={}",
                         playback_format.sample_rate,
-                        candidate.alt_setting,
-                    );
-                } else {
-                    let clock_outcome = apply_sampling_frequency(
-                        &claimed_handle.handle,
-                        clock.interface_number,
-                        clock.clock_id,
-                        playback_format.sample_rate,
-                        clock_settle_delay_ms,
-                    );
-                    clock_control_attempted = true;
-                    clock_control_succeeded = clock_outcome.clock_ok;
-                    reported_sample_rate = clock_outcome.reported_sample_rate;
-                    clock_verification_passed = clock_outcome.rate_verified
-                        && clock_outcome.reported_sample_rate == Some(playback_format.sample_rate);
-                    set_clock_verification(
-                        clock_control_attempted,
-                        clock_control_succeeded,
-                        clock_verification_passed,
-                        reported_sample_rate,
-                    );
-
-                    let clock_result_msg = format!(
-                        "[clock-diag] SET_CUR {}Hz: clockOk={}, rateVerified={}, reported={}Hz, clockId={}, iface={}{}",
-                        playback_format.sample_rate,
-                        clock_outcome.clock_ok,
-                        clock_outcome.rate_verified,
                         clock_outcome.reported_sample_rate.unwrap_or(0),
-                        clock.clock_id,
-                        clock.interface_number,
-                        clock_outcome.message.as_ref().map(|m| format!(", msg={}", m)).unwrap_or_default(),
+                        clock_verification_passed,
                     );
-                    log::info!("{}", clock_result_msg);
-                    set_last_error(Some(clock_result_msg));
-
-                    if !clock_outcome.clock_ok {
-                        log::error!(
-                            "[USB] SET_CUR {}Hz -> FAILED (continuing direct USB, reported={}Hz, verified={})",
-                            playback_format.sample_rate,
-                            clock_outcome
-                                .reported_sample_rate
-                                .unwrap_or(playback_format.sample_rate),
-                            clock_verification_passed,
-                        );
-                    }
-
-                    if clock_outcome.known_mismatch {
-                        log::error!(
-                            "[USB] SET_CUR {}Hz -> MISMATCH (continuing direct USB, DAC reports {}Hz, verified={})",
-                            playback_format.sample_rate,
-                            clock_outcome
-                                .reported_sample_rate
-                                .unwrap_or_default(),
-                            clock_verification_passed,
-                        );
-                    }
                 }
 
-                log::info!(
-                    "[USB] VALIDATION: usbClaimed={}, alt={}, endpoint=0x{:02x}, rate={}Hz",
+                if clock_outcome.known_mismatch {
+                    eprintln!(
+                        "[USB] SET_CUR {}Hz -> MISMATCH: DAC reports {}Hz",
+                        playback_format.sample_rate,
+                        clock_outcome.reported_sample_rate.unwrap_or_default(),
+                    );
+                }
+
+                eprintln!(
+                    "[USB] VALIDATION: usbClaimed={}, alt={}, endpoint=0x{:02x}, requestedRate={}Hz, dacRate={}Hz, verified={}",
                     claimed_handle.claimed_interfaces.contains(&candidate.interface_number),
                     candidate.alt_setting,
                     candidate.endpoint_address,
                     playback_format.sample_rate,
+                    reported_sample_rate.unwrap_or(0),
+                    clock_verification_passed,
                 );
             }
             DacMode::FixedClock | DacMode::AdaptiveStreaming => {
@@ -2179,18 +2167,18 @@ fn create_android_usb_backend_inner(
                         playback_format.sample_rate, candidate.alt_setting
                     );
                 } else {
-                    let message = format!(
-                        "Android USB direct could not verify fixed clock {} Hz for alt setting {}; continuing with assumed stream rate",
-                        playback_format.sample_rate, candidate.alt_setting
+                    eprintln!(
+                        "[USB] Cannot verify fixed clock {}Hz for alt {} — will refuse streaming",
+                        playback_format.sample_rate, candidate.alt_setting,
                     );
-                    reported_sample_rate = Some(playback_format.sample_rate);
+                    reported_sample_rate = None;
+                    clock_verification_passed = false;
                     set_clock_verification(
                         clock_control_attempted,
                         clock_control_succeeded,
                         false,
-                        reported_sample_rate,
+                        None,
                     );
-                    eprintln!("{}", message);
                 }
 
                 set_clock_verification(
@@ -2218,17 +2206,18 @@ fn create_android_usb_backend_inner(
         set_last_error(Some(msg));
     } else {
         let message = format!(
-            "[clock-diag] Cannot verify {}Hz: no clock entity + alt {} does not advertise rate",
+            "[clock-diag] Cannot verify {}Hz: no clock entity + alt {} does not advertise rate — will refuse",
             playback_format.sample_rate, candidate.alt_setting
         );
-        reported_sample_rate = Some(playback_format.sample_rate);
+        reported_sample_rate = None;
+        clock_verification_passed = false;
         set_clock_verification(
             clock_control_attempted,
             clock_control_succeeded,
             false,
-            reported_sample_rate,
+            None,
         );
-        log::error!("{}", message);
+        eprintln!("{}", message);
         set_last_error(Some(message));
     }
 
@@ -2242,10 +2231,7 @@ fn create_android_usb_backend_inner(
         );
         set_last_error(Some(msg.clone()));
         set_direct_mode_refusal_reason(Some(msg.clone()));
-        set_android_usb_engine_state(
-            AndroidDirectUsbEngineState::Error,
-            Some(msg.clone()),
-        );
+        set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(msg.clone()));
         cleanup_claimed_handle(claimed_handle, None, lock_requested);
         return Err(msg);
     }
@@ -2261,10 +2247,7 @@ fn create_android_usb_backend_inner(
         );
         set_last_error(Some(refusal.clone()));
         set_direct_mode_refusal_reason(Some(refusal.clone()));
-        set_android_usb_engine_state(
-            AndroidDirectUsbEngineState::Error,
-            Some(refusal.clone()),
-        );
+        set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(refusal.clone()));
         cleanup_claimed_handle(
             claimed_handle,
             Some(candidate.interface_number),
@@ -2280,10 +2263,7 @@ fn create_android_usb_backend_inner(
         );
         set_last_error(Some(refusal.clone()));
         set_direct_mode_refusal_reason(Some(refusal.clone()));
-        set_android_usb_engine_state(
-            AndroidDirectUsbEngineState::Error,
-            Some(refusal.clone()),
-        );
+        set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(refusal.clone()));
         cleanup_claimed_handle(
             claimed_handle,
             Some(candidate.interface_number),
@@ -2305,6 +2285,61 @@ fn create_android_usb_backend_inner(
         return Err(refusal);
     }
 
+    // Post-alt-setting clock re-verification.
+    // Some DACs reset their clock when the alt setting changes. Re-read
+    // GET_CUR after switching to the streaming alt setting and if the
+    // rate is wrong, try one more SET_CUR + verify cycle.
+    if let Some(clock) = clock {
+        match get_sampling_frequency(
+            &claimed_handle.handle,
+            clock.interface_number,
+            clock.clock_id,
+        ) {
+            Ok(post_alt_rate) => {
+                eprintln!(
+                    "[USB] GET_CUR (post-alt): clock {} reports {}Hz (expected {}Hz)",
+                    clock.clock_id, post_alt_rate, playback_format.sample_rate,
+                );
+                if post_alt_rate != playback_format.sample_rate {
+                    eprintln!(
+                        "[USB] DAC clock drifted after alt-setting change ({} -> {}Hz); re-issuing SET_CUR",
+                        playback_format.sample_rate, post_alt_rate,
+                    );
+                    let retry = apply_sampling_frequency(
+                        &claimed_handle.handle,
+                        clock.interface_number,
+                        clock.clock_id,
+                        playback_format.sample_rate,
+                        clock_settle_delay_ms,
+                    );
+                    clock_control_attempted = true;
+                    clock_control_succeeded = retry.clock_ok;
+                    reported_sample_rate = retry.reported_sample_rate;
+                    clock_verification_passed = retry.rate_verified
+                        && retry.reported_sample_rate == Some(playback_format.sample_rate);
+                    set_clock_verification(
+                        clock_control_attempted,
+                        clock_control_succeeded,
+                        clock_verification_passed,
+                        reported_sample_rate,
+                    );
+                    eprintln!(
+                        "[USB] Re-SET_CUR result: clockOk={}, verified={}, reported={}Hz",
+                        retry.clock_ok,
+                        clock_verification_passed,
+                        retry.reported_sample_rate.unwrap_or(0),
+                    );
+                }
+            }
+            Err(error) => {
+                eprintln!(
+                    "[USB] GET_CUR (post-alt): failed for clock {}: {}",
+                    clock.clock_id, error,
+                );
+            }
+        }
+    }
+
     eprintln!(
         "Android USB direct output opened '{}' requested {} Hz / {}-bit / {} ch, transport {} / {} ch / {}-byte subslot on endpoint 0x{:02x} (interface {}, alt {}, speed {:?})",
         state.device.product_name,
@@ -2320,6 +2355,9 @@ fn create_android_usb_backend_inner(
         speed,
     );
 
+    // Hard-abort: if the clock is unverified or mismatched, refuse to
+    // stream. Sending audio at the wrong sample rate causes chipmunk /
+    // distorted playback.  There is NO "continue anyway" path.
     if !clock_verification_passed {
         reported_sample_rate = reported_sample_rate.or(Some(playback_format.sample_rate));
         set_clock_verification(
@@ -2329,47 +2367,35 @@ fn create_android_usb_backend_inner(
             reported_sample_rate,
         );
 
-        if state.require_verified_rate {
-            let refusal = format!(
-                "Bit-perfect playback refused: DAC clock at {}Hz could not be verified (require_verified_rate=true, reported={}Hz)",
-                playback_format.sample_rate,
-                reported_sample_rate.unwrap_or(0),
-            );
-            eprintln!("[USB] {}", refusal);
-            set_last_error(Some(refusal.clone()));
-            set_direct_mode_refusal_reason(Some(refusal.clone()));
-            set_android_usb_engine_state(
-                AndroidDirectUsbEngineState::Error,
-                Some(refusal.clone()),
-            );
-            cleanup_claimed_handle(
-                claimed_handle,
-                Some(candidate.interface_number),
-                lock_requested,
-            );
-            return Err(refusal);
-        }
-
-        eprintln!(
-            "[USB] Actual sample rate is unverified for {}Hz playback; continuing direct USB with assumed/reported rate {}Hz",
+        let refusal = format!(
+            "USB direct refused: DAC clock not verified at {}Hz (reported={}Hz, attempted={}, succeeded={})",
             playback_format.sample_rate,
-            reported_sample_rate.unwrap_or(playback_format.sample_rate),
+            reported_sample_rate.unwrap_or(0),
+            clock_control_attempted,
+            clock_control_succeeded,
         );
+        eprintln!("[USB] {}", refusal);
+        set_last_error(Some(refusal.clone()));
+        set_direct_mode_refusal_reason(Some(refusal.clone()));
+        set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(refusal.clone()));
+        cleanup_claimed_handle(
+            claimed_handle,
+            Some(candidate.interface_number),
+            lock_requested,
+        );
+        return Err(refusal);
     }
 
     if let Some(rate) = reported_sample_rate {
         if rate != playback_format.sample_rate {
             let refusal = format!(
-                "Bit-perfect playback refused: DAC clock mismatch (requested {}Hz, reported {}Hz)",
+                "USB direct refused: DAC clock mismatch (requested {}Hz, reported {}Hz)",
                 playback_format.sample_rate, rate,
             );
             eprintln!("[USB] {}", refusal);
             set_last_error(Some(refusal.clone()));
             set_direct_mode_refusal_reason(Some(refusal.clone()));
-            set_android_usb_engine_state(
-                AndroidDirectUsbEngineState::Error,
-                Some(refusal.clone()),
-            );
+            set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(refusal.clone()));
             cleanup_claimed_handle(
                 claimed_handle,
                 Some(candidate.interface_number),
@@ -2378,6 +2404,64 @@ fn create_android_usb_backend_inner(
             return Err(refusal);
         }
     }
+
+    let bytes_per_frame = candidate.subslot_size as usize * candidate.channels as usize;
+    if bytes_per_frame == 0 {
+        let refusal = format!(
+            "USB direct refused: zero-size frame (subslot={}, channels={})",
+            candidate.subslot_size, candidate.channels,
+        );
+        eprintln!("[USB] {}", refusal);
+        set_last_error(Some(refusal.clone()));
+        set_direct_mode_refusal_reason(Some(refusal.clone()));
+        cleanup_claimed_handle(
+            claimed_handle,
+            Some(candidate.interface_number),
+            lock_requested,
+        );
+        return Err(refusal);
+    }
+
+    eprintln!("[USB] === PRE-STREAM VALIDATION ===");
+    eprintln!(
+        "[USB]   requested_rate  = {}Hz",
+        playback_format.sample_rate
+    );
+    eprintln!(
+        "[USB]   dac_reported    = {}Hz",
+        reported_sample_rate.unwrap_or(0)
+    );
+    eprintln!("[USB]   clock_verified  = {}", clock_verification_passed);
+    eprintln!("[USB]   bit_depth       = {}", playback_format.bit_depth);
+    eprintln!("[USB]   channels        = {}", playback_format.channels);
+    eprintln!("[USB]   subslot_size    = {} bytes", candidate.subslot_size);
+    eprintln!("[USB]   bytes_per_frame = {}", bytes_per_frame);
+    eprintln!(
+        "[USB]   interval_us     = {}",
+        candidate.service_interval_us
+    );
+    eprintln!(
+        "[USB]   max_packet_size = {} bytes",
+        candidate.max_packet_bytes
+    );
+    eprintln!("[USB] ============================");
+    log_info!(
+        "[USB] FINAL_STREAM_FORMAT: sample_rate_hz={} dac_reported_hz={:?} clock_verified={} \
+         app_bit_depth={} transport_bit_resolution={} subslot_bytes={} channels={} \
+         endpoint=0x{:02x} alt={} format_tag=0x{:04x} max_packet_bytes={} \
+         (A/B: try Dart prepare with 48000/16/2 if you suspect format mismatch)",
+        playback_format.sample_rate,
+        reported_sample_rate,
+        clock_verification_passed,
+        playback_format.bit_depth,
+        candidate.bit_resolution,
+        candidate.subslot_size,
+        playback_format.channels,
+        candidate.endpoint_address,
+        candidate.alt_setting,
+        candidate.format_tag,
+        candidate.max_packet_bytes,
+    );
 
     set_last_error(None);
     set_direct_mode_refusal_reason(None);
@@ -2393,7 +2477,7 @@ fn create_android_usb_backend_inner(
     set_runtime_stats(Some(Arc::clone(&runtime_stats)));
     let mut preview_scheduler = IsoPacketScheduler::new(
         playback_format.sample_rate,
-        candidate.subslot_size as usize * candidate.channels as usize,
+        bytes_per_frame,
         candidate.service_interval_us,
     );
     let packet_schedule_preview = preview_scheduler
@@ -2574,6 +2658,12 @@ impl IsoPacketScheduler {
         });
     }
 
+    /// After enough successful isochronous completions, stop using feedback-derived frame counts.
+    fn lock_to_nominal_packet_timing(&mut self) {
+        self.feedback_frames_per_packet = None;
+        self.feedback_remainder = 0.0;
+    }
+
     fn next_packet_bytes(&mut self) -> usize {
         let frames = if let Some(feedback_frames_per_packet) = self.feedback_frames_per_packet {
             self.feedback_remainder += feedback_frames_per_packet;
@@ -2607,6 +2697,7 @@ fn run_usb_render_loop(
     let mut render_buffer = vec![0.0f32; chunk_samples];
     let mut pcm_samples = vec![0i32; chunk_samples];
     let mut warned_no_frames = false;
+    let mut logged_render_preview = false;
 
     while !stop.load(Ordering::Acquire) {
         let buffered_samples = {
@@ -2640,14 +2731,87 @@ fn run_usb_render_loop(
             let message = format!("Android USB direct PCM render conversion failed: {}", error);
             eprintln!("{}", message);
             set_last_error(Some(message.clone()));
-            set_android_usb_engine_state(
-                AndroidDirectUsbEngineState::Error,
-                Some(message.clone()),
-            );
+            set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(message.clone()));
             let _ = event_tx.try_send(AudioEvent::Error { message });
             break;
         }
 
+        {
+            let non_zero = render_buffer.iter().filter(|s| **s != 0.0).count();
+            if !logged_render_preview && non_zero > 0 {
+                let f32_min = render_buffer.iter().cloned().fold(f32::INFINITY, f32::min);
+                let f32_max = render_buffer
+                    .iter()
+                    .cloned()
+                    .fold(f32::NEG_INFINITY, f32::max);
+                let f32_max_abs = render_buffer.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+                let i32_min = pcm_samples.iter().copied().min().unwrap_or(0);
+                let i32_max = pcm_samples.iter().copied().max().unwrap_or(0);
+                let i32_max_abs = pcm_samples
+                    .iter()
+                    .map(|&s| (s as i64).unsigned_abs())
+                    .max()
+                    .unwrap_or(0);
+                let preview_base = render_buffer
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, s)| (*s != 0.0).then_some(i))
+                    .unwrap_or(0);
+                let preview_len = 16.min(render_buffer.len().saturating_sub(preview_base));
+                let f32_preview: Vec<f32> = render_buffer
+                    .iter()
+                    .skip(preview_base)
+                    .take(preview_len)
+                    .copied()
+                    .collect();
+                let i32_preview: Vec<i32> = pcm_samples
+                    .iter()
+                    .skip(preview_base)
+                    .take(preview_len)
+                    .copied()
+                    .collect();
+                log_info!(
+                    "[USB-RENDER] === PIPELINE CHECK (first non-zero) === bit_depth={} channels={} chunk_frames={}{}",
+                    playback_format.bit_depth,
+                    channels,
+                    chunk_frames,
+                    if channels == 2 {
+                        " layout=interleaved_LR (L,R,L,R — Symphonia channel index order)"
+                    } else {
+                        " layout=interleaved (channel index order)"
+                    },
+                );
+                log_info!(
+                    "[USB-RENDER] preview @sample_index={} ({} values): f32 {:?}",
+                    preview_base,
+                    preview_len,
+                    f32_preview,
+                );
+                log_info!(
+                    "[USB-RENDER] f32 stats: non_zero={}/{} min={:.6} max={:.6} max_abs={:.6}",
+                    non_zero,
+                    render_buffer.len(),
+                    f32_min,
+                    f32_max,
+                    f32_max_abs,
+                );
+                log_info!(
+                    "[USB-RENDER] i32 preview: {:?} | min={} max={} max_abs={} (linear i32 = clamp(f32 * 2147483647); USB 16-bit uses >>16)",
+                    i32_preview,
+                    i32_min,
+                    i32_max,
+                    i32_max_abs,
+                );
+                logged_render_preview = true;
+            }
+        }
+
+        debug_assert!(
+            pcm_samples.len() % channels == 0,
+            "push_samples: input length {} is not frame-aligned (channels={})",
+            pcm_samples.len(),
+            channels,
+        );
         let written_samples = {
             let mut guard = pcm_buffer.lock();
             let written = guard.push_samples(&pcm_samples);
@@ -2659,6 +2823,24 @@ fn run_usb_render_loop(
         runtime_stats
             .producer_frames
             .fetch_add((written_samples / channels) as u64, Ordering::Relaxed);
+
+        if written_samples > 0 {
+            let push_max_abs_f32 = render_buffer[..written_samples]
+                .iter()
+                .fold(0.0f32, |max_abs, sample| max_abs.max(sample.abs()));
+            let push_max_abs_i32_u32 = pcm_samples[..written_samples]
+                .iter()
+                .map(|&s| (s as i64).unsigned_abs())
+                .max()
+                .unwrap_or(0)
+                .min(u64::from(u32::MAX)) as u32;
+            runtime_stats
+                .last_push_max_abs_f32_bits
+                .store(push_max_abs_f32.to_bits(), Ordering::Relaxed);
+            runtime_stats
+                .last_push_max_abs_i32
+                .store(push_max_abs_i32_u32, Ordering::Relaxed);
+        }
 
         if written_samples > 0 && warned_no_frames {
             let should_clear_warning = DIRECT_USB_STATE
@@ -2698,10 +2880,7 @@ fn run_usb_output_loop(
     if slot_bytes == 0 {
         let message = "Android USB direct selected an invalid zero-byte subslot".to_string();
         set_last_error(Some(message.clone()));
-        set_android_usb_engine_state(
-            AndroidDirectUsbEngineState::Error,
-            Some(message.clone()),
-        );
+        set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(message.clone()));
         let _ = event_tx.try_send(AudioEvent::Error { message });
         cleanup_claimed_handle(
             AndroidDirectUsbClaimedHandle {
@@ -2719,10 +2898,7 @@ fn run_usb_output_loop(
 
     if let Err(error) = validate_transport_against_playback_format(&candidate, playback_format) {
         set_last_error(Some(error.clone()));
-        set_android_usb_engine_state(
-            AndroidDirectUsbEngineState::Error,
-            Some(error.clone()),
-        );
+        set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(error.clone()));
         let _ = event_tx.try_send(AudioEvent::Error { message: error });
         cleanup_claimed_handle(
             AndroidDirectUsbClaimedHandle {
@@ -2746,9 +2922,31 @@ fn run_usb_output_loop(
         candidate.service_interval_us,
     );
     let mut logged_transfer_preview = false;
-    let mut clean_transfers = 0usize;
+    let mut logged_usb_encode_format = false;
+    // Isochronous OUT transfers that completed successfully (libusb COMPLETED). Not reset on underrun.
+    let mut successful_transfers = 0usize;
+    let mut logged_usb_stabilized = false;
     let mut underrun_count = 0u64;
     let mut feedback_report_count = 0usize;
+    let mut loud_transfer_log_count = 0u64;
+
+    let priming_target = runtime_stats.buffer_target_samples;
+    log_info!(
+        "[USB] Waiting for stream prime: buffered_samples must reach buffer_target_samples={} before isochronous submit",
+        priming_target,
+    );
+    while !stop.load(Ordering::Acquire) {
+        let buffered = runtime_stats.buffered_samples.load(Ordering::Relaxed);
+        if buffered >= priming_target {
+            log_info!(
+                "[USB] USB stream primed: {} samples buffered (target={})",
+                buffered,
+                priming_target,
+            );
+            break;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
 
     while !stop.load(Ordering::Acquire) {
         let packet_bytes = scheduler.next_transfer_packet_bytes();
@@ -2767,10 +2965,7 @@ fn run_usb_output_loop(
                 packet_bytes, candidate.max_packet_bytes
             );
             set_last_error(Some(error.clone()));
-            set_android_usb_engine_state(
-                AndroidDirectUsbEngineState::Error,
-                Some(error.clone()),
-            );
+            set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(error.clone()));
             let _ = event_tx.try_send(AudioEvent::Error { message: error });
             break;
         }
@@ -2784,10 +2979,7 @@ fn run_usb_output_loop(
                 bytes_per_frame, packet_bytes
             );
             set_last_error(Some(error.clone()));
-            set_android_usb_engine_state(
-                AndroidDirectUsbEngineState::Error,
-                Some(error.clone()),
-            );
+            set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(error.clone()));
             let _ = event_tx.try_send(AudioEvent::Error { message: error });
             break;
         }
@@ -2803,22 +2995,71 @@ fn run_usb_output_loop(
             underrun
         };
         let mut transfer_buffer = vec![0u8; total_bytes];
-        encode_pcm_bytes(
+        if !logged_usb_encode_format {
+            log_info!(
+                "[USB] PCM encoding: {}-bit (subslot {} bytes) per descriptor",
+                candidate.bit_resolution,
+                candidate.subslot_size,
+            );
+            logged_usb_encode_format = true;
+        }
+        if let Err(error) = encode_usb_pcm_slots(
             &packet_samples,
             &mut transfer_buffer,
             candidate.subslot_size,
-        );
+            candidate.bit_resolution,
+        ) {
+            let message = format!("Android USB direct PCM packing failed: {}", error);
+            set_last_error(Some(message.clone()));
+            set_android_usb_engine_state(AndroidDirectUsbEngineState::Error, Some(message.clone()));
+            let _ = event_tx.try_send(AudioEvent::Error { message });
+            break;
+        }
+
+        let packet_max_abs_i64 = packet_samples
+            .iter()
+            .map(|sample| i64::from(*sample).abs())
+            .max()
+            .unwrap_or(0);
+        let packet_peak_equiv_f32 = (packet_max_abs_i64 as f64 / 2_147_483_647.0).min(1.0);
+        if packet_peak_equiv_f32 >= f64::from(ANDROID_USB_LOUD_RENDER_LOG_THRESHOLD) {
+            loud_transfer_log_count = loud_transfer_log_count.saturating_add(1);
+            if loud_transfer_log_count <= 4
+                || loud_transfer_log_count % ANDROID_USB_LOUD_TRANSFER_LOG_INTERVAL == 0
+            {
+                let max_abs_i16 = packet_samples
+                    .iter()
+                    .map(|sample| i32::from(linear_pcm_i32_to_i16(*sample)).abs())
+                    .max()
+                    .unwrap_or(0);
+                let last_push_i32 = runtime_stats.last_push_max_abs_i32.load(Ordering::Relaxed);
+                let last_push_f32 = f32::from_bits(
+                    runtime_stats
+                        .last_push_max_abs_f32_bits
+                        .load(Ordering::Relaxed),
+                );
+                log_info!(
+                    "[USB-PEAK] loud_packet packet_peak_equiv_f32={:.6} max_abs_i32={} max_abs_i16={} samples={} subslot={} bit_resolution={} last_push_max_abs_i32={} last_push_peak_abs_f32={:.6}",
+                    packet_peak_equiv_f32,
+                    packet_max_abs_i64,
+                    max_abs_i16,
+                    packet_samples.len(),
+                    candidate.subslot_size,
+                    candidate.bit_resolution,
+                    last_push_i32,
+                    last_push_f32,
+                );
+            }
+        }
 
         if underrun {
             underrun_count = underrun_count.saturating_add(1);
             runtime_stats
                 .underrun_count
                 .store(underrun_count, Ordering::Relaxed);
-            clean_transfers = 0;
-            set_usb_stream_stable(false);
             if underrun_count <= 4 || underrun_count % 64 == 0 {
-                eprintln!(
-                    "Android USB direct underrun: count={}, buffer_fill={}ms, frames_per_packet={}, packets_per_transfer={}",
+                log_info!(
+                    "[USB] underrun count={} buffer_fill={}ms frames_per_packet={} packets_per_transfer={}",
                     underrun_count,
                     runtime_stats.buffer_fill_ms(),
                     packet_bytes.first().copied().unwrap_or_default() / bytes_per_frame,
@@ -2828,14 +3069,33 @@ fn run_usb_output_loop(
         }
 
         if !logged_transfer_preview {
-            log_stream_debug_preview(
-                playback_format,
-                &candidate,
-                &packet_bytes,
-                &packet_samples,
-                &transfer_buffer,
-            );
-            logged_transfer_preview = true;
+            let has_nonzero = packet_samples.iter().any(|s| *s != 0);
+            if has_nonzero {
+                let i32_pre: Vec<i32> = packet_samples.iter().take(10).copied().collect();
+                let byte_pre: Vec<u8> = transfer_buffer.iter().take(24).copied().collect();
+                log_info!(
+                    "[USB-OUTPUT] first 10 i32 samples (non-zero): {:?}",
+                    i32_pre,
+                );
+                if candidate.subslot_size == 2 && candidate.bit_resolution == 16 {
+                    let i16_pre: Vec<i16> = packet_samples
+                        .iter()
+                        .take(10)
+                        .copied()
+                        .map(linear_pcm_i32_to_i16)
+                        .collect();
+                    log_info!("[USB-OUTPUT] first 10 as i16 (linear >>16): {:?}", i16_pre,);
+                }
+                log_info!("[USB-OUTPUT] first 24 encoded bytes: {:?}", byte_pre,);
+                log_stream_debug_preview(
+                    playback_format,
+                    &candidate,
+                    &packet_bytes,
+                    &packet_samples,
+                    &transfer_buffer,
+                );
+                logged_transfer_preview = true;
+            }
         }
 
         if let Err(error) = submit_iso_transfer(
@@ -2861,30 +3121,33 @@ fn run_usb_output_loop(
             break;
         }
 
-        if let Some(feedback_endpoint) = candidate.feedback_endpoint {
-            match read_feedback_report(&context, &handle, feedback_endpoint, device_fd) {
-                Ok(Some(feedback_report)) => {
-                    scheduler.update_feedback_frames_per_packet(
-                        feedback_report.frames_per_packet,
-                    );
-                    feedback_report_count = feedback_report_count.saturating_add(1);
-                    if feedback_report_count <= 4 || feedback_report_count % 128 == 0 {
+        successful_transfers = successful_transfers.saturating_add(1);
+
+        if successful_transfers < ANDROID_USB_STABLE_TRANSFER_THRESHOLD {
+            if let Some(feedback_endpoint) = candidate.feedback_endpoint {
+                match read_feedback_report(&context, &handle, feedback_endpoint, device_fd) {
+                    Ok(Some(feedback_report)) => {
+                        scheduler
+                            .update_feedback_frames_per_packet(feedback_report.frames_per_packet);
+                        feedback_report_count = feedback_report_count.saturating_add(1);
+                        if feedback_report_count <= 4 || feedback_report_count % 128 == 0 {
+                            eprintln!(
+                                "[USB] Feedback endpoint 0x{:02x} {} bytes={:02x?} framesPerPacket={:.4} sampleRate≈{:.2}Hz",
+                                feedback_endpoint.address,
+                                transfer_type_label(feedback_endpoint.transfer_type),
+                                feedback_report.raw_bytes,
+                                feedback_report.frames_per_packet,
+                                feedback_report.estimated_sample_rate,
+                            );
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
                         eprintln!(
-                            "[USB] Feedback endpoint 0x{:02x} {} bytes={:02x?} framesPerPacket={:.4} sampleRate≈{:.2}Hz",
-                            feedback_endpoint.address,
-                            transfer_type_label(feedback_endpoint.transfer_type),
-                            feedback_report.raw_bytes,
-                            feedback_report.frames_per_packet,
-                            feedback_report.estimated_sample_rate,
+                            "[USB] Feedback endpoint 0x{:02x} read failed: {}",
+                            feedback_endpoint.address, error
                         );
                     }
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    eprintln!(
-                        "[USB] Feedback endpoint 0x{:02x} read failed: {}",
-                        feedback_endpoint.address, error
-                    );
                 }
             }
         }
@@ -2897,11 +3160,22 @@ fn run_usb_output_loop(
             .consumer_frames
             .fetch_add((packet_samples.len() / channels) as u64, Ordering::Relaxed);
 
-        if !underrun {
-            clean_transfers = clean_transfers.saturating_add(1);
-        }
-        if clean_transfers >= ANDROID_USB_STABLE_TRANSFER_THRESHOLD {
-            set_usb_stream_stable(true);
+        if successful_transfers >= ANDROID_USB_STABLE_TRANSFER_THRESHOLD {
+            if !underrun {
+                set_usb_stream_stable(true);
+                if !logged_usb_stabilized {
+                    scheduler.lock_to_nominal_packet_timing();
+                    log_info!(
+                        "[USB] USB stream stabilized after {} isochronous transfers (nominal packet timing locked)",
+                        successful_transfers
+                    );
+                    logged_usb_stabilized = true;
+                }
+            } else {
+                set_usb_stream_stable(false);
+            }
+        } else {
+            set_usb_stream_stable(false);
         }
     }
 
@@ -2938,9 +3212,7 @@ fn read_feedback_report(
     _device_fd: RawFd,
 ) -> Result<Option<AndroidUsbFeedbackReport>, String> {
     let raw_bytes = match feedback_endpoint.transfer_type {
-        TransferType::Interrupt => {
-            read_interrupt_feedback_packet(handle, feedback_endpoint)?
-        }
+        TransferType::Interrupt => read_interrupt_feedback_packet(handle, feedback_endpoint)?,
         TransferType::Isochronous => read_iso_feedback_packet(context, handle, feedback_endpoint)?,
         other => {
             return Err(format!(
@@ -2992,8 +3264,9 @@ fn decode_feedback_report(
 ) -> Option<(f64, f64)> {
     let (frames_per_base_interval, base_interval_us) = match raw_bytes.len() {
         3 => {
-            let raw =
-                u32::from(raw_bytes[0]) | (u32::from(raw_bytes[1]) << 8) | (u32::from(raw_bytes[2]) << 16);
+            let raw = u32::from(raw_bytes[0])
+                | (u32::from(raw_bytes[1]) << 8)
+                | (u32::from(raw_bytes[2]) << 16);
             (
                 raw as f64 / 16_384.0,
                 if feedback_endpoint.service_interval_us < 1_000 {
@@ -3044,6 +3317,17 @@ fn select_stream_candidate(
                 Some(format) => format,
                 None => continue,
             };
+            // TEMP: skip 24-bit until 16-bit is stable
+            if stream_format.bit_resolution > 16 {
+                eprintln!(
+                    "[USB] Skipping {}-bit candidate on interface {} alt {} (24-bit temporarily disabled)",
+                    stream_format.bit_resolution,
+                    descriptor.interface_number(),
+                    descriptor.setting_number(),
+                );
+                continue;
+            }
+
             let compatibility_penalty =
                 transport_compatibility_penalty(&stream_format, playback_format);
             if compatibility_penalty == u32::MAX {
@@ -3140,6 +3424,7 @@ fn select_stream_candidate(
                     refresh: endpoint.refresh(),
                     synch_address: endpoint.synch_address(),
                     feedback_endpoint,
+                    terminal_link: stream_format.terminal_link,
                 });
             }
         }
@@ -3224,9 +3509,17 @@ fn discover_audio_streaming_interfaces(device: &Device<Context>) -> Result<Vec<u
     Ok(interfaces)
 }
 
+/// Find the clock entity that feeds a specific streaming interface's terminal.
+///
+/// UAC2 topology: AudioStreaming AS_GENERAL.bTerminalLink → Terminal.bTerminalID,
+/// then Terminal.bCSourceID gives the Clock Entity ID.
+///
+/// If `terminal_link` is None or the trace fails, falls back to the first
+/// Clock Source found in the AudioControl descriptor.
 fn find_audio_control_clock(
     device: &Device<Context>,
     handle: &DeviceHandle<Context>,
+    terminal_link: Option<u8>,
 ) -> Option<AudioControlClock> {
     let config_descriptor = device.active_config_descriptor().ok()?;
 
@@ -3239,7 +3532,7 @@ fn find_audio_control_clock(
             }
 
             let extra = descriptor.extra();
-            log::info!(
+            eprintln!(
                 "[USB] AudioControl interface {} alt {} extra bytes: {} bytes",
                 descriptor.interface_number(),
                 descriptor.setting_number(),
@@ -3247,7 +3540,7 @@ fn find_audio_control_clock(
             );
 
             if extra.is_empty() {
-                log::warn!(
+                eprintln!(
                     "[USB] AudioControl interface {} has empty extra bytes; \
                      attempting raw GET_DESCRIPTOR fallback",
                     descriptor.interface_number(),
@@ -3262,37 +3555,95 @@ fn find_audio_control_clock(
                 continue;
             }
 
+            // Pass 1: build maps of terminal_id → clock_source_id and
+            // collect all clock source IDs.
+            let mut terminal_to_clock: Vec<(u8, u8)> = Vec::new();
+            let mut clock_source_ids: Vec<(u8, u8)> = Vec::new(); // (clock_id, ac_iface)
+            let ac_iface = descriptor.interface_number();
+
             let mut index = 0usize;
             while index + 2 < extra.len() {
                 let length = extra[index] as usize;
                 if length == 0 || index + length > extra.len() {
                     break;
                 }
+                let desc_type = extra[index + 1];
+                let desc_subtype = extra.get(index + 2).copied().unwrap_or_default();
 
-                let descriptor_type = extra[index + 1];
-                let descriptor_subtype = extra.get(index + 2).copied().unwrap_or_default();
-                if descriptor_type == USB_DT_CS_INTERFACE
-                    && descriptor_subtype == UAC2_CLOCK_SOURCE
-                    && length >= 4
-                {
-                    let clock_id = extra[index + 3];
-                    log::info!(
-                        "[USB] Found clock source: interface={} clockId={} (from extra bytes)",
-                        descriptor.interface_number(),
-                        clock_id,
-                    );
-                    return Some(AudioControlClock {
-                        interface_number: descriptor.interface_number(),
-                        clock_id,
-                    });
+                if desc_type == USB_DT_CS_INTERFACE {
+                    match desc_subtype {
+                        UAC2_INPUT_TERMINAL | UAC2_OUTPUT_TERMINAL if length >= 8 => {
+                            let terminal_id = extra[index + 3];
+                            let c_source_id = extra[index + 7];
+                            eprintln!(
+                                "[USB] Terminal id={} subtype={} -> bCSourceID={}",
+                                terminal_id,
+                                if desc_subtype == UAC2_INPUT_TERMINAL {
+                                    "IN"
+                                } else {
+                                    "OUT"
+                                },
+                                c_source_id,
+                            );
+                            terminal_to_clock.push((terminal_id, c_source_id));
+                        }
+                        UAC2_CLOCK_SOURCE if length >= 4 => {
+                            let clock_id = extra[index + 3];
+                            eprintln!(
+                                "[USB] Clock Source id={} on AC interface {}",
+                                clock_id, ac_iface,
+                            );
+                            clock_source_ids.push((clock_id, ac_iface));
+                        }
+                        _ => {}
+                    }
                 }
-
                 index += length;
+            }
+
+            // Pass 2: resolve via topology if terminal_link is known.
+            if let Some(tl) = terminal_link {
+                if let Some(&(_, c_source_id)) =
+                    terminal_to_clock.iter().find(|(tid, _)| *tid == tl)
+                {
+                    // Verify this c_source_id is actually a clock source.
+                    if clock_source_ids.iter().any(|(cid, _)| *cid == c_source_id) {
+                        eprintln!(
+                            "[USB] Clock resolved via topology: bTerminalLink={} -> bCSourceID={} on AC interface {}",
+                            tl, c_source_id, ac_iface,
+                        );
+                        return Some(AudioControlClock {
+                            interface_number: ac_iface,
+                            clock_id: c_source_id,
+                        });
+                    }
+                    eprintln!(
+                        "[USB] Terminal {} references bCSourceID={} but no matching Clock Source entity found; falling back",
+                        tl, c_source_id,
+                    );
+                } else {
+                    eprintln!(
+                        "[USB] bTerminalLink={} not found in AC descriptor terminals; falling back to first clock",
+                        tl,
+                    );
+                }
+            }
+
+            // Fallback: return the first Clock Source entity.
+            if let Some(&(clock_id, iface)) = clock_source_ids.first() {
+                eprintln!(
+                    "[USB] Using first Clock Source id={} on AC interface {} (fallback)",
+                    clock_id, iface,
+                );
+                return Some(AudioControlClock {
+                    interface_number: iface,
+                    clock_id,
+                });
             }
         }
     }
 
-    log::error!("[USB] No AudioControl clock source entity found in any interface descriptor");
+    eprintln!("[USB] No AudioControl clock source entity found in any interface descriptor");
     None
 }
 
@@ -3341,7 +3692,8 @@ fn find_clock_from_raw_config_descriptor(
             Err(error) => {
                 log::error!(
                     "[USB] Raw GET_DESCRIPTOR full read failed: {}; using partial {} bytes",
-                    error, read,
+                    error,
+                    read,
                 );
                 raw.truncate(read);
             }
@@ -3386,7 +3738,8 @@ fn parse_clock_from_raw_config(raw: &[u8], ac_interface_number: u8) -> Option<Au
             let clock_id = raw[pos + 3];
             log::info!(
                 "[USB] Found clock source via raw config descriptor: interface={} clockId={}",
-                ac_interface_number, clock_id,
+                ac_interface_number,
+                clock_id,
             );
             return Some(AudioControlClock {
                 interface_number: ac_interface_number,
@@ -3454,6 +3807,37 @@ fn get_sampling_frequency(
         ));
     }
     Ok(u32::from_le_bytes(data))
+}
+
+/// UAC2 Clock Validity Control (CS_CLOCK_VALID_CONTROL = 0x02).
+/// Returns Ok(true) if the clock is valid/stable, Ok(false) if invalid,
+/// or Err if the request is not supported.
+fn get_clock_validity(
+    handle: &DeviceHandle<Context>,
+    interface_number: u8,
+    clock_id: u8,
+) -> Result<bool, String> {
+    let request_type = USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE;
+    let value = UAC2_CLOCK_SOURCE_CLOCK_VALID_CONTROL;
+    let index = (interface_number as u16) | ((clock_id as u16) << 8);
+    let mut data = [0u8; 1];
+    let transferred = handle
+        .read_control(
+            request_type,
+            UAC2_REQUEST_GET_CUR,
+            value,
+            index,
+            &mut data,
+            Duration::from_millis(500),
+        )
+        .map_err(|error| format!("Clock Validity GET_CUR failed: {}", error))?;
+    if transferred != 1 {
+        return Err(format!(
+            "Clock Validity returned {} bytes, expected 1",
+            transferred
+        ));
+    }
+    Ok(data[0] != 0)
 }
 
 fn get_sampling_frequency_ranges(
@@ -3561,7 +3945,10 @@ fn apply_sampling_frequency(
 ) -> AndroidDirectUsbClockApplyOutcome {
     log::info!(
         "[USB] apply_sampling_frequency: interface={} clockId={} targetRate={}Hz settleDelay={}ms",
-        interface_number, clock_id, sample_rate, settle_delay_ms,
+        interface_number,
+        clock_id,
+        sample_rate,
+        settle_delay_ms,
     );
 
     let supported_ranges = get_sampling_frequency_ranges(handle, interface_number, clock_id).ok();
@@ -3577,7 +3964,8 @@ fn apply_sampling_frequency(
         None => {
             log::warn!(
                 "[USB] GET_RANGE: failed for clock {} on interface {}",
-                clock_id, interface_number,
+                clock_id,
+                interface_number,
             );
         }
     }
@@ -3600,28 +3988,20 @@ fn apply_sampling_frequency(
         }
     }
 
+    // Read current rate for diagnostics, but NEVER trust it as proof
+    // that the clock is correct. Always issue SET_CUR unconditionally
+    // because the DAC may report a stale rate or may have been
+    // reprogrammed by another app / alt-setting change.
     match get_sampling_frequency(handle, interface_number, clock_id) {
         Ok(current_rate) => {
-            log::info!(
-                "[USB] GET_CUR: clock {} on interface {} reports {}Hz (target={}Hz)",
+            eprintln!(
+                "[USB] GET_CUR (pre-SET): clock {} on interface {} reports {}Hz (target={}Hz)",
                 clock_id, interface_number, current_rate, sample_rate,
             );
-            if current_rate == sample_rate {
-                return AndroidDirectUsbClockApplyOutcome {
-                    clock_ok: true,
-                    rate_verified: true,
-                    reported_sample_rate: Some(current_rate),
-                    known_mismatch: false,
-                    message: Some(format!(
-                        "USB clock {} on interface {} is already running at {} Hz",
-                        clock_id, interface_number, current_rate
-                    )),
-                };
-            }
         }
         Err(error) => {
-            log::error!(
-                "[USB] GET_CUR: failed for clock {} on interface {}: {}",
+            eprintln!(
+                "[USB] GET_CUR (pre-SET): failed for clock {} on interface {}: {}",
                 clock_id, interface_number, error,
             );
         }
@@ -3634,7 +4014,10 @@ fn apply_sampling_frequency(
     for attempt in 1..=3 {
         log::info!(
             "[USB] SET_CUR attempt {}/3: clock {} interface {} rate {}Hz",
-            attempt, clock_id, interface_number, sample_rate,
+            attempt,
+            clock_id,
+            interface_number,
+            sample_rate,
         );
         match set_sampling_frequency(handle, interface_number, clock_id, sample_rate) {
             Ok(()) => {
@@ -3653,7 +4036,32 @@ fn apply_sampling_frequency(
             Ok(reported_sample_rate) => {
                 last_reported_rate = Some(reported_sample_rate);
                 if reported_sample_rate == sample_rate {
-                    log::info!(
+                    // Rate verified — also check clock validity if supported.
+                    let clock_valid = match get_clock_validity(handle, interface_number, clock_id) {
+                        Ok(valid) => {
+                            eprintln!(
+                                "[USB] Clock Validity: clock {} valid={} (after SET_CUR {}Hz)",
+                                clock_id, valid, sample_rate,
+                            );
+                            Some(valid)
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "[USB] Clock Validity: not supported for clock {} ({}); assuming valid",
+                                clock_id, e,
+                            );
+                            None
+                        }
+                    };
+                    if clock_valid == Some(false) {
+                        eprintln!(
+                            "[USB] Clock {} reports INVALID after SET_CUR {}Hz; retrying",
+                            clock_id, sample_rate,
+                        );
+                        thread::sleep(Duration::from_millis(settle_delay_ms));
+                        continue;
+                    }
+                    eprintln!(
                         "[USB] SET_CUR verified: {} Hz on clock {} interface {} after attempt {}",
                         sample_rate, clock_id, interface_number, attempt,
                     );
@@ -3754,6 +4162,7 @@ fn parse_android_streaming_interface_format(
     let mut subslot_size = None;
     let mut bit_resolution = None;
     let mut sample_rates = Vec::new();
+    let mut terminal_link = None;
 
     for extra in DescriptorIter::new(descriptor.extra()) {
         if extra.len() < 3 || extra[1] != USB_DT_CS_INTERFACE {
@@ -3762,6 +4171,12 @@ fn parse_android_streaming_interface_format(
 
         match extra[2] {
             UAC2_AS_GENERAL => {
+                // UAC2 AS_GENERAL layout: [0]=bLength [1]=bDescriptorType
+                // [2]=bDescriptorSubtype [3]=bTerminalLink [4]=bmControls
+                // [5]=bFormatType [6..9]=bmFormats [10]=bNrChannels ...
+                if extra.len() >= 4 {
+                    terminal_link = Some(extra[3]);
+                }
                 if extra.len() >= 16 {
                     channels = Some(extra[10] as u16);
                     format_tag =
@@ -3793,6 +4208,7 @@ fn parse_android_streaming_interface_format(
         subslot_size,
         bit_resolution,
         sample_rates,
+        terminal_link,
     })
 }
 
@@ -3893,6 +4309,7 @@ fn transport_compatibility_penalty_for_candidate(
             subslot_size: candidate.subslot_size,
             bit_resolution: candidate.bit_resolution,
             sample_rates: candidate.sample_rates.clone(),
+            terminal_link: candidate.terminal_link,
         },
         playback_format,
     )
@@ -3971,11 +4388,10 @@ fn validate_transport_against_playback_format(
     Ok(())
 }
 
-/// Convert f32 samples (range [-1.0, 1.0]) to integer PCM values.
+/// Convert f32 samples (range [-1.0, 1.0]) to linear full-scale `i32` PCM values.
 ///
-/// For 16-bit: uses 32768.0 as the scaling factor to match the standard
-/// i16-to-f32 decode path (x / 32768.0), giving an exact bit-perfect
-/// round-trip for all 65536 possible i16 values.
+/// USB 16-bit packing takes the top 16 bits (`sample >> 16`) via [`linear_pcm_i32_to_i16`],
+/// matching UAC-style scaling from a 32-bit linear container.
 fn convert_f32_to_pcm_samples(
     input: &[f32],
     output: &mut [i32],
@@ -3992,16 +4408,8 @@ fn convert_f32_to_pcm_samples(
     for (destination, sample) in output.iter_mut().zip(input.iter()) {
         let clamped = sample.clamp(-1.0, 1.0);
         *destination = match bit_depth {
-            16 => {
-                let scaled = (clamped * 32768.0).round() as i32;
-                scaled.clamp(i16::MIN as i32, i16::MAX as i32) as i16 as i32
-            }
-            24 => {
-                let scaled = (clamped * 8_388_608.0).round() as i32;
-                scaled.clamp(-8_388_608, 8_388_607)
-            }
-            32 => {
-                let scaled = (clamped as f64 * 2_147_483_648.0).round() as i64;
+            16 | 24 | 32 => {
+                let scaled = (clamped as f64 * 2_147_483_647.0) as i64;
                 scaled.clamp(i32::MIN as i64, i32::MAX as i64) as i32
             }
             _ => return Err(format!("Unsupported PCM bit depth: {}", bit_depth)),
@@ -4011,12 +4419,124 @@ fn convert_f32_to_pcm_samples(
     Ok(())
 }
 
-fn encode_pcm_bytes(input: &[i32], output: &mut [u8], subslot_size: u8) {
-    debug_assert_eq!(output.len(), input.len() * usize::from(subslot_size));
-    for (index, sample) in input.iter().enumerate() {
-        let offset = index * usize::from(subslot_size);
-        let bytes = sample.to_le_bytes();
-        for byte_index in 0..usize::from(subslot_size) {
+/// Map linear PCM `i32` from [`convert_f32_to_pcm_samples`] to 16-bit samples for USB.
+///
+/// Uses the top 16 bits (arithmetic shift), matching UAC2-style downscale from a 32-bit
+/// linear container and avoiding a float round-trip. For values produced by
+/// `convert_f32_to_pcm_samples`, `sample >> 16` is always in `i16` range.
+#[inline]
+fn linear_pcm_i32_to_i16(sample: i32) -> i16 {
+    (sample >> 16) as i16
+}
+
+/// 24-bit packed little-endian (3 bytes per channel), from linear full-scale i32.
+#[inline]
+fn encode_i24(sample: i32) -> [u8; 3] {
+    let s = sample >> 8;
+    [
+        (s & 0xFF) as u8,
+        ((s >> 8) & 0xFF) as u8,
+        ((s >> 16) & 0xFF) as u8,
+    ]
+}
+
+#[inline]
+fn encode_i32_le(sample: i32) -> [u8; 4] {
+    sample.to_le_bytes()
+}
+
+/// Pack PCM for the active UAC subslot (`subslot_size` bytes × `bit_resolution` significant bits).
+fn encode_usb_pcm_slots(
+    input: &[i32],
+    output: &mut [u8],
+    subslot_size: u8,
+    bit_resolution: u8,
+) -> Result<(), String> {
+    let ss = subslot_size as usize;
+    if ss == 0 {
+        return Err("subslot_size is zero".to_string());
+    }
+    let expected = input.len().checked_mul(ss).ok_or_else(|| {
+        format!(
+            "USB PCM sample count overflow: {} samples × {} subslot",
+            input.len(),
+            ss
+        )
+    })?;
+    if output.len() != expected {
+        return Err(format!(
+            "USB PCM buffer length mismatch: output {} bytes, expected {} ({} samples × {} subslot)",
+            output.len(),
+            expected,
+            input.len(),
+            ss
+        ));
+    }
+
+    match subslot_size {
+        2 => {
+            if bit_resolution == 16 {
+                encode_pcm_i16_le(input, output);
+            } else {
+                encode_pcm_bytes(input, output, subslot_size, bit_resolution);
+            }
+            Ok(())
+        }
+        3 => {
+            for (index, sample) in input.iter().enumerate() {
+                let slot = encode_i24(*sample);
+                let offset = index * 3;
+                output[offset..offset + 3].copy_from_slice(&slot);
+            }
+            Ok(())
+        }
+        4 => {
+            for (index, &sample) in input.iter().enumerate() {
+                let offset = index * 4;
+                output[offset..offset + 4].copy_from_slice(&encode_i32_le(sample));
+            }
+            Ok(())
+        }
+        _ => {
+            encode_pcm_bytes(input, output, subslot_size, bit_resolution);
+            Ok(())
+        }
+    }
+}
+
+/// 16-bit PCM: linear i32 (from `convert_f32_to_pcm_samples`) → i16 (MSB extract) → LE.
+fn encode_pcm_i16_le(input: &[i32], output: &mut [u8]) {
+    debug_assert_eq!(output.len(), input.len() * 2);
+    for (i, &sample) in input.iter().enumerate() {
+        let i16_val = linear_pcm_i32_to_i16(sample);
+        let bytes = i16_val.to_le_bytes();
+        output[i * 2] = bytes[0];
+        output[i * 2 + 1] = bytes[1];
+    }
+}
+
+/// Pack i32 PCM samples into the USB subslot byte layout.
+///
+/// UAC2 Data Formats spec: PCM is signed two's complement, left-justified
+/// (sign bit is the MSB of the container). Unused LSBs are zero-padded.
+///
+/// When `subslot_size * 8 > bit_resolution`, the sample is shifted left
+/// so that the sign bit occupies the MSB of the container.
+fn encode_pcm_bytes(input: &[i32], output: &mut [u8], subslot_size: u8, bit_resolution: u8) {
+    let subslot_bytes = usize::from(subslot_size);
+    debug_assert_eq!(output.len(), input.len() * subslot_bytes);
+
+    let right_shift = 32u32.saturating_sub((subslot_size as u32) * 8);
+
+    for (index, &sample) in input.iter().enumerate() {
+        let offset = index * subslot_bytes;
+        let shifted = if right_shift == 0 {
+            sample
+        } else {
+            sample >> right_shift
+        };
+        let bytes = shifted.to_le_bytes();
+        for byte_index in 0..subslot_bytes {
             output[offset + byte_index] = bytes[byte_index];
         }
     }
@@ -4056,7 +4576,7 @@ fn log_stream_debug_preview(
         .map(|byte| format!("{:02x}", byte))
         .collect();
 
-    eprintln!(
+    log_info!(
         "[USB] Stream start engineOutput=f32@{}Hz transport={} {}-bit {}ch {}-byte-subslot interface={} alt={} endpoint=0x{:02x} sync={} usage={} refresh={} synchAddress=0x{:02x} endpointMaxPacket={} feedback={} packetSizes={:?} framesPerPacket={:?}",
         playback_format.sample_rate,
         format_tag_label(candidate.format_tag),
@@ -4083,18 +4603,12 @@ fn log_stream_debug_preview(
         packet_bytes,
         frames_per_packet,
     );
-    eprintln!(
-        "Android USB direct PCM16 sample preview: {:?}",
-        sample_preview
-    );
-    eprintln!(
-        "Android USB direct byte-decoded preview: {:?}",
+    log_info!("[USB] PCM sample preview (i32): {:?}", sample_preview);
+    log_info!(
+        "[USB] byte-decoded preview (i32 from LE bytes): {:?}",
         byte_decoded_preview
     );
-    eprintln!(
-        "Android USB direct first 32 bytes: {:?}",
-        first_bytes_preview
-    );
+    log_info!("[USB] first 32 transfer bytes: {:?}", first_bytes_preview);
 }
 
 extern "system" fn iso_transfer_callback(transfer: *mut libusb_transfer) {
