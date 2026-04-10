@@ -485,6 +485,27 @@ pub fn audio_set_limiter(
     with_audio_engine(|handle| handle.set_limiter(enabled, input_gain_db, ceiling_db, release_ms))
 }
 
+/// Configure spatial/time FX settings for the native audio engine.
+#[allow(clippy::too_many_arguments)]
+pub fn audio_set_fx(
+    enabled: bool,
+    balance: f32,
+    tempo: f32,
+    damp: f32,
+    filter_hz: f32,
+    delay_ms: f32,
+    size: f32,
+    mix: f32,
+    feedback: f32,
+    width: f32,
+) -> Result<(), String> {
+    with_audio_engine(|handle| {
+        handle.set_fx(
+            enabled, balance, tempo, damp, filter_hz, delay_ms, size, mix, feedback, width,
+        )
+    })
+}
+
 /// Configure crossfade settings.
 pub fn audio_set_crossfade(enabled: bool, duration_secs: f32) -> Result<(), String> {
     with_audio_engine(|handle| handle.set_crossfade(enabled, duration_secs))

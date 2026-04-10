@@ -10,6 +10,7 @@ use crate::audio::decoder::DecoderThread;
 use crate::audio::device::current_device_profile;
 use crate::audio::dynamics::DynamicsChain;
 use crate::audio::equalizer::Equalizer;
+use crate::audio::fx::SpatialFx;
 use crate::audio::source::{AudioSource, SourceProvider};
 use crate::audio::strategy::OutputStrategy;
 #[cfg(target_os = "android")]
@@ -83,6 +84,8 @@ pub struct AudioCallbackData {
     speed_frac_pos: Mutex<f64>,
     /// Graphic EQ (10 bands). try_lock in callback to avoid blocking.
     equalizer: Mutex<Equalizer>,
+    /// Creative spatial/time FX.
+    fx: Mutex<SpatialFx>,
     /// Lightweight compressor + limiter chain.
     dynamics: Mutex<DynamicsChain>,
     /// Channel for sending finished tracks to command thread
@@ -109,6 +112,7 @@ impl AudioCallbackData {
             speed_buffer: Mutex::new(vec![0.0; speed_buffer_size]),
             speed_frac_pos: Mutex::new(0.0),
             equalizer: Mutex::new(Equalizer::new()),
+            fx: Mutex::new(SpatialFx::new(sample_rate)),
             dynamics: Mutex::new(DynamicsChain::new(sample_rate)),
             finished_tracks,
         }
@@ -170,6 +174,7 @@ impl AudioCallbackData {
         *self.mix_buffer_b.lock() = vec![0.0; buffer_size];
         *self.speed_buffer.lock() = vec![0.0; speed_buffer_size];
         *self.speed_frac_pos.lock() = 0.0;
+        self.fx.lock().reconfigure_sample_rate(sample_rate);
         *self.dynamics.lock() = DynamicsChain::new(sample_rate);
     }
 }
@@ -328,6 +333,35 @@ impl AudioEngineHandle {
             input_gain_db,
             ceiling_db,
             release_ms,
+        })
+    }
+
+    /// Configure spatial/time FX settings.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_fx(
+        &self,
+        enabled: bool,
+        balance: f32,
+        tempo: f32,
+        damp: f32,
+        filter_hz: f32,
+        delay_ms: f32,
+        size: f32,
+        mix: f32,
+        feedback: f32,
+        width: f32,
+    ) -> Result<(), String> {
+        self.send_command(AudioCommand::SetFx {
+            enabled,
+            balance,
+            tempo,
+            damp,
+            filter_hz,
+            delay_ms,
+            size,
+            mix,
+            feedback,
+            width,
         })
     }
 
@@ -1362,6 +1396,9 @@ pub(crate) fn audio_callback(
             if let Some(mut eq) = data.equalizer.try_lock() {
                 eq.process(output, channels);
             }
+            if let Some(mut fx) = data.fx.try_lock() {
+                fx.process(output, channels);
+            }
             if let Some(mut dynamics) = data.dynamics.try_lock() {
                 dynamics.process(output, channels);
             }
@@ -1494,6 +1531,9 @@ pub(crate) fn audio_callback(
     }
     if let Some(mut eq) = data.equalizer.try_lock() {
         eq.process(output, channels);
+    }
+    if let Some(mut fx) = data.fx.try_lock() {
+        fx.process(output, channels);
     }
     if let Some(mut dynamics) = data.dynamics.try_lock() {
         dynamics.process(output, channels);
@@ -1638,6 +1678,23 @@ fn command_processing_loop(
                             input_gain_db,
                             ceiling_db,
                             release_ms,
+                        );
+                    }
+                    AudioCommand::SetFx {
+                        enabled,
+                        balance,
+                        tempo,
+                        damp,
+                        filter_hz,
+                        delay_ms,
+                        size,
+                        mix,
+                        feedback,
+                        width,
+                    } => {
+                        callback_data.fx.lock().set(
+                            enabled, balance, tempo, damp, filter_hz, delay_ms, size, mix,
+                            feedback, width,
                         );
                     }
                     AudioCommand::CrossfadeToNext | AudioCommand::SkipToNext => {
