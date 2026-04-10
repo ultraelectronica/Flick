@@ -11,8 +11,8 @@ const MethodChannel _androidEqualizerChannel = MethodChannel(
 
 EqualizerState _lastRequestedState = EqualizerState.initial();
 
-/// Applies EQ and dynamics state to the active audio backend.
-/// Rust engine: graphic EQ, compressor, and limiter are applied natively.
+/// Applies EQ and processing state to the active audio backend.
+/// Rust engine: graphic EQ, dynamics, and creative FX are applied natively.
 /// just_audio on Android: uses the native AudioEffect API for EQ only.
 Future<void> applyEqualizer(EqualizerState state) async {
   _lastRequestedState = _snapshotState(state);
@@ -72,6 +72,18 @@ Future<void> applyEqualizer(EqualizerState state) async {
         ceilingDb: state.limiter.ceilingDb,
         releaseMs: state.limiter.releaseMs,
       );
+      await rust_audio.audioSetFx(
+        enabled: false,
+        balance: state.fx.balance,
+        tempo: state.fx.tempo,
+        damp: state.fx.damp,
+        filterHz: state.fx.filterHz,
+        delayMs: state.fx.delayMs,
+        size: state.fx.size,
+        mix: state.fx.mix,
+        feedback: state.fx.feedback,
+        width: state.fx.width,
+      );
       return;
     }
 
@@ -92,6 +104,18 @@ Future<void> applyEqualizer(EqualizerState state) async {
       inputGainDb: state.limiter.inputGainDb,
       ceilingDb: state.limiter.ceilingDb,
       releaseMs: state.limiter.releaseMs,
+    );
+    await rust_audio.audioSetFx(
+      enabled: state.enabled && state.fx.enabled,
+      balance: state.fx.balance,
+      tempo: state.fx.tempo,
+      damp: state.fx.damp,
+      filterHz: state.fx.filterHz,
+      delayMs: state.fx.delayMs,
+      size: state.fx.size,
+      mix: state.fx.mix,
+      feedback: state.fx.feedback,
+      width: state.fx.width,
     );
   } catch (_) {}
 }
@@ -119,5 +143,6 @@ EqualizerState _snapshotState(EqualizerState state) {
     ),
     compressor: state.compressor.copyWith(),
     limiter: state.limiter.copyWith(),
+    fx: state.fx.copyWith(),
   );
 }

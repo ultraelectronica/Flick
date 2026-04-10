@@ -1324,10 +1324,18 @@ class Uac2Service {
       preferredDevice: usbDeviceAvailable ? resolvedPreferredDevice : null,
     );
 
+    final isStreamingState = _isAndroidStreamingRoute(
+      routeType,
+      preferredUsbDetected: preferredUsbDetected,
+      directUsbRegistered: directUsbRegistered,
+    );
+
     _updateStatus(
       Uac2DeviceStatus(
         device: routeDevice,
-        state: effectiveIsPlaying ? Uac2State.streaming : Uac2State.connected,
+        state: effectiveIsPlaying && isStreamingState
+            ? Uac2State.streaming
+            : Uac2State.connected,
         errorMessage: null,
         warningMessage: _androidRouteWarningMessage(
           routeType,
@@ -1898,6 +1906,17 @@ String? _androidRouteWarningMessage(
     case Uac2RouteType.unknown:
       return null;
   }
+}
+
+bool _isAndroidStreamingRoute(
+  Uac2RouteType routeType, {
+  required bool preferredUsbDetected,
+  required bool directUsbRegistered,
+}) {
+  if (directUsbRegistered || preferredUsbDetected) {
+    return true;
+  }
+  return routeType == Uac2RouteType.externalUsb;
 }
 
 Uac2RouteType _routeTypeFromString(String? value) {

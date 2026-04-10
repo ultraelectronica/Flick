@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'audio_api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `ensure_audio_engine`, `prepare_decoder_source`, `read_audio_engine`, `resolve_requested_output_sample_rate`, `with_audio_engine`
+// These functions are ignored because they are not marked as `pub`: `ensure_audio_engine`, `prepare_decoder_source`, `read_audio_engine`, `resolve_requested_output_sample_rate`, `resolve_track_playback_output_sample_rate`, `with_audio_engine`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 /// Check if native audio is available on this platform.
@@ -123,6 +123,31 @@ Future<void> audioSetLimiter({
   inputGainDb: inputGainDb,
   ceilingDb: ceilingDb,
   releaseMs: releaseMs,
+);
+
+/// Configure spatial/time FX settings for the native audio engine.
+Future<void> audioSetFx({
+  required bool enabled,
+  required double balance,
+  required double tempo,
+  required double damp,
+  required double filterHz,
+  required double delayMs,
+  required double size,
+  required double mix,
+  required double feedback,
+  required double width,
+}) => RustLib.instance.api.crateApiAudioApiAudioSetFx(
+  enabled: enabled,
+  balance: balance,
+  tempo: tempo,
+  damp: damp,
+  filterHz: filterHz,
+  delayMs: delayMs,
+  size: size,
+  mix: mix,
+  feedback: feedback,
+  width: width,
 );
 
 /// Configure crossfade settings.
