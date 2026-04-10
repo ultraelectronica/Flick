@@ -1,8 +1,75 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/services/equalizer_service.dart';
 
 enum EqMode { graphic, parametric }
+
+enum ParametricBandType {
+  peaking,
+  lowShelf,
+  highShelf,
+  lowPass,
+  highPass,
+  bandPass,
+  notch,
+  allPass,
+}
+
+extension ParametricBandTypeX on ParametricBandType {
+  String get displayName {
+    switch (this) {
+      case ParametricBandType.peaking:
+        return 'Peaking';
+      case ParametricBandType.lowShelf:
+        return 'Low Shelf';
+      case ParametricBandType.highShelf:
+        return 'High Shelf';
+      case ParametricBandType.lowPass:
+        return 'Low Pass';
+      case ParametricBandType.highPass:
+        return 'High Pass';
+      case ParametricBandType.bandPass:
+        return 'Band Pass';
+      case ParametricBandType.notch:
+        return 'Notch';
+      case ParametricBandType.allPass:
+        return 'All Pass';
+    }
+  }
+
+  bool get supportsGain {
+    switch (this) {
+      case ParametricBandType.peaking:
+      case ParametricBandType.lowShelf:
+      case ParametricBandType.highShelf:
+      case ParametricBandType.notch:
+        return true;
+      case ParametricBandType.lowPass:
+      case ParametricBandType.highPass:
+      case ParametricBandType.bandPass:
+      case ParametricBandType.allPass:
+        return false;
+    }
+  }
+
+  String get qLabel {
+    switch (this) {
+      case ParametricBandType.lowShelf:
+      case ParametricBandType.highShelf:
+        return 'Slope';
+      case ParametricBandType.lowPass:
+      case ParametricBandType.highPass:
+      case ParametricBandType.bandPass:
+      case ParametricBandType.notch:
+      case ParametricBandType.allPass:
+        return 'Resonance';
+      case ParametricBandType.peaking:
+        return 'Q';
+    }
+  }
+}
 
 @immutable
 class CompressorSettings {
@@ -76,12 +143,14 @@ class ParametricBand {
   final double frequencyHz; // 20..20000
   final double gainDb; // -12..+12 (UI only)
   final double q; // 0.2..10
+  final ParametricBandType type;
 
   const ParametricBand({
     this.enabled = true,
     required this.frequencyHz,
     this.gainDb = 0.0,
     this.q = 1.0,
+    this.type = ParametricBandType.peaking,
   });
 
   ParametricBand copyWith({
@@ -89,14 +158,75 @@ class ParametricBand {
     double? frequencyHz,
     double? gainDb,
     double? q,
+    ParametricBandType? type,
   }) {
     return ParametricBand(
       enabled: enabled ?? this.enabled,
       frequencyHz: frequencyHz ?? this.frequencyHz,
       gainDb: gainDb ?? this.gainDb,
       q: q ?? this.q,
+      type: type ?? this.type,
     );
   }
+}
+
+const double _passFilterDepthDb = 12.0;
+
+double _sigmoid(double x) => 1.0 / (1.0 + math.exp(-x));
+
+double _bandSigma(double q) => (0.55 / q.clamp(0.2, 10.0)).clamp(0.04, 1.2);
+
+double parametricBandContributionDb({
+  required ParametricBand band,
+  required double hz,
+}) {
+  if (!band.enabled) return 0.0;
+
+  final safeHz = hz.clamp(20.0, 20000.0).toDouble();
+  final centerHz = band.frequencyHz.clamp(20.0, 20000.0).toDouble();
+  final sigma = _bandSigma(band.q);
+  final x = math.log(safeHz / centerHz);
+  final gaussian = math.exp(-(x * x) / (2.0 * sigma * sigma));
+
+  switch (band.type) {
+    case ParametricBandType.peaking:
+      return band.gainDb * gaussian;
+    case ParametricBandType.lowShelf:
+      return band.gainDb * _sigmoid(-x / sigma);
+    case ParametricBandType.highShelf:
+      return band.gainDb * _sigmoid(x / sigma);
+    case ParametricBandType.lowPass:
+      return -_passFilterDepthDb * _sigmoid(x / sigma);
+    case ParametricBandType.highPass:
+      return -_passFilterDepthDb * _sigmoid(-x / sigma);
+    case ParametricBandType.bandPass:
+      return -_passFilterDepthDb * (1.0 - gaussian);
+    case ParametricBandType.notch:
+      final depth = band.gainDb.abs().clamp(0.0, 12.0).toDouble();
+      return -depth * gaussian;
+    case ParametricBandType.allPass:
+      return 0.0;
+  }
+}
+
+double parametricResponseDbAtHz({
+  required double hz,
+  required List<ParametricBand> bands,
+  double minDb = -12.0,
+  double maxDb = 12.0,
+}) {
+  double sum = 0.0;
+  for (final band in bands) {
+    sum += parametricBandContributionDb(band: band, hz: hz);
+  }
+  return sum.clamp(minDb, maxDb).toDouble();
+}
+
+double parametricBandMarkerDb(ParametricBand band) {
+  return parametricBandContributionDb(
+    band: band,
+    hz: band.frequencyHz,
+  ).clamp(-12.0, 12.0).toDouble();
 }
 
 @immutable
@@ -292,6 +422,18 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     final clamped = q.clamp(0.2, 10.0).toDouble();
     final next = List<ParametricBand>.of(state.parametricBands);
     next[index] = next[index].copyWith(q: clamped);
+    state = state.copyWith(parametricBands: next, clearActivePresetName: true);
+    ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
+  }
+
+  void setParamBandType(int index, ParametricBandType type) {
+    final next = List<ParametricBand>.of(state.parametricBands);
+    var updated = next[index].copyWith(type: type);
+    if (type == ParametricBandType.notch && updated.gainDb > 0.0) {
+      updated = updated.copyWith(gainDb: -updated.gainDb);
+    }
+    next[index] = updated;
     state = state.copyWith(parametricBands: next, clearActivePresetName: true);
     ref.read(eqGraphRepaintControllerProvider).bump();
     _syncToAudio();

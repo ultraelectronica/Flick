@@ -1024,6 +1024,10 @@ class _ParametricEqView extends ConsumerWidget {
               icon: LucideIcons.scanSearch,
               label: 'Log-frequency control',
             ),
+            const _StatPill(
+              icon: LucideIcons.funnel,
+              label: 'Multi-filter bands',
+            ),
             const _StatPill(icon: LucideIcons.plus, label: 'Add up to 8 bands'),
           ],
         ),
@@ -1038,7 +1042,7 @@ class _ParametricEqView extends ConsumerWidget {
                   icon: LucideIcons.gitBranchPlus,
                   title: 'Curve Preview',
                   subtitle:
-                      'Independent frequency, gain, and Q controls for each band.',
+                      'Per-band filter types with independent frequency, gain, and Q shaping.',
                 ),
                 const SizedBox(height: AppConstants.spacingMd),
                 _ParametricBandSummary(bands: bands, enabled: enabled),
@@ -1069,7 +1073,7 @@ class _ParametricEqView extends ConsumerWidget {
                     icon: LucideIcons.slidersHorizontal,
                     title: 'Band Editors',
                     subtitle:
-                        'Shape each band directly. Frequency uses a log-scale slider.',
+                        'Choose a filter type for each band, then fine-tune the curve.',
                   ),
                   const SizedBox(height: AppConstants.spacingMd),
                   ListView.separated(
@@ -1141,6 +1145,12 @@ class _ParametricBandSummary extends StatelessWidget {
       children: List<Widget>.generate(bands.length, (index) {
         final band = bands[index];
         final active = enabled && band.enabled;
+        final gainLabel = band.type == ParametricBandType.notch
+            ? '${band.gainDb.abs().toStringAsFixed(1)} dB cut'
+            : '${band.gainDb >= 0 ? '+' : ''}${band.gainDb.toStringAsFixed(1)} dB';
+        final valueLabel = band.type.supportsGain
+            ? '${band.type.displayName}  •  $gainLabel'
+            : band.type.displayName;
         return AnimatedContainer(
           duration: AppConstants.animationFast,
           padding: const EdgeInsets.symmetric(
@@ -1172,7 +1182,7 @@ class _ParametricBandSummary extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                '${_hzLabel(band.frequencyHz)}  •  ${band.gainDb >= 0 ? '+' : ''}${band.gainDb.toStringAsFixed(1)} dB',
+                '${_hzLabel(band.frequencyHz)}  •  $valueLabel',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: active
                       ? context.adaptiveTextSecondary
@@ -1277,7 +1287,9 @@ class _ParametricBandEditor extends ConsumerWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          editable ? 'Active shaping band' : 'Band bypassed',
+                          editable
+                              ? '${band.type.displayName} filter active'
+                              : 'Band bypassed',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: context.adaptiveTextTertiary),
                         ),
@@ -1301,14 +1313,50 @@ class _ParametricBandEditor extends ConsumerWidget {
                 spacing: AppConstants.spacingSm,
                 runSpacing: AppConstants.spacingSm,
                 children: [
+                  _ValueBadge(value: band.type.displayName),
+                  if (band.type.supportsGain)
+                    _ValueBadge(
+                      value: band.type == ParametricBandType.notch
+                          ? '${band.gainDb.abs().toStringAsFixed(1)} dB cut'
+                          : '${band.gainDb >= 0 ? '+' : ''}${band.gainDb.toStringAsFixed(1)} dB',
+                    ),
                   _ValueBadge(
-                    value:
-                        '${band.gainDb >= 0 ? '+' : ''}${band.gainDb.toStringAsFixed(1)} dB',
+                    value: '${band.type.qLabel} ${band.q.toStringAsFixed(2)}',
                   ),
-                  _ValueBadge(value: 'Q ${band.q.toStringAsFixed(2)}'),
                 ],
               ),
               const SizedBox(height: AppConstants.spacingMd),
+              Row(
+                children: [
+                  Icon(
+                    LucideIcons.funnel,
+                    size: context.responsiveIcon(AppConstants.iconSizeSm),
+                    color: editable
+                        ? context.adaptiveTextSecondary
+                        : context.adaptiveTextTertiary,
+                  ),
+                  const SizedBox(width: AppConstants.spacingSm),
+                  Expanded(
+                    child: Text(
+                      'Filter Type',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: editable
+                            ? context.adaptiveTextSecondary
+                            : context.adaptiveTextTertiary,
+                      ),
+                    ),
+                  ),
+                  _BandTypeDropdown(
+                    value: band.type,
+                    onChanged: editable
+                        ? (type) => ref
+                              .read(equalizerProvider.notifier)
+                              .setParamBandType(index, type)
+                        : null,
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppConstants.spacingSm),
               Row(
                 children: [
                   Icon(
@@ -1405,24 +1453,38 @@ class _ParametricBandEditor extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: AppConstants.spacingSm),
-              _LabeledSlider(
-                icon: LucideIcons.slidersHorizontal,
-                label: 'Gain',
-                valueLabel:
-                    '${band.gainDb >= 0 ? '+' : ''}${band.gainDb.toStringAsFixed(1)} dB',
-                value: band.gainDb,
-                min: EqualizerNotifier.gainMinDb,
-                max: EqualizerNotifier.gainMaxDb,
-                onChanged: editable
-                    ? (v) => ref
-                          .read(equalizerProvider.notifier)
-                          .setParamBandGainDb(index, v)
-                    : null,
-              ),
-              const SizedBox(height: AppConstants.spacingSm),
+              if (band.type.supportsGain) ...[
+                _LabeledSlider(
+                  icon: LucideIcons.slidersHorizontal,
+                  label: band.type == ParametricBandType.notch
+                      ? 'Depth'
+                      : 'Gain',
+                  valueLabel: band.type == ParametricBandType.notch
+                      ? '${band.gainDb.abs().toStringAsFixed(1)} dB cut'
+                      : '${band.gainDb >= 0 ? '+' : ''}${band.gainDb.toStringAsFixed(1)} dB',
+                  value: band.type == ParametricBandType.notch
+                      ? band.gainDb.abs()
+                      : band.gainDb,
+                  min: band.type == ParametricBandType.notch
+                      ? 0.0
+                      : EqualizerNotifier.gainMinDb,
+                  max: EqualizerNotifier.gainMaxDb,
+                  onChanged: editable
+                      ? (v) => ref
+                            .read(equalizerProvider.notifier)
+                            .setParamBandGainDb(
+                              index,
+                              band.type == ParametricBandType.notch
+                                  ? -v.abs()
+                                  : v,
+                            )
+                      : null,
+                ),
+                const SizedBox(height: AppConstants.spacingSm),
+              ],
               _LabeledSlider(
                 icon: LucideIcons.target,
-                label: 'Q',
+                label: band.type.qLabel,
                 valueLabel: band.q.toStringAsFixed(2),
                 value: band.q,
                 min: 0.2,
@@ -1934,6 +1996,57 @@ class _ValueBadge extends StatelessWidget {
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
           color: context.adaptiveTextPrimary,
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _BandTypeDropdown extends StatelessWidget {
+  final ParametricBandType value;
+  final ValueChanged<ParametricBandType>? onChanged;
+
+  const _BandTypeDropdown({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onChanged != null;
+    return Container(
+      constraints: const BoxConstraints(minWidth: 152),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: AppColors.glassBackground,
+        borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<ParametricBandType>(
+          value: value,
+          isDense: true,
+          dropdownColor: const Color(0xFF171717),
+          borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+          iconEnabledColor: context.adaptiveTextSecondary,
+          iconDisabledColor: context.adaptiveTextTertiary,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: enabled
+                ? context.adaptiveTextPrimary
+                : context.adaptiveTextTertiary,
+            fontFamily: 'ProductSans',
+            fontWeight: FontWeight.w600,
+          ),
+          items: [
+            for (final type in ParametricBandType.values)
+              DropdownMenuItem<ParametricBandType>(
+                value: type,
+                child: Text(type.displayName),
+              ),
+          ],
+          onChanged: onChanged == null
+              ? null
+              : (type) {
+                  if (type == null) return;
+                  onChanged!(type);
+                },
         ),
       ),
     );

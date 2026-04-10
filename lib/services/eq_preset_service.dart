@@ -60,6 +60,7 @@ class EqPreset {
             'frequencyHz': b.frequencyHz,
             'gainDb': b.gainDb,
             'q': b.q,
+            'type': b.type.name,
           },
         )
         .toList(),
@@ -94,11 +95,18 @@ class EqPreset {
     final bands = bandsJson
         .map((e) {
           final m = e as Map<String, dynamic>;
+          final typeName =
+              (m['type'] as String?) ?? ParametricBandType.peaking.name;
+          final type = ParametricBandType.values.firstWhere(
+            (t) => t.name == typeName,
+            orElse: () => ParametricBandType.peaking,
+          );
           return ParametricBand(
             enabled: (m['enabled'] as bool?) ?? true,
             frequencyHz: (m['frequencyHz'] as num?)?.toDouble() ?? 1000.0,
             gainDb: (m['gainDb'] as num?)?.toDouble() ?? 0.0,
             q: (m['q'] as num?)?.toDouble() ?? 1.0,
+            type: type,
           );
         })
         .toList(growable: false);
