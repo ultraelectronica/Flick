@@ -665,6 +665,49 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     );
   }
 
+  void _showDeviceRestartRequiredToast(BuildContext context) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Restart your device to apply output format changes.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Widget _buildFormatWarningCallout(BuildContext context, String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppConstants.spacingMd),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.warning_amber_rounded,
+            color: Colors.amber.shade300,
+            size: 18,
+          ),
+          const SizedBox(width: AppConstants.spacingSm),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: context.adaptiveTextSecondary,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildModeStatusTile(
     BuildContext context,
     AudioOutputDiagnostics? diagnostics,
@@ -850,6 +893,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppConstants.radiusLg),
@@ -861,11 +905,16 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _buildFormatWarningCallout(
+              context,
+              'Changing sample rate, bit depth, or channel handling can resample songs and may affect playback quality, pitch, speed, or stability on some devices.',
+            ),
+            const SizedBox(height: AppConstants.spacingMd),
             _buildFormatOption(
               context,
               Uac2FormatPreference.highestQuality,
               'Highest Quality',
-              'Always use maximum sample rate and bit depth',
+              'Use the highest fixed output rate and bit depth available',
               current,
               service,
             ),
@@ -874,7 +923,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               context,
               Uac2FormatPreference.compatibility,
               'Compatibility',
-              'Use 48kHz/16bit for better compatibility',
+              'Use a fixed 48kHz/16bit output for better compatibility',
               current,
               service,
             ),
@@ -883,7 +932,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               context,
               Uac2FormatPreference.custom,
               'Custom',
-              'Use custom format settings',
+              'Use your selected fixed sample rate, bit depth, and channels',
               current,
               service,
             ),
@@ -906,9 +955,13 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
       color: Colors.transparent,
       child: InkWell(
         onTap: () async {
+          final changed = preference != current;
           await service.setFormatPreference(preference);
           ref.invalidate(uac2FormatPreferenceProvider);
           if (context.mounted) Navigator.of(context).pop();
+          if (changed && mounted) {
+            _showDeviceRestartRequiredToast(this.context);
+          }
         },
         borderRadius: BorderRadius.circular(AppConstants.radiusMd),
         child: Container(
@@ -968,6 +1021,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
+          scrollable: true,
           backgroundColor: AppColors.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppConstants.radiusLg),
@@ -980,6 +1034,11 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _buildFormatWarningCallout(
+                context,
+                'Custom format forces playback to the selected output format. If the chosen sample rate, bit depth, or channels do not suit the song or device, you may hear altered sound, pitch, speed, or instability.',
+              ),
+              const SizedBox(height: AppConstants.spacingMd),
               Text(
                 'Sample Rate',
                 style: TextStyle(
@@ -1064,6 +1123,11 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
             ),
             TextButton(
               onPressed: () async {
+                final formatChanged =
+                    current?.sampleRate != sampleRate ||
+                    current?.bitDepth != bitDepth ||
+                    current?.channels != channels;
+                final previousPreference = await service.getFormatPreference();
                 final format = Uac2AudioFormat(
                   sampleRate: sampleRate,
                   bitDepth: bitDepth,
@@ -1074,6 +1138,11 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                 ref.invalidate(uac2PreferredFormatProvider);
                 ref.invalidate(uac2FormatPreferenceProvider);
                 if (context.mounted) Navigator.of(context).pop();
+                if ((formatChanged ||
+                        previousPreference != Uac2FormatPreference.custom) &&
+                    mounted) {
+                  _showDeviceRestartRequiredToast(this.context);
+                }
               },
               child: const Text(
                 'Save',
