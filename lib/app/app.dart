@@ -69,6 +69,9 @@ class _MainShellState extends ConsumerState<MainShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Seed _previousSong from the already-restored state so the auto-navigate
+    // listener doesn't treat the restored song as "new" on cold start.
+    _previousSong = ref.read(currentSongProvider);
     final initialIndex = ref.read(navigationIndexProvider);
     _pageController = PageController(initialPage: initialIndex);
     _navBarAnimationController = AnimationController(
@@ -104,11 +107,22 @@ class _MainShellState extends ConsumerState<MainShell>
       previousSong,
       nextSong,
     ) {
+      // Only auto-navigate to the full player when a *different* song starts
+      // playing while the player is active. A cold-start restore always starts
+      // in a paused state, so we check isPlaying to avoid popping the full
+      // player screen on every app launch.
       final songChanged =
           nextSong != null &&
-          (_previousSong == null || _previousSong!.id != nextSong.id);
+          _previousSong != null &&          // must have had a song before
+          _previousSong!.id != nextSong.id; // and it must have changed
 
       if (songChanged && context.mounted) {
+        final isPlaying = ref.read(isPlayingProvider);
+        if (!isPlaying) {
+          // Song changed but not playing yet — don't auto-navigate.
+          _previousSong = nextSong;
+          return;
+        }
         if (NavigationHelper.isFullPlayerOpen) {
           _previousSong = nextSong;
           return;

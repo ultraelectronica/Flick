@@ -119,6 +119,31 @@ fn test_audio_pipeline_process() {
 }
 
 #[test]
+fn test_audio_pipeline_byte_exact_round_trip() {
+    let format = AudioFormat::new(
+        vec![SampleRate::new(44100).unwrap()],
+        BitDepth::Bits16,
+        ChannelConfig::Stereo,
+        FormatType::Pcm,
+    )
+    .unwrap();
+
+    let pipeline = AudioPipeline::new(format.clone(), format, 4096).unwrap();
+    let input: Vec<u8> = (0..257)
+        .map(|index| ((index * 37) as u16 & 0xff) as u8)
+        .collect();
+
+    let processed = pipeline.process(&input).unwrap();
+    assert_eq!(processed, input.len());
+
+    let mut output = vec![0u8; input.len()];
+    let read = pipeline.read(&mut output).unwrap();
+
+    assert_eq!(read, input.len());
+    assert_eq!(output, input);
+}
+
+#[test]
 fn test_audio_pipeline_read() {
     let format = AudioFormat::new(
         vec![SampleRate::new(44100).unwrap()],

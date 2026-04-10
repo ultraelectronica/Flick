@@ -145,6 +145,14 @@ impl EngineManager {
         }
     }
 
+    pub fn is_high_res_mode_enabled(&self) -> bool {
+        self.state.lock().high_res_mode
+    }
+
+    pub fn capability_route_type(&self) -> String {
+        self.state.lock().capability_snapshot.route_type.clone()
+    }
+
     pub fn set_capability_snapshot(&self, snapshot: AudioCapabilitySnapshot) {
         self.state.lock().capability_snapshot = snapshot.normalize();
     }
@@ -239,13 +247,27 @@ impl EngineManager {
             );
         }
 
+        let allow_dap_native = selection.high_res_mode;
         let desired_signature = desired_output_signature(preferred_sample_rate);
         {
             let mut state = self.state.lock();
-            let should_reuse = state
-                .rust_handle
-                .as_ref()
-                .is_some_and(|handle| handle.output_signature() == desired_signature);
+            let should_reuse = state.rust_handle.as_ref().is_some_and(|handle| {
+                if handle.output_signature() == desired_signature {
+                    return true;
+                }
+
+                #[cfg(target_os = "android")]
+                {
+                    let requested_rate = preferred_sample_rate.unwrap_or(48_000);
+                    let strategy = handle.output_runtime().strategy.as_str();
+                    return handle.output_signature().starts_with("android-shared:")
+                        && handle.sample_rate() == requested_rate
+                        && (allow_dap_native || strategy != "dap_native");
+                }
+
+                #[allow(unreachable_code)]
+                false
+            });
 
             if should_reuse {
                 state.current = Some(AudioEngine::Rust);
@@ -265,10 +287,14 @@ impl EngineManager {
                 .map_err(|error| format!("Existing engine shutdown task failed: {}", error))??;
         }
 
-        let new_handle =
-            tokio::task::spawn_blocking(move || create_audio_engine(preferred_sample_rate))
-                .await
-                .map_err(|error| format!("Rust engine initialization task failed: {}", error))??;
+        #[cfg(all(feature = "uac2", target_os = "android"))]
+        crate::uac2::force_release_usb_session();
+
+        let new_handle = tokio::task::spawn_blocking(move || {
+            create_audio_engine(preferred_sample_rate, allow_dap_native)
+        })
+        .await
+        .map_err(|error| format!("Rust engine initialization task failed: {}", error))??;
 
         let mut state = self.state.lock();
         state.current = Some(AudioEngine::Rust);
@@ -290,6 +316,9 @@ impl EngineManager {
                 .map_err(|error| format!("Rust engine shutdown task failed: {}", error))??;
         }
 
+        #[cfg(all(feature = "uac2", target_os = "android"))]
+        crate::uac2::force_release_usb_session();
+
         Ok(())
     }
 }
@@ -299,11 +328,7 @@ fn selection_from_snapshot(
     high_res_mode: bool,
 ) -> EngineSelection {
     EngineSelection {
-        engine: if capability_snapshot.prefers_rust_engine() || high_res_mode {
-            AudioEngine::Rust
-        } else {
-            AudioEngine::Default
-        },
+        engine: AudioEngine::Rust,
         primary_capability: capability_snapshot.primary_capability(),
         capabilities: capability_snapshot.capabilities,
         high_res_mode,
@@ -318,13 +343,56 @@ fn capability_priority(capability: AudioCapability) -> u8 {
     }
 }
 
+#[cfg(target_os = "android")]
+fn merge_android_device_profile(mut snapshot: AudioCapabilitySnapshot) -> AudioCapabilitySnapshot {
+    let Some(profile) = crate::audio::device::current_device_profile() else {
+        return snapshot.normalize();
+    };
+
+    let internal_route = matches!(
+        snapshot.route_type.as_str(),
+        "unknown" | "internal" | "wired"
+    );
+    if internal_route && (profile.confirmed_bit_perfect || profile.max_sample_rate > 48_000) {
+        snapshot.capabilities.push(AudioCapability::HiResInternal);
+    }
+
+    if snapshot.route_type == "unknown" && profile.is_dap() {
+        snapshot.route_type = "internal".to_string();
+    }
+
+    if profile.max_sample_rate > snapshot.max_sample_rate.unwrap_or_default() {
+        snapshot.max_sample_rate = Some(profile.max_sample_rate);
+    }
+
+    if snapshot.route_label.is_none() && internal_route {
+        if let crate::audio::device::DeviceKind::Dap(brand) = profile.kind {
+            snapshot.route_label = Some(format!("{} internal DAC", brand.as_str()));
+        }
+    }
+
+    snapshot.normalize()
+}
+
 fn detect_capabilities_blocking(
     preferred_sample_rate: Option<u32>,
     capability_hint: AudioCapabilitySnapshot,
 ) -> AudioCapabilitySnapshot {
+    let snapshot = {
+        #[cfg(target_os = "android")]
+        {
+            merge_android_device_profile(capability_hint)
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            capability_hint.normalize()
+        }
+    };
+
     #[cfg(all(feature = "uac2", target_os = "android"))]
     {
-        let mut snapshot = capability_hint.normalize();
+        let mut snapshot = snapshot;
         if crate::uac2::android_direct_output_signature(preferred_sample_rate).is_some()
             && !snapshot.has_capability(AudioCapability::UsbDac)
         {
@@ -349,13 +417,13 @@ fn detect_capabilities_blocking(
             .normalize();
         }
 
-        return capability_hint.normalize();
+        return snapshot;
     }
 
     #[cfg(not(feature = "uac2"))]
     {
         let _ = preferred_sample_rate;
-        capability_hint.normalize()
+        snapshot
     }
 }
 
@@ -376,9 +444,9 @@ mod tests {
     }
 
     #[test]
-    fn selection_prefers_default_when_only_standard_capability_exists() {
+    fn selection_uses_rust_when_only_standard_capability_exists() {
         let selection = selection_from_snapshot(AudioCapabilitySnapshot::standard(), false);
-        assert_eq!(selection.engine, AudioEngine::Default);
+        assert_eq!(selection.engine, AudioEngine::Rust);
         assert_eq!(selection.primary_capability, AudioCapability::Standard);
         assert!(!selection.high_res_mode);
     }

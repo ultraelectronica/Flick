@@ -5,13 +5,22 @@ import 'package:flick/services/uac2_service.dart';
 
 enum Uac2FormatPreference { highestQuality, compatibility, custom }
 
+enum AudioEnginePreference { exoPlayer, rustOboe, isochronousUsb }
+
 class Uac2PreferencesService {
+  static final ValueNotifier<bool> developerModeNotifier = ValueNotifier(false);
   static const _keySelectedDevice = 'uac2_selected_device';
   static const _keyAutoConnect = 'uac2_auto_connect';
   static const _keyPreferredFormat = 'uac2_preferred_format';
   static const _keyFormatPreference = 'uac2_format_preference';
   static const _keyAutoSelectDevice = 'uac2_auto_select_device';
   static const _keyHiFiModeEnabled = 'uac2_hifi_mode_enabled';
+  static const _keyBitPerfectEnabled = 'uac2_bit_perfect_enabled';
+  static const _keyExclusiveDacModeEnabled = 'uac2_exclusive_dac_mode_enabled';
+  static const _keyAudioEnginePreference = 'audio_engine_preference';
+  static const _keyDeveloperModeEnabled = 'developer_mode_enabled';
+
+  static bool get isDeveloperModeEnabledSync => developerModeNotifier.value;
 
   Future<void> saveSelectedDevice(Uac2DeviceInfo device) async {
     try {
@@ -141,6 +150,87 @@ class Uac2PreferencesService {
     }
   }
 
+  Future<void> setBitPerfectEnabled(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyBitPerfectEnabled, false);
+      await prefs.setBool(_keyExclusiveDacModeEnabled, false);
+    } catch (e) {
+      debugPrint('Failed to save bit-perfect mode setting: $e');
+    }
+  }
+
+  Future<bool> getBitPerfectEnabled() async {
+    // Temporarily force this off until the direct USB bit-perfect path is fixed.
+    return false;
+  }
+
+  Future<void> setExclusiveDacModeEnabled(bool enabled) {
+    return setBitPerfectEnabled(enabled);
+  }
+
+  Future<bool> getExclusiveDacModeEnabled() {
+    return getBitPerfectEnabled();
+  }
+
+  Future<void> setAudioEnginePreference(
+    AudioEnginePreference preference,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyAudioEnginePreference, preference.name);
+    } catch (e) {
+      debugPrint('Failed to save audio engine preference: $e');
+    }
+  }
+
+  Future<AudioEnginePreference> getAudioEnginePreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_keyAudioEnginePreference);
+      if (value == null) return AudioEnginePreference.exoPlayer;
+
+      return AudioEnginePreference.values.firstWhere(
+        (engine) => engine.name == value,
+        orElse: () => AudioEnginePreference.exoPlayer,
+      );
+    } catch (e) {
+      debugPrint('Failed to load audio engine preference: $e');
+      return AudioEnginePreference.exoPlayer;
+    }
+  }
+
+  Future<void> initializeDeveloperModeCache() async {
+    final enabled = await getDeveloperModeEnabled();
+    if (developerModeNotifier.value != enabled) {
+      developerModeNotifier.value = enabled;
+    }
+  }
+
+  Future<void> setDeveloperModeEnabled(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyDeveloperModeEnabled, enabled);
+      developerModeNotifier.value = enabled;
+    } catch (e) {
+      debugPrint('Failed to save developer mode setting: $e');
+    }
+  }
+
+  Future<bool> getDeveloperModeEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool(_keyDeveloperModeEnabled) ?? false;
+      if (developerModeNotifier.value != enabled) {
+        developerModeNotifier.value = enabled;
+      }
+      return enabled;
+    } catch (e) {
+      debugPrint('Failed to load developer mode setting: $e');
+      return developerModeNotifier.value;
+    }
+  }
+
   Future<void> setFormatPreference(Uac2FormatPreference preference) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -175,6 +265,11 @@ class Uac2PreferencesService {
       await prefs.remove(_keyFormatPreference);
       await prefs.remove(_keyAutoSelectDevice);
       await prefs.remove(_keyHiFiModeEnabled);
+      await prefs.remove(_keyBitPerfectEnabled);
+      await prefs.remove(_keyExclusiveDacModeEnabled);
+      await prefs.remove(_keyAudioEnginePreference);
+      await prefs.remove(_keyDeveloperModeEnabled);
+      developerModeNotifier.value = false;
     } catch (e) {
       debugPrint('Failed to clear preferences: $e');
     }

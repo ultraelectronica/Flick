@@ -17,12 +17,16 @@ pub mod alac_converter;
 pub mod commands;
 pub mod crossfader;
 pub mod decoder;
+pub mod device;
 pub mod dynamics;
 pub mod engine;
 pub mod equalizer;
+pub mod fx;
 pub mod manager;
 pub mod resampler;
 pub mod source;
+pub mod strategy;
+pub mod verifier;
 
 pub use alac_converter::{AudioMetadata, ConversionSession};
 pub use commands::{AudioCommand, PlaybackState};

@@ -255,6 +255,7 @@ class PlaylistsScreen extends ConsumerWidget {
       itemBuilder: (context, index) {
         final playlist = playlists[index];
         return _PlaylistCard(
+          key: ValueKey(playlist.id),
           playlist: playlist,
           onTap: () {
             Navigator.of(context).push(
@@ -443,9 +444,9 @@ class PlaylistsScreen extends ConsumerWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Import failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
     }
   }
 
@@ -470,9 +471,9 @@ class PlaylistsScreen extends ConsumerWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Export failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
     }
   }
 }
@@ -485,6 +486,7 @@ class _PlaylistCard extends StatelessWidget {
   final VoidCallback onExportM3u8;
 
   const _PlaylistCard({
+    super.key,
     required this.playlist,
     required this.onTap,
     required this.onDelete,

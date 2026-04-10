@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 class AndroidPlaybackDeviceInfo {
   const AndroidPlaybackDeviceInfo({
     required this.hasUsbDac,
+    required this.hasAttachedUac2Device,
     required this.manufacturer,
     required this.model,
     this.routeType,
@@ -14,10 +15,21 @@ class AndroidPlaybackDeviceInfo {
   });
 
   final bool hasUsbDac;
+  final bool hasAttachedUac2Device;
   final String manufacturer;
   final String model;
   final String? routeType;
   final String? routeLabel;
+
+  bool get isUsbRoute => routeType == 'usb';
+  bool get isInternalRoute => routeType == 'internal';
+  bool get isWiredRoute => routeType == 'wired';
+  bool get isBluetoothRoute => routeType == 'bluetooth';
+  bool get isDockRoute => routeType == 'dock';
+  bool get looksLikeUsbAudioRoute {
+    final summary = routeSummary.toLowerCase();
+    return summary.contains('usb') || summary.contains('dac');
+  }
 
   bool get isLikelyDap {
     final haystack = '${manufacturer.toLowerCase()} ${model.toLowerCase()}';
@@ -37,9 +49,13 @@ class AndroidPlaybackDeviceInfo {
     return dapKeywords.any(haystack.contains);
   }
 
+  String get routeSummary => routeLabel ?? routeType ?? 'unknown';
+
   factory AndroidPlaybackDeviceInfo.fromMap(Map<Object?, Object?> raw) {
     return AndroidPlaybackDeviceInfo(
       hasUsbDac: raw['hasUsbDac'] == true,
+      hasAttachedUac2Device:
+          raw['hasAttachedUac2Device'] == true || raw['hasUsbDac'] == true,
       manufacturer: raw['manufacturer'] as String? ?? '',
       model: raw['model'] as String? ?? '',
       routeType: raw['routeType'] as String?,
@@ -49,6 +65,7 @@ class AndroidPlaybackDeviceInfo {
 
   static const unknown = AndroidPlaybackDeviceInfo(
     hasUsbDac: false,
+    hasAttachedUac2Device: false,
     manufacturer: '',
     model: '',
   );

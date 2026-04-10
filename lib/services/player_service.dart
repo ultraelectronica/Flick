@@ -6,20 +6,23 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' as just_audio;
 import 'package:flick/models/audio_engine_type.dart';
+import 'package:flick/models/audio_output_diagnostics.dart';
 import 'package:flick/models/playback_state.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/src/rust/api/audio_api.dart' as rust_audio;
 import 'package:flick/services/notification_service.dart';
-import 'package:flick/services/android_audio_engine.dart';
 import 'package:flick/services/android_audio_device_service.dart';
 import 'package:flick/services/audio_engine_manager.dart';
-import 'package:flick/services/audio_route_manager.dart';
+import 'package:flick/services/audio_session_manager.dart';
+import 'package:flick/services/equalizer_service.dart';
 import 'package:flick/services/last_played_service.dart';
 import 'package:flick/services/favorites_service.dart';
 import 'package:flick/data/repositories/recently_played_repository.dart';
 import 'package:flick/services/replay_play_tracker.dart';
+import 'package:flick/services/android_audio_engine.dart';
 import 'package:flick/services/rust_audio_engine.dart';
 import 'package:flick/services/rust_audio_service.dart';
+import 'package:flick/services/uac2_preferences_service.dart';
 import 'package:flick/services/uac2_service.dart';
 import 'package:flick/services/alac_converter_service.dart';
 
@@ -168,7 +171,7 @@ class PlayerService {
 
   PlayerService._internal() {
     _playbackManager = AudioEngineManager();
-    _routeManager = AudioRouteManager(
+    _sessionManager = AudioSessionManager(
       onSwitchEngine: _handleEngineSwitch,
       isPlaybackActive: () => isPlayingNotifier.value,
     );
@@ -177,17 +180,15 @@ class PlayerService {
   }
 
   just_audio.AudioPlayer? _justAudioPlayer;
-  final List<StreamSubscription<dynamic>> _justAudioSubscriptions =
-      <StreamSubscription<dynamic>>[];
 
   final NotificationService _notificationService = NotificationService();
   final LastPlayedService _lastPlayedService = LastPlayedService();
   final FavoritesService _favoritesService = FavoritesService();
+  final Uac2PreferencesService _preferencesService = Uac2PreferencesService();
   final RustAudioService _rustAudioService = RustAudioService();
   final Uac2Service _uac2Service = Uac2Service.instance;
-  late final AudioRouteManager _routeManager;
+  late final AudioSessionManager _sessionManager;
   late final AudioEngineManager _playbackManager;
-  AndroidAudioEngine? _androidEngine;
   RustAudioEngine? _rustEngine;
   StreamSubscription<PlaybackState>? _playbackStateSubscription;
   PlaybackState? _lastPlaybackState;
@@ -201,10 +202,11 @@ class PlayerService {
   final Map<String, String> _convertedPlaybackPathCache = {};
   final Set<String> _unsupportedWavConversionSources = <String>{};
   final ValueNotifier<bool> usingRustBackendNotifier = ValueNotifier(false);
+  final ValueNotifier<AudioOutputDiagnostics?> audioOutputDiagnosticsNotifier =
+      ValueNotifier(null);
   bool get _usingRustBackend => usingRustBackendNotifier.value;
   set _usingRustBackend(bool value) => usingRustBackendNotifier.value = value;
   bool _rustBackendAvailable = false;
-  bool _justAudioListenersAttached = false;
   bool _rustListenersAttached = false;
   bool _audioSessionConfigured = false;
   VoidCallback? _rustStateListener;
@@ -217,6 +219,7 @@ class PlayerService {
   Future<void> _playRequestQueue = Future<void>.value();
   Future<bool>? _rustInitInFlight;
   Future<void>? _rustCapabilityRefreshInFlight;
+  Future<void>? _rustEnginePreparationInFlight;
   bool _suppressSequenceStateUpdates = false;
   DateTime? _autoSyncGuardUntil;
   String? _autoSyncGuardSongId;
@@ -293,7 +296,56 @@ class PlayerService {
       onToggleShuffle: toggleShuffle,
       onToggleFavorite: _toggleFavoriteFromNotification,
     );
+    _sessionManager.selectedModeNotifier.addListener(() {
+      unawaited(
+        _refreshAudioOutputDiagnostics(
+          reason: 'selected playback mode changed',
+        ),
+      );
+    });
+    _sessionManager.initializedModeNotifier.addListener(() {
+      unawaited(
+        _refreshAudioOutputDiagnostics(
+          reason: 'initialized playback mode changed',
+        ),
+      );
+    });
+    AndroidAudioDeviceService.instance.deviceInfoNotifier.addListener(() {
+      unawaited(_refreshAudioOutputDiagnostics(reason: 'audio route changed'));
+    });
+    _uac2Service.bitPerfectEnabledNotifier.addListener(() {
+      unawaited(_handleBitPerfectPreferenceChanged());
+    });
     _notifyQueueChanged();
+  }
+
+  Future<void> _handleBitPerfectPreferenceChanged() async {
+    if (isBitPerfectModeEnabled) {
+      if (_usingRustBackend && _rustAudioService.isInitialized) {
+        await _applyRustPlaybackProcessingPolicy(currentEngineType);
+      } else {
+        final player = _justAudioPlayer;
+        if (player != null) {
+          await player.setVolume(1.0);
+          await player.setSpeed(1.0);
+        }
+      }
+    } else {
+      if (_usingRustBackend && _rustAudioService.isInitialized) {
+        await _applyRustPlaybackProcessingPolicy(currentEngineType);
+      } else {
+        final player = _justAudioPlayer;
+        if (player != null) {
+          await player.setVolume(_currentVolume);
+          await player.setSpeed(playbackSpeedNotifier.value);
+        }
+      }
+    }
+
+    await reapplyEqualizer();
+    await _refreshAudioOutputDiagnostics(
+      reason: 'bit-perfect preference changed',
+    );
   }
 
   void _notifyQueueChanged() {
@@ -367,15 +419,23 @@ class PlayerService {
   Stream<PlaybackState> get playbackStateStream =>
       _playbackManager.playbackState;
   PlaybackState? get latestPlaybackState => _playbackManager.latestState;
+  ValueNotifier<AudioEngineType> get selectedPlaybackModeNotifier =>
+      _sessionManager.selectedModeNotifier;
+  ValueNotifier<AudioEngineType?> get initializedPlaybackModeNotifier =>
+      _sessionManager.initializedModeNotifier;
   AudioEngineType get currentEngineType =>
-      _routeManager.initializedEngineType ?? _routeManager.selectedEngineType;
+      _sessionManager.initializedMode ?? _sessionManager.selectedMode;
+  bool get isBitPerfectModeEnabled =>
+      _uac2Service.isBitPerfectEnabledSync ||
+      currentEngineType == AudioEngineType.dapInternalHighRes;
+  bool get isBitPerfectProcessingLocked =>
+      isBitPerfectModeEnabled ||
+      currentEngineType == AudioEngineType.usbDacExperimental;
 
-  just_audio.AudioPlayer _requireJustAudioPlayer() {
-    final player = _justAudioPlayer;
-    if (player == null) {
-      throw StateError('Android playback engine has not been initialized');
+  void _debugLog(String message) {
+    if (Uac2PreferencesService.isDeveloperModeEnabledSync) {
+      debugPrint(message);
     }
-    return player;
   }
 
   /// Initialize the audio engine.
@@ -400,7 +460,7 @@ class PlayerService {
       return;
     }
 
-    final future = initAudio();
+    final future = _prepareForAppLaunchInternal();
 
     _appLaunchPreparationInFlight = future;
     try {
@@ -410,27 +470,71 @@ class PlayerService {
     }
   }
 
+  Future<void> _prepareForAppLaunchInternal() async {
+    await initAudio();
+    if (Platform.isAndroid && !_sessionManager.selectedMode.usesRustBackend) {
+      await _ensureAndroidPlayer();
+    }
+  }
+
   Future<void> setHiFiModeEnabled(bool enabled) async {
     await initAudio();
-    await _routeManager.setHiFiModeEnabled(enabled);
+    await _sessionManager.setHiFiModeEnabled(enabled);
+  }
+
+  Future<void> setDapBitPerfectEnabled(bool enabled) async {
+    await setHiFiModeEnabled(enabled);
   }
 
   Future<bool> isHiFiModeEnabled() async {
     await initAudio();
-    return _routeManager.isHiFiModeEnabled();
+    return _sessionManager.isHiFiModeEnabled();
+  }
+
+  Future<bool> isDapBitPerfectEnabled() async {
+    return isHiFiModeEnabled();
   }
 
   Future<void> _initializeAudio() async {
     debugPrint('[Engine] Initializing audio manager');
 
     try {
-      await _routeManager.initialize();
-      _playbackManager.publishIdleState(_routeManager.selectedEngineType);
-      await _configureAndroidAudioSession();
+      await Future.wait<void>([
+        _preferencesService.initializeDeveloperModeCache(),
+        _sessionManager.initialize(),
+        _uac2Service.isBitPerfectEnabled(),
+      ]);
+      _playbackManager.publishIdleState(_sessionManager.selectedMode);
       _audioInitialized = true;
+      await _refreshAudioOutputDiagnostics(reason: 'audio initialized');
     } finally {
       _audioInitInFlight = null;
     }
+  }
+
+  Future<void> _deactivateAndroidAudioSession() async {
+    if (!Platform.isAndroid || !_audioSessionConfigured) {
+      return;
+    }
+
+    try {
+      final session = await AudioSession.instance;
+      await session.setActive(false);
+    } catch (e) {
+      debugPrint('[AudioFocus] Failed to deactivate Android audio session: $e');
+    }
+  }
+
+  Future<void> _releaseAndroidManagedAudioResources({
+    required String reason,
+  }) async {
+    if (!Platform.isAndroid) {
+      return;
+    }
+
+    debugPrint('[Engine] Releasing Android-managed audio resources ($reason)');
+    await _disposeAndroidEngine();
+    await _deactivateAndroidAudioSession();
   }
 
   Future<void> _configureAndroidAudioSession() async {
@@ -438,20 +542,91 @@ class PlayerService {
       return;
     }
 
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
-    _audioFocusSubscription ??= session.interruptionEventStream.listen((event) {
-      if (event.begin) {
-        debugPrint('[AudioFocus] lost');
-      } else {
-        debugPrint('[AudioFocus] gained');
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+      _audioFocusSubscription ??= session.interruptionEventStream.listen((
+        event,
+      ) {
+        if (event.begin) {
+          if (isPlayingNotifier.value) {
+            unawaited(_pauseInternal());
+          }
+          return;
+        }
+
+        if (event.type == AudioInterruptionType.pause) {
+          unawaited(_resumeInternal());
+        }
+      });
+      _audioSessionConfigured = true;
+    } catch (e) {
+      debugPrint('[AudioFocus] Failed to configure Android audio session: $e');
+    }
+  }
+
+  Future<just_audio.AudioPlayer> _ensureAndroidPlayer() async {
+    final existing = _justAudioPlayer;
+    if (existing != null) {
+      return existing;
+    }
+
+    await _configureAndroidAudioSession();
+    final player = just_audio.AudioPlayer();
+    _justAudioPlayer = player;
+    await player.setVolume(isBitPerfectModeEnabled ? 1.0 : _currentVolume);
+    await player.setSpeed(
+      isBitPerfectModeEnabled ? 1.0 : playbackSpeedNotifier.value,
+    );
+    await _updateLoopMode();
+    return player;
+  }
+
+  Future<void> _configureAndroidPlayer(just_audio.AudioPlayer player) async {
+    if (_justAudioPlayer != player) {
+      _justAudioPlayer = player;
+    }
+
+    if (Platform.isAndroid && _audioSessionConfigured) {
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(true);
+      } catch (e) {
+        debugPrint('[AudioFocus] Failed to activate Android audio session: $e');
       }
-    });
-    _audioSessionConfigured = true;
+    }
+
+    await player.setVolume(isBitPerfectModeEnabled ? 1.0 : _currentVolume);
+    await player.setSpeed(
+      isBitPerfectModeEnabled ? 1.0 : playbackSpeedNotifier.value,
+    );
+    await _updateLoopMode();
+  }
+
+  AndroidAudioEngine _createAndroidEngine() {
+    return AndroidAudioEngine(
+      playerProvider: _ensureAndroidPlayer,
+      sourcesBuilder: _buildAudioSources,
+      sourceBuilder: _buildAudioSourceForSong,
+      playlistProvider: () => List<Song>.unmodifiable(_playlist),
+      configurePlayer: _configureAndroidPlayer,
+      disposeEngine: _disposeAndroidEngine,
+      shouldSuppressTrackSync: () =>
+          _suppressSequenceStateUpdates || _isRebuildingPlaylist,
+      shouldIgnoreTrack: (track) => track.filePath == null,
+    );
   }
 
   Future<bool> _ensureRustBackendAvailable() async {
-    if (_rustBackendAvailable) return true;
+    if (_rustBackendAvailable && _rustAudioService.isInitialized) {
+      return true;
+    }
+    if (_rustBackendAvailable && !_rustAudioService.isInitialized) {
+      debugPrint(
+        '[Engine] Rust backend flag was stale; reinitializing Rust audio manager',
+      );
+      _rustBackendAvailable = false;
+    }
     if (_rustInitInFlight != null) {
       return _rustInitInFlight!;
     }
@@ -559,153 +734,397 @@ class PlayerService {
       song: song,
       isPlaying: isPlaying,
       formatOverride: _deriveUac2FormatFromSong(song),
+      playbackMode: currentEngineType,
+    );
+    await _refreshAudioOutputDiagnostics(
+      reason: 'UAC2 status sync',
+      activeSong: song,
     );
   }
 
-  void _setupJustAudioListeners() {
-    if (_justAudioListenersAttached) return;
-    _justAudioListenersAttached = true;
+  Future<void> _refreshAudioOutputDiagnostics({
+    required String reason,
+    Song? activeSong,
+  }) async {
+    final mode = currentEngineType;
+    final activeEngineType = _playbackManager.activeEngineType ?? mode;
+    final usesRustDiagnostics = activeEngineType.usesRustBackend;
+    final song = activeSong ?? currentSongNotifier.value;
+    final trackFormat = _deriveUac2FormatFromSong(song);
+    final deviceInfo = Platform.isAndroid
+        ? AndroidAudioDeviceService.instance.deviceInfoNotifier.value
+        : AndroidPlaybackDeviceInfo.unknown;
+    final debugState = Platform.isAndroid
+        ? await _uac2Service.getAndroidPlaybackDebugState()
+        : null;
+    final rustAudioState = _mapValue(debugState?['rustAudioState']);
+    final engineState = _mapValue(rustAudioState?['engine']);
+    final directUsbState = _mapValue(rustAudioState?['direct_usb']);
+    final deviceProfile = _mapValue(rustAudioState?['device_profile']);
+    final detectedDap = _isDetectedDapProfile(deviceProfile);
+    final detectedDapBrand = _detectedDapBrand(deviceProfile);
 
-    final player = _requireJustAudioPlayer();
+    final outputSignature = _stringValue(
+      engineState?['output_signature'] ?? engineState?['outputSignature'],
+    );
+    final engineConfiguredSampleRate = _intValue(
+      engineState?['sample_rate'] ?? engineState?['sampleRate'],
+    );
+    final outputStrategy =
+        _stringValue(
+          engineState?['output_strategy'] ?? engineState?['outputStrategy'],
+        ) ??
+        (outputSignature?.startsWith('android-uac2:') == true
+            ? 'usb_direct'
+            : 'resampled_fallback');
+    final engineRequestedSampleRate = _intValue(
+      engineState?['requested_sample_rate'] ??
+          engineState?['requestedSampleRate'],
+    );
+    final engineActualSampleRate = _intValue(
+      engineState?['actual_sample_rate'] ?? engineState?['actualSampleRate'],
+    );
+    final engineResamplerActive =
+        engineState?['resampler_active'] == true ||
+        engineState?['resamplerActive'] == true;
+    final enginePassthroughAllowed =
+        engineState?['passthrough_allowed'] == true ||
+        engineState?['passthroughAllowed'] == true;
+    final engineVerificationReason = _stringValue(
+      engineState?['verification_reason'] ?? engineState?['verificationReason'],
+    );
+    final directUsbConfiguredSampleRate = _intValue(
+      directUsbState?['playback_format_sample_rate'] ??
+          directUsbState?['playbackFormatSampleRate'],
+    );
+    final directUsbClockReportedSampleRate = _intValue(
+      directUsbState?['clock_reported_sample_rate'] ??
+          directUsbState?['clockReportedSampleRate'],
+    );
+    final directUsbClockControlSucceeded =
+        directUsbState?['clock_control_succeeded'] == true ||
+        directUsbState?['clockControlSucceeded'] == true;
+    final directUsbClockVerificationPassed =
+        directUsbState?['clock_verification_passed'] == true ||
+        directUsbState?['clockVerificationPassed'] == true;
+    final directUsbDacClockPolicy = _stringValue(
+      directUsbState?['dac_clock_policy'] ?? directUsbState?['dacClockPolicy'],
+    );
+    final directUsbBitPerfectVerified =
+        directUsbState?['bit_perfect_verified'] == true ||
+        directUsbState?['bitPerfectVerified'] == true;
+    final directUsbRegistered =
+        debugState?['directUsbRegistered'] == true ||
+        directUsbState?['registered'] == true;
+    final usbInterfaceClaimed =
+        directUsbState?['idle_lock_held'] == true ||
+        directUsbState?['stream_active'] == true;
+    final usbStreamStable =
+        directUsbState?['usb_stream_stable'] == true ||
+        directUsbState?['usbStreamStable'] == true;
+    final audioFocusHeld = debugState?['audioFocusHeld'] == true;
 
-    _justAudioSubscriptions.add(
-      player.errorStream.listen((error) {
-        if (_usingRustBackend) return;
-        final song = currentSongNotifier.value;
-        if (song == null) return;
-        final message = error.toString();
-        if (message.contains('Loading interrupted')) {
-          debugPrint(
-            'Ignoring just_audio interruption for ${song.title} during player transition',
-          );
-          return;
-        }
+    final androidManagedUsbRoute =
+        deviceInfo.hasUsbDac ||
+        deviceInfo.hasAttachedUac2Device ||
+        deviceInfo.looksLikeUsbAudioRoute;
 
-        debugPrint('just_audio error for ${song.title}: $error');
-      }),
+    final pathManagement = !Platform.isAndroid
+        ? AudioPathManagement.androidManagedShared
+        : !usesRustDiagnostics
+        ? AudioPathManagement.androidManagedShared
+        : outputStrategy == 'usb_direct' &&
+              outputSignature?.startsWith('android-uac2:') == true
+        ? AudioPathManagement.directUsbExperimental
+        : AudioPathManagement.androidManagedLowLatency;
+
+    final isMixerManaged =
+        pathManagement != AudioPathManagement.directUsbExperimental;
+    final requestedOutputSampleRate =
+        (!usesRustDiagnostics ? trackFormat?.sampleRate : null) ??
+        engineRequestedSampleRate ??
+        (pathManagement == AudioPathManagement.directUsbExperimental
+            ? directUsbConfiguredSampleRate
+            : engineConfiguredSampleRate ?? trackFormat?.sampleRate);
+    final reportedOutputSampleRate =
+        (!usesRustDiagnostics ? null : null) ??
+        engineActualSampleRate ??
+        (pathManagement == AudioPathManagement.directUsbExperimental
+            ? directUsbClockReportedSampleRate
+            : engineConfiguredSampleRate);
+    final resamplerActive =
+        (usesRustDiagnostics && engineResamplerActive) ||
+        (requestedOutputSampleRate != null &&
+            usesRustDiagnostics &&
+            reportedOutputSampleRate != null &&
+            requestedOutputSampleRate != reportedOutputSampleRate);
+    final passthroughAllowed =
+        usesRustDiagnostics &&
+        (enginePassthroughAllowed || directUsbBitPerfectVerified);
+    final verificationReason =
+        (!usesRustDiagnostics ? null : engineVerificationReason) ??
+        (!directUsbClockVerificationPassed &&
+                pathManagement == AudioPathManagement.directUsbExperimental
+            ? 'Direct USB verification failed'
+            : null);
+    final outputStrategyLabel = !usesRustDiagnostics
+        ? 'Android shared'
+        : switch (outputStrategy) {
+            'dap_native' => 'DAP native',
+            'mixer_bit_perfect' => 'Mixer bit-perfect',
+            'mixer_matched' => 'Mixer matched',
+            'usb_direct' => 'USB direct',
+            'resampled_fallback' => 'Resampled fallback',
+            _ => 'Adaptive',
+          };
+    final backendDescription = !usesRustDiagnostics
+        ? 'just_audio / ExoPlayer'
+        : switch (outputStrategy) {
+            'usb_direct' when passthroughAllowed =>
+              'Rust engine via libusb direct USB (verified)',
+            'usb_direct' => 'Rust engine via libusb direct USB',
+            'dap_native' when passthroughAllowed =>
+              'Rust engine via native DAP HAL path (verified)',
+            'dap_native' => 'Rust engine via native DAP HAL path',
+            'mixer_bit_perfect' =>
+              'Rust engine via Android mixer bit-perfect path',
+            'mixer_matched' =>
+              'Rust engine via Oboe/AAudio (matched-rate Android-managed)',
+            'resampled_fallback' =>
+              'Rust engine via Oboe/AAudio with adaptive resampler fallback',
+            _ => 'Rust adaptive playback engine',
+          };
+
+    final capabilityStateLabel = !usesRustDiagnostics
+        ? (androidManagedUsbRoute
+              ? 'Android shared (USB route)'
+              : 'Android shared')
+        : switch (outputStrategy) {
+            'usb_direct' when passthroughAllowed => 'Verified USB direct',
+            'usb_direct' => 'USB direct',
+            'dap_native' when passthroughAllowed => 'Verified DAP native',
+            'dap_native' => 'DAP native',
+            'mixer_bit_perfect' when passthroughAllowed => 'Mixer bit-perfect',
+            'mixer_matched' => 'Android matched',
+            'resampled_fallback' when androidManagedUsbRoute =>
+              'Android (resampled)',
+            'resampled_fallback' => 'Android adaptive',
+            _ => 'Adaptive output',
+          };
+
+    final effectiveDirectUsbDacClockPolicy =
+        pathManagement == AudioPathManagement.directUsbExperimental
+        ? directUsbDacClockPolicy
+        : null;
+    final effectiveClockOk =
+        pathManagement == AudioPathManagement.directUsbExperimental
+        ? directUsbClockControlSucceeded
+        : true;
+    final effectiveRateVerified =
+        pathManagement == AudioPathManagement.directUsbExperimental
+        ? directUsbClockVerificationPassed
+        : true;
+
+    final capabilityFlags = AudioCapabilityFlags(
+      supportsExclusiveUsbOwnership:
+          usesRustDiagnostics &&
+          pathManagement == AudioPathManagement.directUsbExperimental &&
+          directUsbRegistered &&
+          usbInterfaceClaimed,
+      supportsDirectSampleRateSwitching:
+          usesRustDiagnostics &&
+          pathManagement == AudioPathManagement.directUsbExperimental &&
+          directUsbClockVerificationPassed,
+      supportsVerifiedBitPerfect:
+          usesRustDiagnostics &&
+          passthroughAllowed &&
+          (pathManagement == AudioPathManagement.directUsbExperimental ||
+              outputStrategy == 'mixer_bit_perfect' ||
+              outputStrategy == 'dap_native'),
+      supportsAndroidManagedHighResOnly:
+          activeEngineType == AudioEngineType.dapInternalHighRes,
+      supportsInternalDapPathOnly:
+          activeEngineType == AudioEngineType.dapInternalHighRes &&
+          !deviceInfo.hasUsbDac,
     );
 
-    _justAudioSubscriptions.add(
-      player.playerStateStream.listen((state) {
-        if (_usingRustBackend) return;
-        final wasPlaying = isPlayingNotifier.value;
-        unawaited(
-          _syncUac2PlaybackStatus(
-            currentSongNotifier.value,
-            isPlaying: state.playing,
-          ),
-        );
-
-        if (wasPlaying != state.playing && currentSongNotifier.value != null) {
-          // Update full notification state to ensure icon and time update properly
-          _updateNotificationState();
-        }
-
-        if (!_suppressSequenceStateUpdates &&
-            state.processingState == just_audio.ProcessingState.completed &&
-            shouldHandleManualCompletion(
-              usingRustBackend: false,
-              loopMode: loopModeNotifier.value,
-            )) {
-          _onSongFinished();
-        }
-      }),
+    audioOutputDiagnosticsNotifier.value = AudioOutputDiagnostics(
+      selectedMode: _sessionManager.selectedMode,
+      initializedMode: _sessionManager.initializedMode,
+      detectedDap: detectedDap,
+      detectedDapBrand: detectedDapBrand,
+      pathManagement: pathManagement,
+      outputStrategyLabel: outputStrategyLabel,
+      capabilityStateLabel: capabilityStateLabel,
+      backendDescription: backendDescription,
+      routeType: deviceInfo.routeType ?? 'unknown',
+      routeLabel: deviceInfo.routeSummary,
+      outputDeviceLabel:
+          _stringValue(
+            directUsbState?['product_name'] ?? directUsbState?['productName'],
+          ) ??
+          _uac2Service.currentDeviceStatus?.device.productName ??
+          deviceInfo.routeSummary,
+      isMixerManaged: isMixerManaged,
+      audioFocusHeld: audioFocusHeld,
+      directUsbRegistered: usesRustDiagnostics && directUsbRegistered,
+      usbInterfaceClaimed: usesRustDiagnostics && usbInterfaceClaimed,
+      usbStreamStable: usesRustDiagnostics && usbStreamStable,
+      trackSampleRate: trackFormat?.sampleRate,
+      requestedOutputSampleRate: requestedOutputSampleRate,
+      reportedOutputSampleRate: reportedOutputSampleRate,
+      resamplerActive: resamplerActive,
+      passthroughAllowed: passthroughAllowed,
+      activeOutputSignature: usesRustDiagnostics ? outputSignature : null,
+      verificationReason: verificationReason,
+      fallbackReason: _sessionManager.fallbackReason,
+      capabilityFlags: capabilityFlags,
     );
 
-    _justAudioSubscriptions.add(
-      player.positionStream.listen((pos) {
-        if (_usingRustBackend) return;
-        if (!_suppressSequenceStateUpdates) {
-          final activeIndex = player.currentIndex;
-          if (activeIndex != null && activeIndex != _currentIndex) {
-            _syncCurrentSongFromIndex(activeIndex, fromListener: true);
-          }
-        }
-
-        // When repeat-one loops, just_audio may not fire completed; detect
-        // position wrapping back to start so the notification progress bar resets.
-        final prev = _lastPosition;
-        _lastPosition = pos;
-        _updateAutoSyncGuardFromProgress(pos);
-        _trackReplayProgress(pos);
-
-        // Update notification on loop wrap-around
-        if (currentSongNotifier.value != null &&
-            durationNotifier.value.inSeconds > 0 &&
-            prev.inSeconds > 5 &&
-            pos.inSeconds < 2) {
-          _updateNotificationState();
-        }
-
-        // Periodically update notification with current position (throttled to every 2 seconds)
-        final now = DateTime.now();
-        if (currentSongNotifier.value != null &&
-            isPlayingNotifier.value &&
-            now.difference(_lastNotificationUpdate).inSeconds >= 2) {
-          _lastNotificationUpdate = now;
-          _updateNotificationState();
-        }
-      }),
+    final activeAltSetting = _intValue(
+      directUsbState?['active_alt_setting'] ??
+          directUsbState?['activeAltSetting'],
+    );
+    final activeEndpointAddress = _intValue(
+      directUsbState?['active_endpoint_address'] ??
+          directUsbState?['activeEndpointAddress'],
+    );
+    final transportFormat = _stringValue(
+      directUsbState?['transport_format'] ?? directUsbState?['transportFormat'],
+    );
+    final transportSubslot = _intValue(
+      directUsbState?['transport_subslot_size'] ??
+          directUsbState?['transportSubslotSize'],
+    );
+    final transportBitResolution = _intValue(
+      directUsbState?['transport_bit_resolution'] ??
+          directUsbState?['transportBitResolution'],
+    );
+    final activeSyncType = _stringValue(
+      directUsbState?['active_sync_type'] ?? directUsbState?['activeSyncType'],
+    );
+    final activeUsageType = _stringValue(
+      directUsbState?['active_usage_type'] ??
+          directUsbState?['activeUsageType'],
+    );
+    final activeRefresh = _intValue(
+      directUsbState?['active_refresh'] ?? directUsbState?['activeRefresh'],
+    );
+    final activeSynchAddress = _intValue(
+      directUsbState?['active_synch_address'] ??
+          directUsbState?['activeSynchAddress'],
+    );
+    final activeServiceIntervalUs = _intValue(
+      directUsbState?['active_service_interval_us'] ??
+          directUsbState?['activeServiceIntervalUs'],
+    );
+    final activeMaxPacketBytes = _intValue(
+      directUsbState?['active_max_packet_bytes'] ??
+          directUsbState?['activeMaxPacketBytes'],
+    );
+    final directUsbRefusalReason = _stringValue(
+      directUsbState?['direct_mode_refusal_reason'] ??
+          directUsbState?['directModeRefusalReason'],
+    );
+    final packetSchedulePreview = _dynamicListValue(
+      directUsbState?['packet_schedule_frames_preview'] ??
+          directUsbState?['packetScheduleFramesPreview'],
+    );
+    final bufferFillMs = _intValue(
+      directUsbState?['buffer_fill_ms'] ?? directUsbState?['bufferFillMs'],
+    );
+    final bufferCapacityMs = _intValue(
+      directUsbState?['buffer_capacity_ms'] ??
+          directUsbState?['bufferCapacityMs'],
+    );
+    final bufferTargetMs = _intValue(
+      directUsbState?['buffer_target_ms'] ?? directUsbState?['bufferTargetMs'],
+    );
+    final framesPerPacket = _intValue(
+      directUsbState?['frames_per_packet'] ??
+          directUsbState?['framesPerPacket'],
+    );
+    final underrunCount = _intValue(
+      directUsbState?['underrun_count'] ?? directUsbState?['underrunCount'],
+    );
+    final producerFrames = _intValue(
+      directUsbState?['producer_frames'] ?? directUsbState?['producerFrames'],
+    );
+    final consumerFrames = _intValue(
+      directUsbState?['consumer_frames'] ?? directUsbState?['consumerFrames'],
+    );
+    final driftMsFromTarget = _intValue(
+      directUsbState?['drift_ms_from_target'] ??
+          directUsbState?['driftMsFromTarget'],
+    );
+    final directUsbLastError = _stringValue(
+      directUsbState?['last_error'] ?? directUsbState?['lastError'],
     );
 
-    _justAudioSubscriptions.add(
-      player.bufferedPositionStream.listen((pos) {
-        if (_usingRustBackend) return;
-      }),
+    _debugLog(
+      '[Diagnostics] $reason: mode=${mode.logLabel}, '
+      'selected=${_sessionManager.selectedMode.logLabel}, '
+      'path=$pathManagement, strategy=$outputStrategyLabel, '
+      'route=${deviceInfo.routeSummary}, '
+      'backend="$backendDescription", requested=$requestedOutputSampleRate, '
+      'reported=$reportedOutputSampleRate, focus=$audioFocusHeld, '
+      'usbRegistered=$directUsbRegistered, usbClaimed=$usbInterfaceClaimed, '
+      'usbStreamStable=$usbStreamStable, '
+      'mixerManaged=$isMixerManaged, signature=${outputSignature ?? 'none'}, '
+      'alt=${activeAltSetting ?? -1}, endpoint=${activeEndpointAddress ?? -1}, '
+      'sync=${activeSyncType ?? 'none'}, usage=${activeUsageType ?? 'none'}, '
+      'refresh=${activeRefresh ?? -1}, synchAddress=${activeSynchAddress ?? -1}, '
+      'clockOk=$effectiveClockOk, rateVerified=$effectiveRateVerified, '
+      'dacPolicy=${effectiveDirectUsbDacClockPolicy ?? 'none'}, '
+      'bitPerfect=$directUsbBitPerfectVerified, '
+      'serviceUs=${activeServiceIntervalUs ?? -1}, maxPacket=${activeMaxPacketBytes ?? -1}, '
+      'schedule=${packetSchedulePreview ?? const []}, '
+      'bufferMs=${bufferFillMs ?? -1}/${bufferTargetMs ?? -1}/${bufferCapacityMs ?? -1}, '
+      'framesPerPacket=${framesPerPacket ?? -1}, underruns=${underrunCount ?? -1}, '
+      'producerFrames=${producerFrames ?? -1}, consumerFrames=${consumerFrames ?? -1}, '
+      'driftMs=${driftMsFromTarget ?? -999}, '
+      'resampler=$resamplerActive, passthrough=$passthroughAllowed, '
+      'transport=${transportFormat ?? 'none'}/${transportBitResolution ?? -1}/'
+      '${transportSubslot ?? -1}, refusal=${directUsbRefusalReason ?? 'none'}, '
+      'verifyReason=${verificationReason ?? 'none'}, '
+      'lastError=${directUsbLastError ?? 'none'}, '
+      'fallback=${_sessionManager.fallbackReason ?? 'none'}',
     );
+  }
 
-    _justAudioSubscriptions.add(
-      player.durationStream.listen((dur) {
-        if (_usingRustBackend) return;
-        if (dur != null) {
-          if (currentSongNotifier.value != null && isPlayingNotifier.value) {
-            _updateNotificationState();
-          }
-        }
-      }),
-    );
+  Map<String, dynamic>? _mapValue(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return value.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return null;
+  }
 
-    // Listen to sequence state changes for gapless transitions
-    _justAudioSubscriptions.add(
-      player.sequenceStateStream.listen((sequenceState) {
-        if (_usingRustBackend) return;
-        // Skip updates during playlist rebuild to prevent wrong song display
-        if (_isRebuildingPlaylist || _suppressSequenceStateUpdates) return;
+  String? _stringValue(dynamic value) {
+    return value is String && value.isNotEmpty ? value : null;
+  }
 
-        if (sequenceState.currentIndex != null) {
-          _syncCurrentSongFromIndex(
-            sequenceState.currentIndex!,
-            fromListener: true,
-          );
-        }
-      }),
-    );
+  int? _intValue(dynamic value) {
+    return value is num ? value.toInt() : null;
+  }
 
-    // Some engines/transition paths may emit currentIndex without a matching
-    // sequenceState transition callback timing. Keep UI in sync either way.
-    _justAudioSubscriptions.add(
-      player.currentIndexStream.listen((newIndex) {
-        if (_usingRustBackend) return;
-        if (_isRebuildingPlaylist || _suppressSequenceStateUpdates) return;
-        if (newIndex == null) return;
-        _syncCurrentSongFromIndex(newIndex, fromListener: true);
-      }),
-    );
+  bool _isDetectedDapProfile(Map<String, dynamic>? profile) {
+    final kind = _mapValue(profile?['kind']);
+    return kind?['Dap'] is String;
+  }
 
-    _justAudioSubscriptions.add(
-      player.positionDiscontinuityStream.listen((discontinuity) {
-        if (_usingRustBackend) return;
-        if (_isRebuildingPlaylist || _suppressSequenceStateUpdates) return;
-        if (discontinuity.reason !=
-            just_audio.PositionDiscontinuityReason.autoAdvance) {
-          return;
-        }
+  String? _detectedDapBrand(Map<String, dynamic>? profile) {
+    final kind = _mapValue(profile?['kind']);
+    return _stringValue(kind?['Dap']);
+  }
 
-        final newIndex = discontinuity.event.currentIndex;
-        if (newIndex == null) return;
-        _syncCurrentSongFromIndex(newIndex, fromListener: true);
-      }),
-    );
+  List<int>? _dynamicListValue(dynamic value) {
+    if (value is List) {
+      return value.whereType<num>().map((entry) => entry.toInt()).toList();
+    }
+    return null;
   }
 
   void _syncCurrentSongFromIndex(int newIndex, {bool fromListener = false}) {
@@ -814,6 +1233,10 @@ class PlayerService {
       if (!_usingRustBackend) return;
       _onSongFinished();
     };
+    _rustAudioService.onError = (message) {
+      debugPrint('[PlayerService] Rust backend error: $message');
+      unawaited(_refreshAudioOutputDiagnostics(reason: 'Rust backend error'));
+    };
   }
 
   void _bindPlaybackState() {
@@ -822,8 +1245,17 @@ class PlayerService {
       final previous = _lastPlaybackState;
       _lastPlaybackState = state;
 
-      if (currentSongNotifier.value != state.currentTrack) {
-        currentSongNotifier.value = state.currentTrack;
+      // When the engine attaches or reinitialises it briefly emits a null-track
+      // transitional state before the real track loads. If the playlist is still
+      // populated (songs are queued) we preserve the last known song in the
+      // notifier so the mini-player and ambient background never flash to black.
+      // We only truly clear the song notifier when the playlist itself is empty
+      // (i.e. the user explicitly stopped all playback).
+      final incomingTrack =
+          state.currentTrack ??
+          (_playlist.isNotEmpty ? currentSongNotifier.value : null);
+      if (currentSongNotifier.value != incomingTrack) {
+        currentSongNotifier.value = incomingTrack;
       }
       if (isPlayingNotifier.value != state.isPlaying) {
         isPlayingNotifier.value = state.isPlaying;
@@ -838,7 +1270,7 @@ class PlayerService {
         durationNotifier.value = state.duration;
       }
 
-      final shouldUseRust = state.engine == AudioEngineType.usb;
+      final shouldUseRust = state.engine.usesRustBackend;
       if (_usingRustBackend != shouldUseRust) {
         _usingRustBackend = shouldUseRust;
       }
@@ -854,9 +1286,9 @@ class PlayerService {
           _clearAutoSyncGuard();
         }
         if (state.currentTrack != null) {
-          debugPrint('[Playback] Track changed: ${state.currentTrack!.title}');
+          _debugLog('[Playback] Track changed: ${state.currentTrack!.title}');
         } else {
-          debugPrint('[Playback] Track cleared');
+          _debugLog('[Playback] Track cleared');
         }
         if (state.currentTrack != null) {
           _startReplayTracking(
@@ -880,6 +1312,13 @@ class PlayerService {
           state.currentTrack != null) {
         unawaited(_updateNotificationState());
       }
+
+      unawaited(
+        _refreshAudioOutputDiagnostics(
+          reason: 'playback state changed',
+          activeSong: state.currentTrack,
+        ),
+      );
     });
   }
 
@@ -936,6 +1375,7 @@ class PlayerService {
     } catch (e) {
       debugPrint('Stop failed: $e');
     }
+    await _refreshAudioOutputDiagnostics(reason: 'playback stopped');
     cancelSleepTimer();
   }
 
@@ -1157,56 +1597,46 @@ class PlayerService {
     await _resolvePreparedPlaybackPath(song);
   }
 
-  Future<just_audio.AudioPlayer> _ensureAndroidEngineInitialized() async {
-    final existingPlayer = _justAudioPlayer;
-    if (existingPlayer != null) {
-      return existingPlayer;
-    }
-
-    await _configureAndroidAudioSession();
-    debugPrint('[Engine] Initializing Android engine');
-    final player = just_audio.AudioPlayer(
-      handleInterruptions: true,
-      androidApplyAudioAttributes: true,
-      handleAudioSessionActivation: true,
-    );
-    _justAudioPlayer = player;
-    _setupJustAudioListeners();
-    await player.setVolume(_currentVolume);
-    await _updateLoopMode();
-    return player;
-  }
-
-  Future<void> _configureAndroidPlayer(just_audio.AudioPlayer player) async {
-    await player.setSpeed(playbackSpeedNotifier.value);
-    await player.setVolume(_currentVolume);
-    await _updateLoopMode();
-  }
-
-  AndroidAudioEngine _createAndroidEngine() {
-    return AndroidAudioEngine(
-      playerProvider: _ensureAndroidEngineInitialized,
-      sourcesBuilder: _buildAudioSources,
-      playlistProvider: () => List<Song>.from(_playlist),
-      configurePlayer: _configureAndroidPlayer,
-      disposeEngine: _disposeAndroidEngine,
-      shouldSuppressTrackSync: () =>
-          _isRebuildingPlaylist || _suppressSequenceStateUpdates,
-      shouldIgnoreTrack: _shouldIgnoreAutoSyncedSong,
-    );
-  }
-
-  RustAudioEngine _createRustEngine() {
+  RustAudioEngine _createRustEngine(AudioEngineType playbackMode) {
     return RustAudioEngine(
+      playbackMode: playbackMode,
       rustAudioService: _rustAudioService,
-      ensureInitialized: _ensureUsbEngineInitialized,
+      ensureInitialized: () => _ensureRustEngineInitialized(playbackMode),
       resolvePlaybackPath: _resolveRustPath,
       disposeEngine: _disposeUsbEngine,
     );
   }
 
-  Future<void> _ensureUsbEngineInitialized() async {
-    if (Platform.isAndroid) {
+  Future<void> _ensureRustEngineInitialized(
+    AudioEngineType playbackMode,
+  ) async {
+    final inFlight = _rustEnginePreparationInFlight;
+    if (inFlight != null) {
+      debugPrint(
+        '[Engine] Waiting for in-flight Rust engine preparation to complete',
+      );
+      await inFlight;
+      return;
+    }
+
+    final future = _doEnsureRustEngineInitialized(playbackMode);
+    _rustEnginePreparationInFlight = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_rustEnginePreparationInFlight, future)) {
+        _rustEnginePreparationInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _doEnsureRustEngineInitialized(
+    AudioEngineType playbackMode,
+  ) async {
+    final requiresUsbDac =
+        playbackMode == AudioEngineType.usbDacExperimental &&
+        Platform.isAndroid;
+    if (requiresUsbDac) {
       final deviceInfo = await AndroidAudioDeviceService.instance.refresh();
       if (!deviceInfo.hasUsbDac) {
         debugPrint('[Engine] USB init blocked: no USB DAC detected');
@@ -1215,20 +1645,286 @@ class PlayerService {
     }
 
     if (!_rustAudioService.isInitialized) {
-      debugPrint('[Engine] Initializing USB engine');
+      debugPrint(
+        '[Engine] Initializing Rust engine for ${playbackMode.logLabel}',
+      );
     }
 
     final rustAvailable = await _ensureRustBackendAvailable();
     if (!rustAvailable) {
-      throw StateError('Rust USB engine is unavailable');
+      throw StateError(
+        'Rust audio engine is unavailable for ${playbackMode.logLabel}',
+      );
     }
 
     if (Platform.isAndroid) {
+      await _rustAudioService.setHighResMode(
+        playbackMode == AudioEngineType.dapInternalHighRes,
+      );
       await _uac2Service.initialize();
       await _refreshRustCapabilityInfo();
+
+      Uac2AudioFormat? directUsbFormat;
+      var preferredSampleRate = await _resolvePreferredRustSampleRate(
+        playbackMode,
+      );
+      if (playbackMode == AudioEngineType.usbDacExperimental) {
+        debugPrint(
+          '[Engine] Ensuring USB DAC is registered before engine preparation',
+        );
+        final dacRegistered = await _ensureUsbDacRegistered();
+        if (!dacRegistered) {
+          debugPrint(
+            '[Engine] Failed to register USB DAC before engine preparation',
+          );
+          throw StateError('USB DAC registration failed');
+        }
+
+        directUsbFormat =
+            _uac2Service.currentDeviceStatus?.currentFormat ??
+            _uac2Service.lastKnownFormat;
+        preferredSampleRate = directUsbFormat?.sampleRate;
+      }
+
+      try {
+        await _rustAudioService.prepareEngine(
+          preferredSampleRate: preferredSampleRate,
+        );
+      } catch (error) {
+        final recovered =
+            playbackMode == AudioEngineType.usbDacExperimental &&
+            directUsbFormat != null &&
+            await _retryAndroidDirectUsbPreparationWithFallbackRate(
+              initialError: error,
+              currentFormat: directUsbFormat,
+            );
+        if (!recovered) {
+          rethrow;
+        }
+      }
+
+      await _applyRustPlaybackProcessingPolicy(playbackMode);
     }
 
     _setupRustAudioListeners();
+  }
+
+  Future<int?> _resolvePreferredRustSampleRate(
+    AudioEngineType playbackMode,
+  ) async {
+    if (!Platform.isAndroid || playbackMode != AudioEngineType.rustOboe) {
+      return null;
+    }
+
+    final debugState = await _uac2Service.getAndroidPlaybackDebugState();
+    final rustAudioState = _mapValue(debugState?['rustAudioState']);
+    final deviceProfile = _mapValue(rustAudioState?['device_profile']);
+    if (!_isDetectedDapProfile(deviceProfile)) {
+      return null;
+    }
+
+    final deviceInfo = await AndroidAudioDeviceService.instance.refresh();
+    final internalRoute = switch (deviceInfo.routeType) {
+      null || 'unknown' || 'internal' || 'wired' => true,
+      _ => false,
+    };
+    if (!internalRoute || deviceInfo.hasUsbDac || deviceInfo.isBluetoothRoute) {
+      return null;
+    }
+
+    final formatPreference = await _preferencesService.getFormatPreference();
+    final preferredSampleRate = await _preferredSampleRateForFormatStrategy(
+      formatPreference,
+    );
+    if (preferredSampleRate == null || preferredSampleRate <= 0) {
+      return null;
+    }
+
+    debugPrint(
+      '[Engine] DAP managed playback pinned to $preferredSampleRate Hz '
+      '(${formatPreference.name}) while DAP bit-perfect is disabled',
+    );
+    return preferredSampleRate;
+  }
+
+  Future<int?> _preferredSampleRateForFormatStrategy(
+    Uac2FormatPreference formatPreference,
+  ) async {
+    switch (formatPreference) {
+      case Uac2FormatPreference.highestQuality:
+        final capabilityInfo = await _uac2Service
+            .getAndroidAudioCapabilityInfo();
+        final maxSampleRate = capabilityInfo.maxSampleRate;
+        return maxSampleRate != null && maxSampleRate > 0
+            ? maxSampleRate
+            : 48000;
+      case Uac2FormatPreference.compatibility:
+        return 48000;
+      case Uac2FormatPreference.custom:
+        final customFormat = await _preferencesService.loadPreferredFormat();
+        return customFormat?.sampleRate ?? 48000;
+    }
+  }
+
+  /// Ensures USB DAC is registered with Rust before engine preparation.
+  /// This fixes the race condition where prepareEngine checks DAC state
+  /// before the DAC has been registered via JNI.
+  Future<bool> _ensureUsbDacRegistered() async {
+    try {
+      // Check if already registered
+      final diagnostics = await _uac2Service.getAndroidPlaybackDebugState();
+      final directUsbState = _mapValue(
+        _mapValue(diagnostics?['rustAudioState'])?['direct_usb'],
+      );
+      final alreadyRegistered = directUsbState?['registered'] == true;
+      final hasPlaybackFormat =
+          directUsbState?['playback_format_sample_rate'] != null;
+
+      if (alreadyRegistered && hasPlaybackFormat) {
+        debugPrint('[Engine] USB DAC already registered with playback format');
+        return true;
+      }
+
+      debugPrint(
+        '[Engine] Preparing USB DAC for playback (registered=$alreadyRegistered, hasFormat=$hasPlaybackFormat)',
+      );
+
+      // Use prepareAndroidExperimentalUsbPlayback which handles device selection,
+      // registration, and format setting all in one
+      // Try 48000 Hz first as it's more commonly supported than 44100 Hz
+      final format =
+          _uac2Service.currentDeviceStatus?.currentFormat ??
+          Uac2AudioFormat(sampleRate: 48000, bitDepth: 16, channels: 2);
+
+      final prepared = await _uac2Service.prepareAndroidExperimentalUsbPlayback(
+        format: format,
+      );
+
+      if (!prepared) {
+        debugPrint('[Engine] Failed to prepare USB DAC for playback');
+        return false;
+      }
+
+      // Verify registration and format are set
+      final verifyDiagnostics = await _uac2Service
+          .getAndroidPlaybackDebugState();
+      final verifyDirectUsbState = _mapValue(
+        _mapValue(verifyDiagnostics?['rustAudioState'])?['direct_usb'],
+      );
+      final nowRegistered = verifyDirectUsbState?['registered'] == true;
+      final nowHasFormat =
+          verifyDirectUsbState?['playback_format_sample_rate'] != null;
+
+      if (nowRegistered && nowHasFormat) {
+        debugPrint(
+          '[Engine] USB DAC successfully prepared: registered=$nowRegistered, hasFormat=$nowHasFormat, rate=${verifyDirectUsbState?['playback_format_sample_rate']}',
+        );
+      } else {
+        debugPrint(
+          '[Engine] USB DAC preparation incomplete: registered=$nowRegistered, hasFormat=$nowHasFormat',
+        );
+      }
+
+      return nowRegistered && nowHasFormat;
+    } catch (e) {
+      debugPrint('[Engine] Error ensuring USB DAC registration: $e');
+      return false;
+    }
+  }
+
+  Future<void> _applyRustPlaybackProcessingPolicy(
+    AudioEngineType playbackMode,
+  ) async {
+    if (!_rustAudioService.isInitialized) {
+      return;
+    }
+
+    if (isBitPerfectModeEnabled) {
+      final needsBypassLog =
+          (_currentVolume - 1.0).abs() > 0.0001 ||
+          (playbackSpeedNotifier.value - 1.0).abs() > 0.0001 ||
+          _rustAudioService.crossfadeEnabledNotifier.value;
+      if (needsBypassLog) {
+        debugPrint(
+          '[Engine] Explicit bit-perfect mode: bypassing software volume, playback speed, and crossfade',
+        );
+      }
+      final routeStatus = _uac2Service.currentDeviceStatus;
+      if (playbackMode == AudioEngineType.usbDacExperimental &&
+          routeStatus != null &&
+          !routeStatus.hasVolumeControl) {
+        debugPrint(
+          '[Engine] Direct USB bit-perfect is active without Android route volume control; output level is full-scale unless the DAC itself provides hardware attenuation',
+        );
+      }
+      await _rustAudioService.setVolume(1.0);
+      await _rustAudioService.setPlaybackSpeed(1.0);
+      await _rustAudioService.setCrossfade(
+        enabled: false,
+        durationSecs: _rustAudioService.crossfadeDurationNotifier.value,
+      );
+    } else if (playbackMode == AudioEngineType.usbDacExperimental) {
+      await _rustAudioService.setVolume(_currentVolume);
+      await _rustAudioService.setPlaybackSpeed(1.0);
+      await _rustAudioService.setCrossfade(
+        enabled: false,
+        durationSecs: _rustAudioService.crossfadeDurationNotifier.value,
+      );
+    } else {
+      await _rustAudioService.setVolume(_currentVolume);
+      await _rustAudioService.setPlaybackSpeed(playbackSpeedNotifier.value);
+      await _rustAudioService.setCrossfade(
+        enabled: _rustAudioService.crossfadeEnabledNotifier.value,
+        durationSecs: _rustAudioService.crossfadeDurationNotifier.value,
+      );
+    }
+
+    await reapplyEqualizer();
+  }
+
+  Future<bool> _retryAndroidDirectUsbPreparationWithFallbackRate({
+    required Object initialError,
+    required Uac2AudioFormat currentFormat,
+  }) async {
+    if (!_isDirectUsbClockSetupFailure(initialError.toString())) {
+      return false;
+    }
+    if (await _uac2Service.isBitPerfectEnabled()) {
+      debugPrint(
+        '[Engine] Bit-perfect USB requires an exact verified DAC rate; '
+        'skipping fallback-rate direct retry from '
+        '${currentFormat.sampleRate} Hz',
+      );
+      return false;
+    }
+
+    final fallbackFormat = await _uac2Service
+        .suggestAndroidExperimentalUsbOutputFormat(
+          requested: currentFormat,
+          disallowedSampleRates: <int>{currentFormat.sampleRate},
+        );
+    if (fallbackFormat == null ||
+        fallbackFormat.sampleRate == currentFormat.sampleRate) {
+      return false;
+    }
+
+    debugPrint(
+      '[Engine] Direct USB clock setup failed at ${currentFormat.sampleRate} Hz; '
+      'retrying direct USB at ${fallbackFormat.sampleRate} Hz',
+    );
+
+    final reset = await _uac2Service.resetAndroidDirectUsbPath(
+      format: fallbackFormat,
+    );
+    if (!reset) {
+      return false;
+    }
+
+    await _refreshRustCapabilityInfo();
+    await _rustAudioService.prepareEngine(
+      preferredSampleRate: fallbackFormat.sampleRate,
+    );
+    return true;
   }
 
   Future<void> _disposeAndroidEngine() async {
@@ -1236,28 +1932,20 @@ class PlayerService {
     if (player == null) return;
 
     debugPrint('[Engine] Disposing Android engine');
-    final subscriptions = List<StreamSubscription<dynamic>>.from(
-      _justAudioSubscriptions,
-    );
-    _justAudioSubscriptions.clear();
-    _justAudioListenersAttached = false;
-
-    for (final subscription in subscriptions) {
-      await subscription.cancel();
-    }
 
     try {
       await player.stop();
     } catch (_) {}
 
     await player.dispose();
+    await _deactivateAndroidAudioSession();
     _justAudioPlayer = null;
   }
 
   Future<void> _disposeUsbEngine() async {
     if (!_rustAudioService.isInitialized) return;
 
-    debugPrint('[Engine] Disposing USB engine');
+    debugPrint('[Engine] Disposing Rust engine');
     if (_rustListenersAttached) {
       if (_rustStateListener != null) {
         _rustAudioService.stateNotifier.removeListener(_rustStateListener!);
@@ -1285,6 +1973,12 @@ class PlayerService {
       await _rustAudioService.shutdown();
     } catch (_) {}
 
+    _rustBackendAvailable = false;
+    _rustEngine = null;
+
+    if (Platform.isAndroid) {
+      await _rustAudioService.setHighResMode(false);
+    }
     _usingRustBackend = false;
   }
 
@@ -1297,27 +1991,64 @@ class PlayerService {
     if (!initializeNewEngine) {
       await _playbackManager.detachEngine();
       _usingRustBackend = false;
+      await _refreshAudioOutputDiagnostics(reason: 'engine detached');
       return;
     }
 
-    await _playbackManager.ensureEngine(
-      engineType: to,
-      createEngine: () async {
-        switch (to) {
-          case AudioEngineType.android:
-            _androidEngine = _createAndroidEngine();
-            return _androidEngine!;
-          case AudioEngineType.usb:
-            _rustEngine = _createRustEngine();
-            return _rustEngine!;
-        }
-      },
-    );
-    _usingRustBackend = to == AudioEngineType.usb;
+    // ALWAYS fully dispose the outgoing engine before initializing the new one.
+    // This prevents USB "Resource busy" from overlapping sessions.
+    if (from != to || from == null) {
+      if (_rustEngine != null) {
+        debugPrint(
+          '[Engine] Full dispose of Rust engine before ${to.logLabel}',
+        );
+        await _disposeUsbEngine();
+      }
+      if (_justAudioPlayer != null) {
+        debugPrint(
+          '[Engine] Full dispose of Android engine before ${to.logLabel}',
+        );
+        await _disposeAndroidEngine();
+      }
+    }
+
+    if (to == AudioEngineType.usbDacExperimental) {
+      await _releaseAndroidManagedAudioResources(
+        reason: 'switching to USB_DAC_EXPERIMENTAL',
+      );
+    }
+
+    final hasDetachedAndroidPrewarm = _justAudioPlayer != null;
+    if (hasDetachedAndroidPrewarm) {
+      debugPrint(
+        '[Engine] Disposing detached Android prewarm before ${to.logLabel}',
+      );
+      await _disposeAndroidEngine();
+    }
+
+    if (to.usesRustBackend) {
+      await _playbackManager.ensureEngine(
+        engineType: to,
+        createEngine: () async {
+          _rustEngine = _createRustEngine(to);
+          return _rustEngine!;
+        },
+      );
+      _usingRustBackend = true;
+      await _rustAudioService.setVolume(_currentVolume);
+    } else {
+      await _playbackManager.ensureEngine(
+        engineType: to,
+        createEngine: () async => _createAndroidEngine(),
+      );
+      _usingRustBackend = false;
+    }
 
     debugPrint(
-      '[Engine] Switch complete: ${from?.name ?? 'none'} -> ${to.name} ($reason)',
+      '[Engine] Switch complete: ${from?.logLabel ?? 'none'} -> '
+      '${to.logLabel} ($reason)',
     );
+    await _refreshAudioOutputDiagnostics(reason: 'engine switch complete');
   }
 
   Song? _songAtCurrentIndex() {
@@ -1355,7 +2086,8 @@ class PlayerService {
     AudioEngineType desiredEngine, {
     required String reason,
   }) async {
-    if (desiredEngine != AudioEngineType.usb || !Platform.isAndroid) {
+    if (desiredEngine != AudioEngineType.usbDacExperimental ||
+        !Platform.isAndroid) {
       return desiredEngine;
     }
 
@@ -1368,23 +2100,119 @@ class PlayerService {
       '[Engine] USB engine requested without a USB DAC; '
       'falling back to Android ($reason)',
     );
-    return AudioEngineType.android;
+    return AudioEngineType.normalAndroid;
   }
 
   Future<AudioEngineType> _ensureEngineReady(
     AudioEngineType desiredEngine, {
+    required Song song,
+    required String reason,
+  }) async {
+    final preparedEngine = await _prepareRequestedEngineForSong(
+      desiredEngine,
+      song: song,
+      reason: reason,
+    );
+    await _sessionManager.switchMode(
+      preparedEngine,
+      initializeNewEngine: true,
+      reason: reason,
+    );
+    return preparedEngine;
+  }
+
+  Future<AudioEngineType> _prepareRequestedEngineForSong(
+    AudioEngineType desiredEngine, {
+    required Song song,
     required String reason,
   }) async {
     final normalizedEngine = await _normalizeRequestedEngine(
       desiredEngine,
       reason: reason,
     );
-    await _routeManager.switchEngine(
-      normalizedEngine,
-      initializeNewEngine: true,
-      reason: reason,
-    );
-    return normalizedEngine;
+
+    if (!Platform.isAndroid) {
+      _sessionManager.clearFallbackReason();
+      return normalizedEngine;
+    }
+
+    switch (normalizedEngine) {
+      case AudioEngineType.normalAndroid:
+        await _uac2Service.releaseAndroidDirectUsbRuntime();
+        await _rustAudioService.setHighResMode(false);
+        _sessionManager.clearFallbackReason();
+        return normalizedEngine;
+      case AudioEngineType.rustOboe:
+        await _uac2Service.releaseAndroidDirectUsbRuntime();
+        await _rustAudioService.setHighResMode(false);
+        _sessionManager.clearFallbackReason();
+        return normalizedEngine;
+      case AudioEngineType.dapInternalHighRes:
+        await _uac2Service.releaseAndroidDirectUsbRuntime();
+        await _rustAudioService.setHighResMode(true);
+        _sessionManager.clearFallbackReason();
+        return normalizedEngine;
+      case AudioEngineType.usbDacExperimental:
+        await _releaseAndroidManagedAudioResources(
+          reason: 'before direct USB initialization',
+        );
+        final trackFormat = _deriveUac2FormatFromSong(song);
+        if (trackFormat == null) {
+          await _uac2Service.markAndroidDirectUsbFallback(
+            'track sample rate is unavailable before USB engine startup',
+          );
+          await _uac2Service.releaseAndroidDirectUsbRuntime();
+          await _rustAudioService.setHighResMode(false);
+          await _sessionManager.recordFallback(
+            requestedMode: normalizedEngine,
+            fallbackMode: AudioEngineType.normalAndroid,
+            reason:
+                'track sample rate is unavailable before USB engine startup',
+          );
+          return AudioEngineType.normalAndroid;
+        }
+
+        final alreadyInUsbMode =
+            _sessionManager.initializedMode ==
+                AudioEngineType.usbDacExperimental &&
+            _rustEngine != null;
+        final currentUsbFormat =
+            _uac2Service.lastKnownFormat ??
+            _uac2Service.currentDeviceStatus?.currentFormat;
+        final formatMatches =
+            alreadyInUsbMode &&
+            currentUsbFormat != null &&
+            currentUsbFormat.sampleRate == trackFormat.sampleRate;
+
+        if (formatMatches) {
+          debugPrint(
+            '[Engine] USB engine already active with matching format '
+            '(${trackFormat.sampleRate}Hz), skipping re-preparation',
+          );
+          _sessionManager.clearFallbackReason();
+          return normalizedEngine;
+        }
+
+        final prepared = await _uac2Service
+            .prepareAndroidExperimentalUsbPlayback(format: trackFormat);
+        if (!prepared) {
+          await _uac2Service.markAndroidDirectUsbFallback(
+            'experimental direct USB path could not be prepared',
+          );
+          await _uac2Service.releaseAndroidDirectUsbRuntime();
+          await _rustAudioService.setHighResMode(false);
+          await _sessionManager.recordFallback(
+            requestedMode: normalizedEngine,
+            fallbackMode: AudioEngineType.normalAndroid,
+            reason: 'experimental direct USB path could not be prepared',
+          );
+          return AudioEngineType.normalAndroid;
+        }
+
+        await _rustAudioService.setHighResMode(false);
+        _sessionManager.clearFallbackReason();
+        return normalizedEngine;
+    }
   }
 
   /// Play a specific song.
@@ -1396,8 +2224,25 @@ class PlayerService {
   }
 
   Future<void> _enqueuePlaybackRequest(Future<void> Function() action) {
-    final operation = _playRequestQueue.then<void>((_) => action());
-    _playRequestQueue = operation.catchError((_) {});
+    debugPrint('[PlayerService] _enqueuePlaybackRequest called');
+    final operation = _playRequestQueue
+        .then<void>((_) async {
+          debugPrint(
+            '[PlayerService] _enqueuePlaybackRequest: previous operation complete, executing action',
+          );
+          try {
+            await action();
+          } catch (e, stack) {
+            debugPrint(
+              '[PlayerService] _enqueuePlaybackRequest action error: $e\n$stack',
+            );
+            rethrow;
+          }
+        })
+        .catchError((e) {
+          debugPrint('[PlayerService] _enqueuePlaybackRequest queue error: $e');
+        });
+    _playRequestQueue = operation;
     return operation;
   }
 
@@ -1406,7 +2251,7 @@ class PlayerService {
     try {
       debugPrint(
         '[Playback] play() called for ${song.title} '
-        '(selected engine: ${_routeManager.selectedEngineType.name})',
+        '(selected mode: ${_sessionManager.selectedMode.logLabel})',
       );
 
       _positionSaveTimer?.cancel();
@@ -1438,21 +2283,39 @@ class PlayerService {
 
       if (song.filePath != null) {
         await _prepareImmediatePlaybackAsset(song);
-        final desiredEngine = await _routeManager.resolvePreferredEngineType(
-          refresh: true,
-        );
+        // Route changes are already pushed into the session manager via the
+        // device listener initialized in initAudio(). Re-querying the platform
+        // here adds latency to the first tap on stable speaker routes.
+        final desiredEngine = _sessionManager.selectedMode;
         final activeEngine = await _ensureEngineReady(
           desiredEngine,
+          song: song,
           reason: 'playback requested',
         );
-        debugPrint('[Engine] Playback route resolved to ${activeEngine.name}');
-        await _playbackManager.playTrack(song);
+        debugPrint(
+          '[Engine] Playback route resolved to ${activeEngine.logLabel}',
+        );
+        await _runWithSuppressedSequenceStateUpdates(() async {
+          await _playbackManager.playTrack(song);
+        });
         _ensurePositionSaveTimer();
+        await _refreshAudioOutputDiagnostics(
+          reason: 'playback started',
+          activeSong: song,
+        );
       }
     } catch (e, stackTrace) {
+      final recovered = await _handleDirectUsbStartupRefusal(
+        e,
+        song: song,
+        initialPosition: Duration.zero,
+      );
+      if (recovered) {
+        return;
+      }
       debugPrint(
         '[Playback] play() failed for ${song.title} '
-        'on ${currentEngineType.name}: $e',
+        'on ${currentEngineType.logLabel}: $e',
       );
       debugPrintStack(stackTrace: stackTrace);
       rethrow;
@@ -1520,6 +2383,10 @@ class PlayerService {
 
       final restoredSong = _playlist[_currentIndex];
       _rememberRestoredPlaybackContext(restoredSong, lastPlayed.position);
+      _publishRestoredPlaybackState(
+        restoredSong,
+        position: lastPlayed.position,
+      );
 
       if (restoredSong.filePath != null) {
         debugPrint(
@@ -1531,16 +2398,35 @@ class PlayerService {
   }
 
   Future<void> pause() {
+    debugPrint('[PlayerService] pause() called');
     return _enqueuePlaybackRequest(_pauseInternal);
   }
 
   Future<void> _pauseInternal() async {
-    debugPrint('[Playback] pause() called');
+    debugPrint(
+      '[Playback] pause() called, hasAttachedEngine=${_playbackManager.hasAttachedEngine}',
+    );
+    // Optimistically update UI immediately so the pause button feels responsive.
+    if (isPlayingNotifier.value) {
+      isPlayingNotifier.value = false;
+    }
+    // If no engine has been attached yet (e.g. pausing a restored-but-not-started
+    // track), there is nothing to pause — the optimistic update above is enough.
+    if (!_playbackManager.hasAttachedEngine) {
+      debugPrint(
+        '[Playback] pause(): no engine attached, returning after optimistic update',
+      );
+      return;
+    }
     try {
       await _playbackManager.pause();
     } catch (e) {
       debugPrint('Pause failed: $e');
     }
+    await _refreshAudioOutputDiagnostics(
+      reason: 'playback paused',
+      activeSong: currentSongNotifier.value,
+    );
   }
 
   Future<void> resume() {
@@ -1556,17 +2442,19 @@ class PlayerService {
     }
 
     debugPrint('[Playback] resume() called');
-    final desiredEngine = await _routeManager.resolvePreferredEngineType(
-      refresh: true,
-    );
+    // Use the cached route selection maintained by the session manager's device
+    // listener rather than doing another blocking device probe on resume.
+    final desiredEngine = _sessionManager.selectedMode;
     final activeEngine = await _ensureEngineReady(
       desiredEngine,
+      song: song,
       reason: 'resume requested',
     );
-    debugPrint('[Engine] Resume route resolved to ${activeEngine.name}');
+    debugPrint('[Engine] Resume route resolved to ${activeEngine.logLabel}');
 
     final latestState = _playbackManager.latestState;
     final canResumeDirectly =
+        _playbackManager.canResumeCurrentTrack &&
         latestState != null &&
         latestState.engine == activeEngine &&
         latestState.currentTrack?.id == song.id;
@@ -1577,18 +2465,138 @@ class PlayerService {
           ? positionNotifier.value
           : _consumeRestoredPositionForSong(song);
       await _prepareImmediatePlaybackAsset(song);
-      await _playbackManager.playTrack(song, initialPosition: resumePosition);
+      await _runWithSuppressedSequenceStateUpdates(() async {
+        await _playbackManager.playTrack(song, initialPosition: resumePosition);
+      });
     }
 
     _ensurePositionSaveTimer();
+    await _refreshAudioOutputDiagnostics(
+      reason: 'playback resumed',
+      activeSong: song,
+    );
+  }
+
+  bool _isDirectUsbStartupRefusal(String message) {
+    final normalized = message.toLowerCase();
+    return message.contains('Requested ') ||
+        message.contains('No isochronous OUT endpoint can carry') ||
+        message.contains('requires explicit feedback endpoint') ||
+        message.contains('cannot be verified') ||
+        message.contains('requires PCM transport') ||
+        message.contains('requires at least') ||
+        message.contains('transport, got') ||
+        normalized.contains('android direct usb') ||
+        normalized.contains('direct usb backend') ||
+        normalized.contains('no android direct usb') ||
+        normalized.contains('isochronous transfer') ||
+        normalized.contains('failed to set usb clock') ||
+        normalized.contains('failed to set usb alt setting') ||
+        normalized.contains('requires verified dac rate') ||
+        normalized.contains('is not supported by clock') ||
+        normalized.contains('usb dac disconnected') ||
+        normalized.contains('usb session already active') ||
+        normalized.contains('failed to claim usb interface');
+  }
+
+  bool _isDirectUsbClockSetupFailure(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('failed to set usb clock') ||
+        normalized.contains('requires verified dac rate') ||
+        normalized.contains('cannot be verified') ||
+        normalized.contains('is not supported by clock') ||
+        normalized.contains('dac reports');
+  }
+
+  bool _isExclusiveUsbUnavailableFailure(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('input/output error') ||
+        normalized.contains('device or resource busy') ||
+        normalized.contains('resource busy') ||
+        normalized.contains('access denied') ||
+        normalized.contains('permission denied') ||
+        normalized.contains('usb session already active');
+  }
+
+  Future<bool> _handleDirectUsbStartupRefusal(
+    Object error, {
+    required Song? song,
+    required Duration initialPosition,
+  }) async {
+    if (!Platform.isAndroid ||
+        currentEngineType != AudioEngineType.usbDacExperimental) {
+      return false;
+    }
+
+    final message = error.toString();
+    if (!_isDirectUsbStartupRefusal(message)) {
+      return false;
+    }
+
+    debugPrint(
+      '[Engine] Direct USB startup refused: $message. Falling back to NORMAL_ANDROID',
+    );
+    await _uac2Service.markAndroidDirectUsbFallback(message);
+    await _uac2Service.releaseAndroidDirectUsbRuntime();
+    await _rustAudioService.setHighResMode(false);
+    if (_isExclusiveUsbUnavailableFailure(message)) {
+      await _sessionManager.suppressExperimentalUsbForCurrentDevice(
+        reason: message,
+      );
+    }
+    await _sessionManager.recordFallback(
+      requestedMode: AudioEngineType.usbDacExperimental,
+      fallbackMode: AudioEngineType.normalAndroid,
+      reason: message,
+    );
+    await _sessionManager.switchMode(
+      AudioEngineType.normalAndroid,
+      initializeNewEngine: true,
+      reason: 'direct USB startup refused',
+    );
+
+    if (song != null) {
+      await _prepareImmediatePlaybackAsset(song);
+      await _runWithSuppressedSequenceStateUpdates(() async {
+        await _playbackManager.playTrack(
+          song,
+          initialPosition: initialPosition,
+        );
+      });
+      _ensurePositionSaveTimer();
+      await _refreshAudioOutputDiagnostics(
+        reason: 'direct USB fallback resumed',
+        activeSong: song,
+      );
+    }
+
+    return true;
   }
 
   Future<void> togglePlayPause() {
+    debugPrint(
+      '[PlayerService] togglePlayPause called, isPlaying=${isPlayingNotifier.value}',
+    );
     return _enqueuePlaybackRequest(() async {
-      if (isPlayingNotifier.value) {
-        await _pauseInternal();
-      } else {
-        await _resumeInternal();
+      debugPrint(
+        '[PlayerService] togglePlayPause executing, isPlaying=${isPlayingNotifier.value}',
+      );
+      try {
+        if (isPlayingNotifier.value) {
+          await _pauseInternal();
+        } else {
+          await _resumeInternal();
+        }
+      } catch (e, stack) {
+        final recovered = await _handleDirectUsbStartupRefusal(
+          e,
+          song: currentSongNotifier.value,
+          initialPosition: positionNotifier.value,
+        );
+        if (recovered) {
+          return;
+        }
+        debugPrint('[PlayerService] togglePlayPause error: $e\n$stack');
       }
     });
   }
@@ -1603,11 +2611,20 @@ class PlayerService {
   }
 
   Future<void> next() {
+    debugPrint('[PlayerService] next() called');
     return _enqueuePlaybackRequest(_nextInternal);
   }
 
   Future<void> _nextInternal() async {
-    if (_playlist.isEmpty) return;
+    debugPrint(
+      '[PlayerService] _nextInternal() called, playlist.length=${_playlist.length}, currentIndex=$_currentIndex',
+    );
+    if (_playlist.isEmpty) {
+      debugPrint(
+        '[PlayerService] _nextInternal: playlist is empty, returning early',
+      );
+      return;
+    }
 
     debugPrint(
       'next(): currentIndex=$_currentIndex, playlistLength=${_playlist.length}, loopMode=${loopModeNotifier.value}',
@@ -1628,16 +2645,25 @@ class PlayerService {
     }
 
     debugPrint('next(): End of playlist, pausing');
-    await pause();
+    await _pauseInternal();
     await seek(Duration.zero);
   }
 
   Future<void> previous() {
+    debugPrint('[PlayerService] previous() called');
     return _enqueuePlaybackRequest(_previousInternal);
   }
 
   Future<void> _previousInternal() async {
-    if (_playlist.isEmpty) return;
+    debugPrint(
+      '[PlayerService] _previousInternal() called, playlist.length=${_playlist.length}, currentIndex=$_currentIndex',
+    );
+    if (_playlist.isEmpty) {
+      debugPrint(
+        '[PlayerService] _previousInternal: playlist is empty, returning early',
+      );
+      return;
+    }
 
     if (positionNotifier.value.inSeconds > 3) {
       await seek(Duration.zero);
@@ -1762,6 +2788,20 @@ class PlayerService {
 
   Future<void> setVolume(double volume) async {
     final clampedVolume = volume.clamp(0.0, 1.0).toDouble();
+    if (isBitPerfectModeEnabled) {
+      debugPrint(
+        '[Playback] Ignoring software volume change while explicit Bit-perfect mode is enabled',
+      );
+      if (_usingRustBackend) {
+        await _rustAudioService.setVolume(1.0);
+      } else {
+        final player = _justAudioPlayer;
+        if (player != null) {
+          await player.setVolume(1.0);
+        }
+      }
+      return;
+    }
     _currentVolume = clampedVolume;
     if (_usingRustBackend) {
       await _rustAudioService.setVolume(clampedVolume);
@@ -1808,7 +2848,7 @@ class PlayerService {
     }
 
     _notifyQueueChanged();
-    await play(entry.song);
+    await _playInternal(entry.song);
   }
 
   Future<void> clearQueue() async {
@@ -1871,6 +2911,20 @@ class PlayerService {
 
   Future<void> setPlaybackSpeed(double speed) async {
     final clampedSpeed = speed.clamp(0.5, 2.0).toDouble();
+    if (isBitPerfectProcessingLocked) {
+      debugPrint(
+        '[Playback] Ignoring playback-speed change while Bit-perfect USB is enabled',
+      );
+      if (_usingRustBackend) {
+        await _rustAudioService.setPlaybackSpeed(1.0);
+      } else {
+        final player = _justAudioPlayer;
+        if (player != null) {
+          await player.setSpeed(1.0);
+        }
+      }
+      return;
+    }
     playbackSpeedNotifier.value = clampedSpeed;
     if (_usingRustBackend) {
       await _rustAudioService.setPlaybackSpeed(clampedSpeed);
@@ -1962,6 +3016,24 @@ class PlayerService {
     );
   }
 
+  void _publishRestoredPlaybackState(Song song, {required Duration position}) {
+    if (currentSongNotifier.value != song) {
+      currentSongNotifier.value = song;
+    }
+    if (isPlayingNotifier.value) {
+      isPlayingNotifier.value = false;
+    }
+    if (positionNotifier.value != position) {
+      positionNotifier.value = position;
+    }
+    if (bufferedPositionNotifier.value != Duration.zero) {
+      bufferedPositionNotifier.value = Duration.zero;
+    }
+    if (durationNotifier.value != song.duration) {
+      durationNotifier.value = song.duration;
+    }
+  }
+
   void dispose() {
     _positionSaveTimer?.cancel();
     unawaited(_audioFocusSubscription?.cancel());
@@ -1973,16 +3045,13 @@ class PlayerService {
 
     final player = _justAudioPlayer;
     if (player != null) {
-      for (final subscription in _justAudioSubscriptions) {
-        unawaited(subscription.cancel());
-      }
-      _justAudioSubscriptions.clear();
       unawaited(player.dispose());
       _justAudioPlayer = null;
     }
     _playbackStateSubscription?.cancel();
     unawaited(_playbackManager.dispose());
-    _routeManager.dispose();
+    _sessionManager.dispose();
+    audioOutputDiagnosticsNotifier.dispose();
 
     currentSongNotifier.dispose();
     isPlayingNotifier.dispose();

@@ -59,6 +59,23 @@ class _SongFastIndexOverlayState extends State<SongFastIndexOverlay> {
   String? _dragToken;
   bool _isDragging = false;
 
+  int _lastSetStateMs = 0;
+  static const int _minSetStateIntervalMs = 16; // ~60fps
+
+  bool _shouldThrottleSetState() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastSetStateMs < _minSetStateIntervalMs) {
+      return true;
+    }
+    _lastSetStateMs = now;
+    return false;
+  }
+
+  void _maybeSetState(VoidCallback callback) {
+    if (_shouldThrottleSetState()) return;
+    setState(callback);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -111,10 +128,10 @@ class _SongFastIndexOverlayState extends State<SongFastIndexOverlay> {
                 if (token == null) return;
                 _activeToken = token;
                 widget.onSelect(token, true);
-                setState(() {});
+                _maybeSetState(() {});
               },
               onVerticalDragStart: (details) {
-                setState(() {
+                _maybeSetState(() {
                   _isDragging = true;
                 });
                 final token = _tokenFromOffset(
@@ -127,7 +144,7 @@ class _SongFastIndexOverlayState extends State<SongFastIndexOverlay> {
                   _dragToken = token;
                   widget.onSelect(token, false);
                 }
-                setState(() {});
+                _maybeSetState(() {});
               },
               onVerticalDragUpdate: (details) {
                 final token = _tokenFromOffset(
@@ -138,7 +155,7 @@ class _SongFastIndexOverlayState extends State<SongFastIndexOverlay> {
                 if (token == null || _dragToken == token) return;
                 _dragToken = token;
                 widget.onSelect(token, false);
-                setState(() {});
+                _maybeSetState(() {});
               },
               onVerticalDragEnd: (_) {
                 setState(() {

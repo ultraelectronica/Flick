@@ -4,7 +4,7 @@ pub mod api;
 pub mod audio;
 pub mod library_scan;
 
-/// Custom UAC 2.0 USB Audio (DAC/AMP detection and bit-perfect playback).
+/// Custom UAC 2.0 USB Audio (DAC/AMP detection and direct playback paths).
 /// Real implementation is gated by the `uac2` feature.
 pub mod uac2;
 
@@ -16,7 +16,7 @@ use std::{ffi::c_void, sync::OnceLock};
 #[cfg(target_os = "android")]
 use jni::{
     objects::{GlobalRef, JObject, JString},
-    sys::{jboolean, jint},
+    sys::{jboolean, jint, jstring},
     JNIEnv, JavaVM,
 };
 
@@ -24,9 +24,9 @@ use jni::{
 static ANDROID_APP_CONTEXT: OnceLock<GlobalRef> = OnceLock::new();
 
 #[cfg(target_os = "android")]
-fn initialize_android_app_context(
-    env: &mut JNIEnv<'_>,
-    context: JObject<'_>,
+fn initialize_android_app_context<'local>(
+    env: &mut JNIEnv<'local>,
+    context: &JObject<'local>,
 ) -> Result<(), String> {
     if ANDROID_APP_CONTEXT.get().is_some() {
         return Ok(());
@@ -52,22 +52,43 @@ fn initialize_android_app_context(
     }
 }
 
-// JNI load only advertises the supported JNI version.
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn JNI_OnLoad(_vm: JavaVM, _reserved: *mut c_void) -> jni::sys::jint {
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Debug)
+            .with_tag("RustUSB"),
+    );
     jni::JNIVersion::V6.into()
 }
 
 #[cfg(target_os = "android")]
 #[no_mangle]
-pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeInitRustAndroidContext(
-    mut env: JNIEnv<'_>,
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeInitRustAndroidContext<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
     _activity: JObject<'_>,
-    context: JObject<'_>,
+    context: JObject<'local>,
 ) -> jboolean {
-    match initialize_android_app_context(&mut env, context) {
+    match initialize_android_app_context(&mut env, &context) {
         Ok(()) => {
+            match crate::audio::device::detect_android_device_profile(&mut env, &context) {
+                Ok(profile) => {
+                    log::info!(
+                        "[ANDROID] Cached device profile: kind={:?} bit_perfect={} max_rate_hz={} balanced={}",
+                        profile.kind,
+                        profile.confirmed_bit_perfect,
+                        profile.max_sample_rate,
+                        profile.has_balanced_output,
+                    );
+                    crate::audio::device::cache_android_device_profile(profile);
+                }
+                Err(error) => {
+                    log::warn!("[ANDROID] Failed to detect device profile: {}", error);
+                }
+            }
             eprintln!("Rust Android audio context initialized");
             1
         }
@@ -186,12 +207,109 @@ pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeSetRus
 
 #[cfg(all(target_os = "android", feature = "uac2"))]
 #[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeSetRustDirectUsbLockEnabled(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    enabled: jboolean,
+) -> jboolean {
+    match crate::uac2::set_android_usb_lock_enabled(enabled != 0) {
+        Ok(()) => 1,
+        Err(error) => {
+            eprintln!("Failed to update Android direct USB lock state: {}", error);
+            0
+        }
+    }
+}
+
+#[cfg(all(target_os = "android", not(feature = "uac2")))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeSetRustDirectUsbLockEnabled(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    _enabled: jboolean,
+) -> jboolean {
+    0
+}
+
+#[cfg(all(target_os = "android", feature = "uac2"))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeGetRustAudioDebugStateJson(
+    env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+) -> jstring {
+    let engine_state = crate::api::audio_api::audio_get_runtime_debug_json_state();
+    let direct_usb_state = crate::uac2::android_direct_debug_state();
+    let payload = serde_json::json!({
+        "engine": engine_state,
+        "device_profile": crate::audio::device::current_device_profile(),
+        "direct_usb": direct_usb_state,
+    });
+    let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+    env.new_string(json)
+        .map(|value| value.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(all(target_os = "android", not(feature = "uac2")))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeGetRustAudioDebugStateJson(
+    env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+) -> jstring {
+    let payload = serde_json::json!({
+        "engine": crate::api::audio_api::audio_get_runtime_debug_json_state(),
+        "device_profile": crate::audio::device::current_device_profile(),
+        "direct_usb": {
+            "registered": false,
+            "idle_lock_held": false,
+            "stream_active": false,
+        },
+    });
+    let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+    env.new_string(json)
+        .map(|value| value.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(all(target_os = "android", feature = "uac2"))]
+#[no_mangle]
 pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeClearRustDirectUsbPlayback(
     _env: JNIEnv<'_>,
     _activity: JObject<'_>,
 ) -> jboolean {
     crate::uac2::clear_android_usb_device();
     1
+}
+
+#[cfg(all(target_os = "android", feature = "uac2"))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeMarkRustDirectUsbFallback(
+    mut env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    reason: JString<'_>,
+) -> jboolean {
+    let reason = {
+        let object: JObject<'_> = reason.into();
+        if object.is_null() {
+            None
+        } else {
+            env.get_string(&JString::from(object))
+                .ok()
+                .map(|value| value.to_string_lossy().into_owned())
+        }
+    };
+    crate::uac2::mark_android_usb_fallback(reason);
+    1
+}
+
+#[cfg(all(target_os = "android", not(feature = "uac2")))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeMarkRustDirectUsbFallback(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    _reason: JString<'_>,
+) -> jboolean {
+    0
 }
 
 #[cfg(all(target_os = "android", not(feature = "uac2")))]

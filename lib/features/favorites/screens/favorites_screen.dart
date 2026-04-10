@@ -211,6 +211,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       itemBuilder: (context, index) {
         final song = _favorites[index];
         return _FavoriteSongTile(
+          key: ValueKey(song.id),
           song: song,
           onTap: () async {
             await _playerService.play(song, playlist: _favorites);
@@ -297,6 +298,7 @@ class _FavoriteSongTile extends StatelessWidget {
   final VoidCallback onRemove;
 
   const _FavoriteSongTile({
+    super.key,
     required this.song,
     required this.onTap,
     required this.onRemove,

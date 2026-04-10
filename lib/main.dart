@@ -12,11 +12,11 @@ import 'package:flick/services/player_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Rust library (flutter_rust_bridge)
   await RustLib.init();
 
-  // Initialize database FIRST (required by PlayerService)
   await Database.init();
+
+  await _restoreLastPlayedSong();
 
   runApp(const ProviderScope(child: FlickPlayerApp()));
 
@@ -32,27 +32,21 @@ Future<void> _bootstrapAppAfterFirstFrame() async {
       (Object e) => debugPrint('Notification permission request failed: $e'),
     ),
   );
-
-  try {
-    await _restoreLastPlayedSong();
-  } catch (e) {
-    debugPrint('Deferred audio bootstrap failed: $e');
-  }
+  unawaited(
+    PlayerService().prepareForAppLaunch().catchError(
+      (Object e) => debugPrint('Audio prewarm failed: $e'),
+    ),
+  );
 }
 
-/// Sets the highest available refresh rate mode on Android devices.
-/// This significantly improves animation smoothness on 90Hz/120Hz displays.
 Future<void> _setOptimalDisplayMode() async {
   try {
     await FlutterDisplayMode.setHighRefreshRate();
   } catch (e) {
-    // Silently ignore on unsupported platforms (iOS, Web, etc.)
     debugPrint('Display mode not supported: $e');
   }
 }
 
-/// Request notification permission if not already granted.
-/// This is required for Android 13+ to show media playback notifications.
 Future<void> _requestNotificationPermission() async {
   final permissionService = PermissionService();
   final hasPermission = await permissionService.hasNotificationPermission();
@@ -61,8 +55,6 @@ Future<void> _requestNotificationPermission() async {
   }
 }
 
-/// Restore last played song state from storage.
-/// This allows resuming playback from where the user left off.
 Future<void> _restoreLastPlayedSong() async {
   try {
     final playerService = PlayerService();

@@ -20,8 +20,11 @@ class AudioEngineManager {
   PlaybackState? _latestState;
   AudioEngineType? _currentEngineType;
   bool _engineInitialized = false;
-  bool _isTransitioning = false;
+  bool _engineHasLoadedTrack = false;
+  Future<void>? _transitionInFlight;
   int _attachToken = 0;
+
+  bool get canResumeCurrentTrack => _engineHasLoadedTrack;
 
   Future<void> attachEngine(
     AudioEngine engine, {
@@ -45,15 +48,25 @@ class AudioEngineManager {
     final activeToken = _attachToken;
     final engineLabel = engineType == null
         ? engine.runtimeType.toString()
-        : (engineType == AudioEngineType.android ? 'Android' : 'USB');
+        : engineType.logLabel;
     _currentEngineType = engineType;
     _engineInitialized = true;
+    _engineHasLoadedTrack = false;
     debugPrint('[Engine] Attached: $engineLabel');
 
     if (engineType != null) {
-      final cleared = PlaybackState.empty(engineType);
-      _latestState = cleared;
-      _controller.add(cleared);
+      // Preserve the last-known track while the engine is initialising so the
+      // UI (mini-player, ambient background) doesn't flash to empty/black.
+      final transitional = PlaybackState(
+        currentTrack: _latestState?.currentTrack,
+        isPlaying: false,
+        position: _latestState?.position ?? Duration.zero,
+        bufferedPosition: Duration.zero,
+        duration: _latestState?.duration ?? Duration.zero,
+        engine: engineType,
+      );
+      _latestState = transitional;
+      _controller.add(transitional);
     }
 
     _engineSubscription = engine.playbackStateStream.listen((state) {
@@ -74,18 +87,36 @@ class AudioEngineManager {
       return;
     }
 
-    if (_isTransitioning) {
-      debugPrint('[Engine] Prevented duplicate initialization');
-      return;
+    final inFlight = _transitionInFlight;
+    if (inFlight != null) {
+      debugPrint(
+        '[Engine] Waiting for in-flight engine transition to complete',
+      );
+      await inFlight;
+      if (_engineInitialized &&
+          _currentEngine != null &&
+          _currentEngineType == engineType) {
+        return;
+      }
     }
 
-    _isTransitioning = true;
+    final future = _doEnsureEngine(engineType, createEngine);
+    _transitionInFlight = future;
     try {
-      final engine = await createEngine();
-      await attachEngine(engine, engineType: engineType);
+      await future;
     } finally {
-      _isTransitioning = false;
+      if (identical(_transitionInFlight, future)) {
+        _transitionInFlight = null;
+      }
     }
+  }
+
+  Future<void> _doEnsureEngine(
+    AudioEngineType engineType,
+    Future<AudioEngine> Function() createEngine,
+  ) async {
+    final engine = await createEngine();
+    await attachEngine(engine, engineType: engineType);
   }
 
   Future<void> playTrack(
@@ -93,20 +124,16 @@ class AudioEngineManager {
     Duration initialPosition = Duration.zero,
     bool autoPlay = true,
   }) async {
-    _isTransitioning = true;
-    try {
-      final engine = _requireEngine();
-      debugPrint('[Playback] load(${track.id})');
-      await engine.load(track);
-      if (initialPosition > Duration.zero) {
-        await engine.seek(initialPosition);
-      }
-      if (autoPlay) {
-        debugPrint('[Playback] play()');
-        await engine.play();
-      }
-    } finally {
-      _isTransitioning = false;
+    final engine = _requireEngine();
+    debugPrint('[Playback] load(${track.id})');
+    await engine.load(track);
+    _engineHasLoadedTrack = true;
+    if (initialPosition > Duration.zero) {
+      await engine.seek(initialPosition);
+    }
+    if (autoPlay) {
+      debugPrint('[Playback] play()');
+      await engine.play();
     }
   }
 
@@ -129,6 +156,7 @@ class AudioEngineManager {
     final engine = _requireEngine();
     debugPrint('[Playback] load(${track.id})');
     await engine.load(track);
+    _engineHasLoadedTrack = true;
   }
 
   Future<void> play() async {
@@ -162,6 +190,7 @@ class AudioEngineManager {
     }
     _currentEngineType = null;
     _engineInitialized = false;
+    _engineHasLoadedTrack = false;
     await _controller.close();
   }
 
@@ -175,6 +204,7 @@ class AudioEngineManager {
     _currentEngine = null;
     _currentEngineType = null;
     _engineInitialized = false;
+    _engineHasLoadedTrack = false;
     _attachToken += 1;
     if (previousEngineType != null) {
       publishIdleState(previousEngineType);

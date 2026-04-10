@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/constants/app_constants.dart';
 
-/// A reusable glassmorphism container widget with frosted glass effect.
+/// A reusable glassmorphism container widget.
+///
+/// Uses [useFilter] to toggle between BackdropFilter (expensive) and
+/// simple semi-transparent container (budget-friendly for mobile).
+/// Default is true for backward compatibility, set false for performance.
 class GlassmorphismContainer extends StatelessWidget {
   /// Child widget to display inside the container
   final Widget child;
@@ -36,6 +40,10 @@ class GlassmorphismContainer extends StatelessWidget {
   /// Height constraint
   final double? height;
 
+  /// Whether to use BackdropFilter (expensive on mobile GPUs).
+  /// Set to false for budget-friendly semi-transparent panel.
+  final bool useFilter;
+
   const GlassmorphismContainer({
     super.key,
     required this.child,
@@ -48,6 +56,7 @@ class GlassmorphismContainer extends StatelessWidget {
     this.margin = EdgeInsets.zero,
     this.width,
     this.height,
+    this.useFilter = true,
   });
 
   @override
@@ -61,20 +70,78 @@ class GlassmorphismContainer extends StatelessWidget {
       height: height,
       child: ClipRRect(
         borderRadius: effectiveBorderRadius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-          child: Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              color: backgroundColor ?? AppColors.glassBackground,
-              borderRadius: effectiveBorderRadius,
-              border: Border.all(
-                color: borderColor ?? AppColors.glassBorder,
-                width: borderWidth,
-              ),
+        child: useFilter
+            ? BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+                child: _buildContainer(effectiveBorderRadius),
+              )
+            : _buildContainer(effectiveBorderRadius),
+      ),
+    );
+  }
+
+  Widget _buildContainer(BorderRadius effectiveBorderRadius) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: backgroundColor ?? AppColors.glassBackground,
+        borderRadius: effectiveBorderRadius,
+        border: Border.all(
+          color: borderColor ?? AppColors.glassBorder,
+          width: borderWidth,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// A budget-friendly glassmorphism container without blur.
+/// Prefer this for scrolling content and lists.
+class GlassmorphismContainerSolid extends StatelessWidget {
+  final Widget child;
+  final EdgeInsets padding;
+  final EdgeInsets margin;
+  final BorderRadius? borderRadius;
+  final double? width;
+  final double? height;
+  final Color? backgroundColor;
+  final Color? borderColor;
+
+  const GlassmorphismContainerSolid({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(AppConstants.spacingMd),
+    this.margin = EdgeInsets.zero,
+    this.borderRadius,
+    this.width,
+    this.height,
+    this.backgroundColor,
+    this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveBorderRadius =
+        borderRadius ?? BorderRadius.circular(AppConstants.radiusLg);
+
+    return Container(
+      margin: margin,
+      width: width,
+      height: height,
+      child: ClipRRect(
+        borderRadius: effectiveBorderRadius,
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: backgroundColor ?? AppColors.glassBackground,
+            borderRadius: effectiveBorderRadius,
+            border: Border.all(
+              color: borderColor ?? AppColors.glassBorder,
+              width: 1.0,
             ),
-            child: child,
           ),
+          child: child,
         ),
       ),
     );

@@ -299,6 +299,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     return ListView.builder(
       controller: _listScrollController,
       itemExtent: _listItemExtent,
+      addAutomaticKeepAlives: false,
       padding: const EdgeInsets.fromLTRB(
         AppConstants.spacingLg,
         0,
@@ -311,6 +312,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
         final isSelected = index == _selectedIndex;
 
         return Padding(
+          key: ValueKey(song.id),
           padding: const EdgeInsets.only(bottom: AppConstants.spacingSm),
           child: _QueueSwipeListItem(
             onQueued: () async {
@@ -319,123 +321,19 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
             onFavorited: () async {
               await _favoriteSong(song);
             },
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                onTap: () async {
-                  setState(() {
-                    _selectedIndex = index;
-                  });
-                  _syncSelectedTokenForIndex(songs, index);
-                  await _playSongAndOpenPlayer(songs: songs, index: index);
-                },
-                onLongPress: () {
-                  SongActionsBottomSheet.show(context, song);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppConstants.spacingMd,
-                    vertical: AppConstants.spacingSm,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: isSelected
-                          ? [
-                              AppColors.surfaceLight.withValues(alpha: 0.9),
-                              AppColors.surface.withValues(alpha: 0.95),
-                            ]
-                          : [
-                              AppColors.surfaceLight.withValues(alpha: 0.65),
-                              AppColors.surface.withValues(alpha: 0.78),
-                            ],
-                    ),
-                    border: Border.all(
-                      color: isSelected
-                          ? AppColors.accent.withValues(alpha: 0.45)
-                          : AppColors.glassBorder,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                          AppConstants.radiusMd,
-                        ),
-                        child: SizedBox(
-                          width: 46,
-                          height: 46,
-                          child: CachedImageWidget(
-                            imagePath: song.albumArt,
-                            audioSourcePath: song.filePath,
-                            fit: BoxFit.cover,
-                            useThumbnail: true,
-                            thumbnailWidth: 92,
-                            thumbnailHeight: 92,
-                            placeholder: const ColoredBox(
-                              color: AppColors.surface,
-                              child: Icon(
-                                LucideIcons.music,
-                                color: AppColors.textTertiary,
-                                size: 18,
-                              ),
-                            ),
-                            errorWidget: const ColoredBox(
-                              color: AppColors.surface,
-                              child: Icon(
-                                LucideIcons.music,
-                                color: AppColors.textTertiary,
-                                size: 18,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppConstants.spacingMd),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              song.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodyLarge
-                                  ?.copyWith(
-                                    color: context.adaptiveTextPrimary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${song.artist} • ${song.fileType.toUpperCase()}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: context.adaptiveTextSecondary,
-                                  ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: AppConstants.spacingSm),
-                      Text(
-                        song.formattedDuration,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: context.adaptiveTextTertiary,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            child: _SongListTile(
+              song: song,
+              isSelected: isSelected,
+              onTap: () async {
+                setState(() {
+                  _selectedIndex = index;
+                });
+                _syncSelectedTokenForIndex(songs, index);
+                await _playSongAndOpenPlayer(songs: songs, index: index);
+              },
+              onLongPress: () {
+                SongActionsBottomSheet.show(context, song);
+              },
             ),
           ),
         );
@@ -1223,6 +1121,130 @@ class _QueueSwipeListItem extends StatefulWidget {
 
   @override
   State<_QueueSwipeListItem> createState() => _QueueSwipeListItemState();
+}
+
+class _SongListTile extends StatelessWidget {
+  final Song song;
+  final bool isSelected;
+  final Future<void> Function() onTap;
+  final VoidCallback onLongPress;
+
+  const _SongListTile({
+    required this.song,
+    required this.isSelected,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final titleStyle = Theme.of(context).textTheme.bodyLarge?.copyWith(
+      color: context.adaptiveTextPrimary,
+      fontWeight: FontWeight.w600,
+    );
+    final subtitleStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: context.adaptiveTextSecondary);
+    final durationStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: context.adaptiveTextTertiary,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppConstants.spacingMd,
+            vertical: AppConstants.spacingSm,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isSelected
+                  ? [
+                      AppColors.surfaceLight.withValues(alpha: 0.9),
+                      AppColors.surface.withValues(alpha: 0.95),
+                    ]
+                  : [
+                      AppColors.surfaceLight.withValues(alpha: 0.65),
+                      AppColors.surface.withValues(alpha: 0.78),
+                    ],
+            ),
+            border: Border.all(
+              color: isSelected
+                  ? AppColors.accent.withValues(alpha: 0.45)
+                  : AppColors.glassBorder,
+            ),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                child: SizedBox(
+                  width: 46,
+                  height: 46,
+                  child: CachedImageWidget(
+                    imagePath: song.albumArt,
+                    audioSourcePath: song.filePath,
+                    fit: BoxFit.cover,
+                    useThumbnail: true,
+                    thumbnailWidth: 92,
+                    thumbnailHeight: 92,
+                    placeholder: const ColoredBox(
+                      color: AppColors.surface,
+                      child: Icon(
+                        LucideIcons.music,
+                        color: AppColors.textTertiary,
+                        size: 18,
+                      ),
+                    ),
+                    errorWidget: const ColoredBox(
+                      color: AppColors.surface,
+                      child: Icon(
+                        LucideIcons.music,
+                        color: AppColors.textTertiary,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppConstants.spacingMd),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: titleStyle,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${song.artist} • ${song.fileType.toUpperCase()}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: subtitleStyle,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppConstants.spacingSm),
+              Text(song.formattedDuration, style: durationStyle),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _QueueSwipeListItemState extends State<_QueueSwipeListItem> {

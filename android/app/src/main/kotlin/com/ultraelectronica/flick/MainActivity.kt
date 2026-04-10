@@ -11,8 +11,11 @@ import android.content.pm.PackageManager
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
+import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.media.AudioDeviceInfo
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.media.audiofx.Equalizer
@@ -63,13 +66,23 @@ class MainActivity: FlutterActivity() {
     private var pendingOpenDocumentResult: MethodChannel.Result? = null
     private var pendingCreateDocumentResult: MethodChannel.Result? = null
     private var pendingUac2PermissionResult: MethodChannel.Result? = null
+    private var pendingUac2PermissionCallback: ((Boolean) -> Unit)? = null
     private var usbPermissionReceiver: BroadcastReceiver? = null
     private var usbHotplugReceiver: BroadcastReceiver? = null
+    private val promptedUsbPermissionDeviceNames = mutableSetOf<String>()
     private var uac2DeviceCache: List<Map<String, Any?>>? = null
     private var uac2Channel: MethodChannel? = null
     private var audioDeviceChannel: MethodChannel? = null
     private val directUsbConnections = mutableMapOf<String, UsbDeviceConnection>()
     private var activeDirectUsbDeviceName: String? = null
+    private var exclusiveDacModeEnabled = false
+    private var directUsbPlaybackActive = false
+    private var directUsbFocusGain: Int? = null
+    private var directUsbAudioFocusRequest: AudioFocusRequest? = null
+    private val directUsbAudioFocusChangeListener =
+        AudioManager.OnAudioFocusChangeListener { focusChange ->
+            Log.i("UAC2", "Direct USB audio focus changed: $focusChange")
+        }
     private var cachedMusicVolumeBeforeMute: Int? = null
     private var equalizer: Equalizer? = null
     private var volumeContentObserver: ContentObserver? = null
@@ -96,6 +109,16 @@ class MainActivity: FlutterActivity() {
         } else {
             Log.i("Flick", "Rust Android audio context initialized")
         }
+
+        handleUsbAttachIntent(intent)
+        maybeRequestPermissionForConnectedUsbAudioDevices(reason = "activity create")
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleUsbAttachIntent(intent)
+        maybeRequestPermissionForConnectedUsbAudioDevices(reason = "new intent")
     }
 
     override fun provideFlutterEngine(context: android.content.Context): FlutterEngine? {
@@ -518,6 +541,9 @@ class MainActivity: FlutterActivity() {
                         )
                     )
                 }
+                "getDirectUsbDiagnostics" -> {
+                    result.success(getDirectUsbDiagnostics())
+                }
                 "setRouteVolume" -> {
                     val volume = call.argument<Double>("volume")
                     if (volume != null) {
@@ -548,6 +574,22 @@ class MainActivity: FlutterActivity() {
                         result.error("INVALID_ARGUMENT", "deviceName is required", null)
                     }
                 }
+                "setExclusiveDacMode" -> {
+                    val enabled = call.argument<Boolean>("enabled")
+                    if (enabled != null) {
+                        result.success(setExclusiveDacMode(enabled))
+                    } else {
+                        result.error("INVALID_ARGUMENT", "enabled is required", null)
+                    }
+                }
+                "setDirectUsbPlaybackActive" -> {
+                    val active = call.argument<Boolean>("active")
+                    if (active != null) {
+                        result.success(setDirectUsbPlaybackActive(active))
+                    } else {
+                        result.error("INVALID_ARGUMENT", "active is required", null)
+                    }
+                }
                 "setDirectUsbPlaybackFormat" -> {
                     val sampleRate = call.argument<Int>("sampleRate")
                     val bitDepth = call.argument<Int>("bitDepth")
@@ -573,6 +615,10 @@ class MainActivity: FlutterActivity() {
                 }
                 "deactivateDirectUsb" -> {
                     result.success(deactivateDirectUsb())
+                }
+                "markDirectUsbFallback" -> {
+                    val reason = call.argument<String>("reason")
+                    result.success(nativeMarkRustDirectUsbFallback(reason))
                 }
                 else -> result.notImplemented()
             }
@@ -659,6 +705,7 @@ class MainActivity: FlutterActivity() {
         
         // Register USB hot-plug receiver
         registerUsbHotplugReceiver()
+        maybeRequestPermissionForConnectedUsbAudioDevices(reason = "flutter engine configured")
         // Register volume change observer
         registerVolumeContentObserver()
     }
@@ -1858,19 +1905,18 @@ class MainActivity: FlutterActivity() {
             return emptyList()
         }
         
+        val routeLabelHint = currentRouteLabelHint()
         val deviceList = usbManager.deviceList ?: return emptyList()
         val result = mutableListOf<Map<String, Any?>>()
         
         for (device in deviceList.values) {
             try {
-                if (!isUac2Device(device)) continue
-                
-                val hasPermission = usbManager.hasPermission(device)
-                
+                if (!isLikelyUsbAudioDevice(device, routeLabelHint)) continue
+
                 // Extract strings (available without opening device on API 21+)
                 val productName = device.productName ?: "USB Audio Device"
                 val manufacturer = device.manufacturerName ?: ""
-                val serial = device.serialNumber ?: device.deviceName
+                val serial = safeUsbSerial(device) ?: device.deviceName
                 
                 result.add(mapOf(
                     "deviceName" to device.deviceName,
@@ -1879,11 +1925,29 @@ class MainActivity: FlutterActivity() {
                     "productName" to productName,
                     "manufacturer" to manufacturer,
                     "serial" to serial,
+                    "hasPermission" to usbManager.hasPermission(device),
                 ))
             } catch (e: Exception) {
                 android.util.Log.w("UAC2", "Failed to process device ${device.deviceName}: ${e.message}")
                 // Continue with other devices
             }
+        }
+
+        if (result.isEmpty() && !routeLabelHint.isNullOrBlank()) {
+            Log.i(
+                "UAC2",
+                "No UsbManager DAC candidates matched route \"$routeLabelHint\". Inventory: " +
+                    deviceList.values.joinToString { device -> usbDeviceDebugSummary(device) },
+            )
+        }
+        if (result.isNotEmpty()) {
+            Log.i(
+                "UAC2",
+                "UsbManager DAC candidates: " +
+                    result.joinToString { item ->
+                        "${item["productName"] ?: item["deviceName"]}@${item["deviceName"]} permission=${item["hasPermission"]}"
+                    },
+            )
         }
         
         uac2DeviceCache = result
@@ -1913,6 +1977,120 @@ class MainActivity: FlutterActivity() {
         }
     }
 
+    private fun deviceHasIsochronousEndpoint(device: UsbDevice): Boolean {
+        return try {
+            for (i in 0 until device.interfaceCount) {
+                val iface = device.getInterface(i)
+                for (endpointIndex in 0 until iface.endpointCount) {
+                    val endpoint = iface.getEndpoint(endpointIndex)
+                    if (endpoint.type == UsbConstants.USB_ENDPOINT_XFER_ISOC) {
+                        return true
+                    }
+                }
+            }
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun normalizeUsbText(value: String?): String {
+        if (value.isNullOrBlank()) return ""
+        return value
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), " ")
+            .trim()
+    }
+
+    private fun normalizedUsbTokens(value: String?): Set<String> {
+        return normalizeUsbText(value)
+            .split(' ')
+            .filter { it.length >= 3 }
+            .toSet()
+    }
+
+    private fun routeLabelMatchesUsbDevice(routeLabelHint: String?, device: UsbDevice): Boolean {
+        if (routeLabelHint.isNullOrBlank()) {
+            return false
+        }
+
+        val normalizedRoute = normalizeUsbText(routeLabelHint)
+        val routeTokens = normalizedUsbTokens(routeLabelHint)
+        if (normalizedRoute.isBlank() || routeTokens.isEmpty()) {
+            return false
+        }
+
+        val candidateTexts = listOfNotNull(
+            device.productName,
+            device.manufacturerName,
+            "${device.manufacturerName ?: ""} ${device.productName ?: ""}",
+            device.deviceName,
+        )
+
+        return candidateTexts.any { candidate ->
+            val normalizedCandidate = normalizeUsbText(candidate)
+            val candidateTokens = normalizedUsbTokens(candidate)
+            candidateTokens.isNotEmpty() &&
+                (
+                    routeTokens.intersect(candidateTokens).size >= 2 ||
+                        normalizedRoute.contains(normalizedCandidate) ||
+                        normalizedCandidate.contains(normalizedRoute)
+                )
+        }
+    }
+
+    private fun looksLikeUsbAudioName(device: UsbDevice): Boolean {
+        val haystack = normalizeUsbText(
+            listOfNotNull(
+                device.productName,
+                device.manufacturerName,
+            ).joinToString(" "),
+        )
+        if (haystack.isBlank()) {
+            return false
+        }
+
+        val keywords = listOf(
+            "audio",
+            "usb audio",
+            "dac",
+            "headset",
+            "headphone",
+            "dongle",
+            "amp",
+        )
+        return keywords.any { keyword -> haystack.contains(keyword) }
+    }
+
+    private fun isLikelyUsbAudioDevice(
+        device: UsbDevice,
+        routeLabelHint: String? = currentRouteLabelHint(),
+    ): Boolean {
+        if (isUac2Device(device)) {
+            return true
+        }
+
+        if (routeLabelMatchesUsbDevice(routeLabelHint, device)) {
+            return true
+        }
+
+        return deviceHasIsochronousEndpoint(device) && looksLikeUsbAudioName(device)
+    }
+
+    private fun usbDeviceDebugSummary(device: UsbDevice): String {
+        val label = listOfNotNull(device.manufacturerName, device.productName)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .ifBlank { "unknown" }
+        return "$label@${device.deviceName}[${device.vendorId}:${device.productId}] " +
+            "audioClass=${isUac2Device(device)} iso=${deviceHasIsochronousEndpoint(device)}"
+    }
+
+    private fun currentRouteLabelHint(): String? {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        return describeCurrentOutputRoute(audioManager)["routeLabel"] as? String
+    }
+
     private fun hasUac2Permission(deviceName: String): Boolean {
         return try {
             val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return false
@@ -1925,26 +2103,40 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun requestUac2Permission(deviceName: String, result: MethodChannel.Result) {
+        requestUac2PermissionInternal(deviceName, result = result)
+    }
+
+    private fun requestUac2PermissionInternal(
+        deviceName: String,
+        result: MethodChannel.Result? = null,
+        callback: ((Boolean) -> Unit)? = null,
+    ) {
         try {
             val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager
             if (usbManager == null) {
-                result.error("UAC2_ERROR", "USB service unavailable", null)
+                promptedUsbPermissionDeviceNames.remove(deviceName)
+                result?.error("UAC2_ERROR", "USB service unavailable", null)
+                callback?.invoke(false)
                 return
             }
             
             val device = usbManager.deviceList?.get(deviceName)
             if (device == null) {
-                result.error("NOT_FOUND", "USB device not found: $deviceName", null)
+                promptedUsbPermissionDeviceNames.remove(deviceName)
+                result?.error("NOT_FOUND", "USB device not found: $deviceName", null)
+                callback?.invoke(false)
                 return
             }
             
             if (usbManager.hasPermission(device)) {
-                result.success(true)
+                result?.success(true)
+                callback?.invoke(true)
                 return
             }
             
             // Device might be busy if already opened elsewhere
             pendingUac2PermissionResult = result
+            pendingUac2PermissionCallback = callback
             val permissionIntent = PendingIntent.getBroadcast(
                 this,
                 REQUEST_USB_PERMISSION,
@@ -1968,14 +2160,17 @@ class MainActivity: FlutterActivity() {
                             // Invalidate cache when permission granted
                             uac2DeviceCache = null
                             pendingUac2PermissionResult?.success(true)
+                            pendingUac2PermissionCallback?.invoke(true)
                         } else {
                             pendingUac2PermissionResult?.error(
                                 "PERMISSION_DENIED",
                                 "Permission denied for device: ${device?.deviceName ?: deviceName}",
                                 null
                             )
+                            pendingUac2PermissionCallback?.invoke(false)
                         }
                         pendingUac2PermissionResult = null
+                        pendingUac2PermissionCallback = null
                     }
                 }
             }
@@ -1986,8 +2181,10 @@ class MainActivity: FlutterActivity() {
             }
             usbManager.requestPermission(device, permissionIntent)
         } catch (e: Exception) {
+            promptedUsbPermissionDeviceNames.remove(deviceName)
             android.util.Log.e("UAC2", "Error requesting permission: ${e.message}")
-            result.error("UAC2_ERROR", "Failed to request permission: ${e.message}", null)
+            result?.error("UAC2_ERROR", "Failed to request permission: ${e.message}", null)
+            callback?.invoke(false)
         }
     }
 
@@ -2019,13 +2216,26 @@ class MainActivity: FlutterActivity() {
                 return false
             }
 
+            if (!probeDirectUsbExclusiveAccess(connection, device)) {
+                if (existingConnection == null) {
+                    connection.close()
+                } else {
+                    closeDirectUsbConnection(deviceName)
+                }
+                Log.e(
+                    "UAC2",
+                    "Failed to force-claim USB audio interfaces for direct playback: $deviceName",
+                )
+                return false
+            }
+
             val registered = nativeRegisterRustDirectUsbDevice(
                 fileDescriptor,
                 device.vendorId,
                 device.productId,
                 device.productName ?: "USB Audio Device",
                 device.manufacturerName ?: "",
-                device.serialNumber,
+                safeUsbSerial(device),
                 device.deviceName,
             )
 
@@ -2043,6 +2253,10 @@ class MainActivity: FlutterActivity() {
 
             directUsbConnections[deviceName] = connection
             activeDirectUsbDeviceName = deviceName
+            if (!nativeSetRustDirectUsbLockEnabled(true)) {
+                Log.w("UAC2", "Rust direct USB idle lock failed for $deviceName")
+            }
+            updateDirectUsbAudioFocus()
             Log.i("UAC2", "Direct USB DAC activated for $deviceName")
             true
         } catch (e: Exception) {
@@ -2051,16 +2265,224 @@ class MainActivity: FlutterActivity() {
         }
     }
 
+    private fun probeDirectUsbExclusiveAccess(
+        connection: UsbDeviceConnection,
+        device: UsbDevice,
+    ): Boolean {
+        val audioInterfaces = directUsbAudioInterfaces(device)
+        if (audioInterfaces.isEmpty()) {
+            Log.w("UAC2", "No USB audio interfaces were found for ${device.deviceName}")
+            return false
+        }
+
+        val controlInterface = audioInterfaces.firstOrNull { usbInterface ->
+            usbInterface.interfaceSubclass == 0x01
+        }
+        val streamingInterfaces = audioInterfaces.filter { usbInterface ->
+            usbInterface.interfaceSubclass == 0x02
+        }
+        if (controlInterface == null || streamingInterfaces.isEmpty()) {
+            Log.w(
+                "UAC2",
+                "[USB] Missing required audio interfaces on ${device.deviceName}: " +
+                    "control=${controlInterface?.id ?: "none"}, " +
+                    "streaming=${streamingInterfaces.map { it.id }}",
+            )
+            return false
+        }
+
+        Log.i(
+            "UAC2",
+            "[USB] Audio interface check passed for ${device.deviceName}: " +
+                "controlInterface=${controlInterface.id}, " +
+                "streamingInterfaces=${streamingInterfaces.map { it.id }}, " +
+                "fd=${connection.fileDescriptor}",
+        )
+        return true
+    }
+
+    private fun directUsbAudioInterfaces(device: UsbDevice): List<UsbInterface> {
+        val interfaces = mutableListOf<UsbInterface>()
+        for (index in 0 until device.interfaceCount) {
+            val usbInterface = device.getInterface(index)
+            if (usbInterface.interfaceClass == UsbConstants.USB_CLASS_AUDIO) {
+                interfaces += usbInterface
+            }
+        }
+        return interfaces
+    }
+
+    private fun describeDirectUsbInterface(usbInterface: UsbInterface): String {
+        val subclass = when (usbInterface.interfaceSubclass) {
+            0x01 -> "audio-control"
+            0x02 -> "audio-streaming"
+            0x03 -> "midi-streaming"
+            else -> "subclass-${usbInterface.interfaceSubclass}"
+        }
+        return "class=${usbInterface.interfaceClass},subclass=$subclass,alt=${usbInterface.alternateSetting}"
+    }
+
+    private fun handleUsbAttachIntent(intent: Intent?) {
+        if (intent?.action != UsbManager.ACTION_USB_DEVICE_ATTACHED) {
+            return
+        }
+
+        val attachedDevice: UsbDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
+        }
+        maybeRequestPermissionForAttachedDevice(attachedDevice)
+    }
+
+    private fun maybeRequestPermissionForAttachedDevice(
+        device: UsbDevice?,
+        reason: String = "attach broadcast",
+    ) {
+        if (device == null || !isLikelyUsbAudioDevice(device)) {
+            return
+        }
+
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return
+        if (usbManager.hasPermission(device)) {
+            return
+        }
+        if (pendingUac2PermissionResult != null || pendingUac2PermissionCallback != null) {
+            return
+        }
+        if (!promptedUsbPermissionDeviceNames.add(device.deviceName)) {
+            return
+        }
+
+        Log.i(
+            "UAC2",
+            "Requesting USB permission for DAC candidate: " +
+                "${device.productName ?: device.deviceName} ($reason)",
+        )
+        requestUac2PermissionInternal(
+            device.deviceName,
+            callback = { granted ->
+                if (granted) {
+                    uac2DeviceCache = null
+                    uac2Channel?.invokeMethod("onDeviceAttached", null)
+                    audioDeviceChannel?.invokeMethod("onPlaybackDevicesChanged", null)
+                }
+            },
+        )
+    }
+
+    private fun maybeRequestPermissionForConnectedUsbAudioDevices(reason: String) {
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return
+        val routeLabelHint = currentRouteLabelHint()
+        val candidates = usbManager.deviceList.values.filter { device ->
+            isLikelyUsbAudioDevice(device, routeLabelHint)
+        }
+        if (candidates.isEmpty()) {
+            return
+        }
+
+        val pendingCandidate = candidates.firstOrNull { device ->
+            !usbManager.hasPermission(device) &&
+                !promptedUsbPermissionDeviceNames.contains(device.deviceName)
+        } ?: return
+
+        maybeRequestPermissionForAttachedDevice(
+            pendingCandidate,
+            reason = reason,
+        )
+    }
+
+    private fun setExclusiveDacMode(enabled: Boolean): Boolean {
+        exclusiveDacModeEnabled = enabled
+        val rustUpdated = if (activeDirectUsbDeviceName != null) {
+            nativeSetRustDirectUsbLockEnabled(enabled)
+        } else {
+            true
+        }
+        updateDirectUsbAudioFocus()
+        return rustUpdated
+    }
+
+    private fun setDirectUsbPlaybackActive(active: Boolean): Boolean {
+        directUsbPlaybackActive = active
+        updateDirectUsbAudioFocus()
+        return true
+    }
+
     private fun deactivateDirectUsb(): Boolean {
         return try {
+            directUsbPlaybackActive = false
+            nativeSetRustDirectUsbLockEnabled(false)
             nativeClearRustDirectUsbPlayback()
             closeDirectUsbConnection(activeDirectUsbDeviceName)
             activeDirectUsbDeviceName = null
+            updateDirectUsbAudioFocus()
             true
         } catch (e: Exception) {
             Log.e("UAC2", "Failed to deactivate direct USB DAC: ${e.message}", e)
             false
         }
+    }
+
+    private fun updateDirectUsbAudioFocus() {
+        if (directUsbFocusGain != null || directUsbAudioFocusRequest != null) {
+            Log.i("UAC2", "[USB] Releasing stale direct USB audio focus")
+        }
+        abandonDirectUsbAudioFocus()
+    }
+
+    private fun requestDirectUsbAudioFocus(focusGain: Int) {
+        if (directUsbFocusGain == focusGain) {
+            return
+        }
+
+        abandonDirectUsbAudioFocus()
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val request = AudioFocusRequest.Builder(focusGain)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener(directUsbAudioFocusChangeListener)
+                .setAcceptsDelayedFocusGain(false)
+                .build()
+            directUsbAudioFocusRequest = request
+            audioManager.requestAudioFocus(request)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                directUsbAudioFocusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                focusGain,
+            )
+        }
+
+        if (granted == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            directUsbFocusGain = focusGain
+        } else {
+            directUsbAudioFocusRequest = null
+            directUsbFocusGain = null
+            Log.w("UAC2", "Direct USB audio focus request denied (gain=$focusGain)")
+        }
+    }
+
+    private fun abandonDirectUsbAudioFocus() {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            directUsbAudioFocusRequest?.let { request ->
+                audioManager.abandonAudioFocusRequest(request)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(directUsbAudioFocusChangeListener)
+        }
+
+        directUsbAudioFocusRequest = null
+        directUsbFocusGain = null
     }
 
     private fun closeDirectUsbConnection(deviceName: String?) {
@@ -2080,7 +2502,6 @@ class MainActivity: FlutterActivity() {
     ): Map<String, Any?> {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         val baseRoute = describeCurrentOutputRoute(audioManager).toMutableMap()
-        val baseRouteType = baseRoute["routeType"] as? String ?: "unknown"
         val preferredUsbDevice = findPreferredUsbAudioDevice(
             preferredDeviceName = preferredDeviceName,
             preferredProductName = preferredProductName,
@@ -2089,18 +2510,18 @@ class MainActivity: FlutterActivity() {
             preferredSerial = preferredSerial,
         )
 
-        if (preferredUsbDevice != null &&
-            (baseRouteType == "usb" || baseRouteType == "internal" || baseRouteType == "unknown")
-        ) {
-            baseRoute.clear()
-            baseRoute.putAll(buildUsbRouteMap(preferredUsbDevice))
-        }
-
-        val hasVolumeControl = audioManager != null && !audioManager.isVolumeFixed
+        val directUsbRegistered = activeDirectUsbDeviceName != null
+        val hasSystemVolumeControl = audioManager != null && !audioManager.isVolumeFixed
+        val hasVolumeControl = hasSystemVolumeControl && !directUsbRegistered
         baseRoute["hasVolumeControl"] = hasVolumeControl
         baseRoute["volumeMode"] = if (hasVolumeControl) "system" else "unavailable"
-        baseRoute["volume"] = getRouteVolume()
-        baseRoute["muted"] = getRouteMuted()
+        baseRoute["volume"] = if (hasVolumeControl) getRouteVolume() else null
+        baseRoute["muted"] = if (hasVolumeControl) getRouteMuted() else null
+        baseRoute["preferredUsbDeviceDetected"] = preferredUsbDevice != null
+        baseRoute["preferredUsbDeviceName"] = preferredUsbDevice?.deviceName
+        baseRoute["preferredUsbProductName"] = preferredUsbDevice?.productName
+        baseRoute["directUsbRegistered"] = directUsbRegistered
+        baseRoute["directUsbDeviceName"] = activeDirectUsbDeviceName
 
         return baseRoute
     }
@@ -2113,18 +2534,22 @@ class MainActivity: FlutterActivity() {
         preferredSerial: String? = null,
     ): UsbDevice? {
         val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return null
-        val candidates = usbManager.deviceList.values.filter { device -> isUac2Device(device) }
+        val routeLabelHint = preferredProductName ?: currentRouteLabelHint()
+        val candidates = usbManager.deviceList.values.filter { device ->
+            isLikelyUsbAudioDevice(device, routeLabelHint)
+        }
         if (candidates.isEmpty()) return null
 
         return candidates.firstOrNull { device ->
             preferredDeviceName != null && device.deviceName == preferredDeviceName
         } ?: candidates.firstOrNull { device ->
+            preferredSerial != null &&
+                (safeUsbSerial(device) == preferredSerial || device.deviceName == preferredSerial)
+        } ?: candidates.firstOrNull { device ->
             preferredVendorId != null &&
                 preferredProductId != null &&
                 device.vendorId == preferredVendorId &&
                 device.productId == preferredProductId
-        } ?: candidates.firstOrNull { device ->
-            preferredSerial != null && safeUsbSerial(device) == preferredSerial
         } ?: candidates.firstOrNull { device ->
             preferredProductName != null &&
                 !device.productName.isNullOrBlank() &&
@@ -2175,14 +2600,22 @@ class MainActivity: FlutterActivity() {
         } else {
             emptyList()
         }
-        val hasUsbDac = outputs.any { device ->
+        val hasUsbAudioRoute = outputs.any { device ->
             device.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
                 device.type == AudioDeviceInfo.TYPE_USB_HEADSET
         }
         val route = describeCurrentOutputRoute(audioManager)
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager
+        val hasAttachedUac2Device = usbManager
+            ?.deviceList
+            ?.values
+            ?.any { device -> isLikelyUsbAudioDevice(device, route["routeLabel"] as? String) }
+            ?: false
 
         return mapOf(
-            "hasUsbDac" to hasUsbDac,
+            "hasUsbDac" to (hasUsbAudioRoute || hasAttachedUac2Device),
+            "hasUsbAudioRoute" to hasUsbAudioRoute,
+            "hasAttachedUac2Device" to hasAttachedUac2Device,
             "manufacturer" to Build.MANUFACTURER,
             "model" to Build.MODEL,
             "routeType" to route["routeType"],
@@ -2202,7 +2635,19 @@ class MainActivity: FlutterActivity() {
             "deviceName" to device.deviceName,
             "vendorId" to device.vendorId,
             "productId" to device.productId,
-            "serial" to safeUsbSerial(device),
+            "serial" to (safeUsbSerial(device) ?: device.deviceName),
+        )
+    }
+
+    private fun getDirectUsbDiagnostics(): Map<String, Any?> {
+        return mapOf(
+            "activeDirectUsbDeviceName" to activeDirectUsbDeviceName,
+            "directUsbRegistered" to (activeDirectUsbDeviceName != null),
+            "exclusiveDacModeEnabled" to exclusiveDacModeEnabled,
+            "directUsbPlaybackActive" to directUsbPlaybackActive,
+            "audioFocusHeld" to (directUsbFocusGain != null),
+            "audioFocusGain" to directUsbFocusGain,
+            "rustAudioStateJson" to nativeGetRustAudioDebugStateJson(),
         )
     }
 
@@ -2222,6 +2667,13 @@ class MainActivity: FlutterActivity() {
             preferredSerial = preferredSerial,
         )
         val routeType = routeStatus["routeType"] as? String ?: "unknown"
+        val preferredUsbDevice = findPreferredUsbAudioDevice(
+            preferredDeviceName = preferredDeviceName,
+            preferredProductName = preferredProductName,
+            preferredVendorId = preferredVendorId,
+            preferredProductId = preferredProductId,
+            preferredSerial = preferredSerial,
+        )
         val bestOutput = currentBestOutputDevice(audioManager)
         val supportedSampleRates = bestOutput
             ?.sampleRates
@@ -2242,7 +2694,7 @@ class MainActivity: FlutterActivity() {
             ((maxSupportedSampleRate ?: 0) > 48_000 || (hasProAudio && (nativeSampleRate ?: 0) > 48_000))
 
         val capabilities = mutableListOf<String>()
-        if (routeType == "usb") {
+        if (routeType == "usb" || preferredUsbDevice != null) {
             capabilities += "usbDac"
         }
         if (hiResInternal) {
@@ -2272,12 +2724,22 @@ class MainActivity: FlutterActivity() {
             AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
             AudioDeviceInfo.TYPE_WIRED_HEADSET,
             AudioDeviceInfo.TYPE_LINE_ANALOG,
-            AudioDeviceInfo.TYPE_LINE_DIGITAL -> 1
+            AudioDeviceInfo.TYPE_LINE_DIGITAL,
+            AudioDeviceInfo.TYPE_HDMI,
+            AudioDeviceInfo.TYPE_HDMI_ARC,
+            AudioDeviceInfo.TYPE_HDMI_EARC,
+            AudioDeviceInfo.TYPE_AUX_LINE,
+            AudioDeviceInfo.TYPE_BUS -> 1
             AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
             AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-            AudioDeviceInfo.TYPE_HEARING_AID -> 2
+            AudioDeviceInfo.TYPE_HEARING_AID,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_SPEAKER,
+            AudioDeviceInfo.TYPE_BLE_BROADCAST -> 2
             AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
-            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> 3
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE -> 3
+            AudioDeviceInfo.TYPE_REMOTE_SUBMIX -> 4
             else -> 4
         }
     }
@@ -2290,12 +2752,22 @@ class MainActivity: FlutterActivity() {
             AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
             AudioDeviceInfo.TYPE_WIRED_HEADSET,
             AudioDeviceInfo.TYPE_LINE_ANALOG,
-            AudioDeviceInfo.TYPE_LINE_DIGITAL -> "wired"
+            AudioDeviceInfo.TYPE_LINE_DIGITAL,
+            AudioDeviceInfo.TYPE_HDMI,
+            AudioDeviceInfo.TYPE_HDMI_ARC,
+            AudioDeviceInfo.TYPE_HDMI_EARC,
+            AudioDeviceInfo.TYPE_AUX_LINE,
+            AudioDeviceInfo.TYPE_BUS -> "wired"
             AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
             AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-            AudioDeviceInfo.TYPE_HEARING_AID -> "bluetooth"
+            AudioDeviceInfo.TYPE_HEARING_AID,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_SPEAKER,
+            AudioDeviceInfo.TYPE_BLE_BROADCAST -> "bluetooth"
             AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
-            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "internal"
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE,
+            AudioDeviceInfo.TYPE_REMOTE_SUBMIX -> "internal"
             else -> "unknown"
         }
     }
@@ -2471,6 +2943,13 @@ class MainActivity: FlutterActivity() {
                     UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                         // Invalidate cache on device attach
                         uac2DeviceCache = null
+                        val attachedDevice: UsbDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
+                        }
+                        maybeRequestPermissionForAttachedDevice(attachedDevice)
                         // Notify Flutter if channel is available
                         uac2Channel?.invokeMethod("onDeviceAttached", null)
                         audioDeviceChannel?.invokeMethod("onPlaybackDevicesChanged", null)
@@ -2487,6 +2966,7 @@ class MainActivity: FlutterActivity() {
                         if (detachedDevice?.deviceName == activeDirectUsbDeviceName) {
                             deactivateDirectUsb()
                         }
+                        detachedDevice?.deviceName?.let { promptedUsbPermissionDeviceNames.remove(it) }
                         // Notify Flutter if channel is available
                         uac2Channel?.invokeMethod("onDeviceDetached", null)
                         audioDeviceChannel?.invokeMethod("onPlaybackDevicesChanged", null)
@@ -2537,5 +3017,8 @@ class MainActivity: FlutterActivity() {
         bitDepth: Int,
         channels: Int,
     ): Boolean
+    private external fun nativeSetRustDirectUsbLockEnabled(enabled: Boolean): Boolean
+    private external fun nativeGetRustAudioDebugStateJson(): String?
     private external fun nativeClearRustDirectUsbPlayback(): Boolean
+    private external fun nativeMarkRustDirectUsbFallback(reason: String?): Boolean
 }

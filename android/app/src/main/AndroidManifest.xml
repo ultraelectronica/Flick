@@ -1,4 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:installLocation="auto">
     <!-- Internet permission for Last.fm scrobbling and online features -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- USB Host (optional): for UAC 2.0 DAC/AMP detection on Android -->
@@ -20,7 +22,7 @@
     <application
         android:label="Flick"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon">
+        android:icon="@drawable/reverse_flick_logo">
         <activity
             android:name=".MainActivity"
             android:exported="true"

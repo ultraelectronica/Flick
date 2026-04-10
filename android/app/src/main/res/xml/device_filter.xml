@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- USB Audio Class 2.0 (UAC 2.0) device filter for DAC/AMP detection.
-     Class 0x01 (Audio), Subclass 0x02 (UAC 2.0), Protocol 0x20 (AF_VERSION_02_00). -->
+<!--
+  Android matches this filter against the USB device descriptor, not interface descriptors.
+  Many DACs expose class 0 (per-interface) at the device level, so this filter cannot guarantee
+  a system chooser for every audio DAC. Keep the runtime UsbManager path as the real fallback.
+-->
 <resources>
-    <usb-device class="1" subclass="2" protocol="32" />
+    <usb-device class="1" />
 </resources>

@@ -122,15 +122,6 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
     }
   }
 
-  void _openScreenshotView() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) =>
-            _ListeningRecapPosterScreen(recap: _currentRecap()),
-      ),
-    );
-  }
-
   void _openRankingPoster(_RecapRankingPosterType type) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -180,39 +171,27 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Center(
-                                      child: LayoutBuilder(
-                                        builder: (context, constraints) {
-                                          final previewWidth =
-                                              _RecapPosterDimensions.compactPreviewWidth(
-                                                constraints.maxWidth,
-                                              );
-
-                                          return SizedBox(
-                                            width: previewWidth,
-                                            height:
-                                                previewWidth /
-                                                _RecapPosterDimensions
-                                                    .aspectRatio,
-                                            child: FittedBox(
-                                              fit: BoxFit.contain,
-                                              child: RepaintBoundary(
-                                                key: _cardBoundaryKey,
-                                                child: _ListeningRecapHeroCard(
-                                                  recap: recap,
-                                                  frameSize:
-                                                      _RecapPosterDimensions
-                                                          .referenceSize,
-                                                ),
-                                              ),
+                                      child: AspectRatio(
+                                        aspectRatio:
+                                            _RecapPosterDimensions.aspectRatio,
+                                        child: FittedBox(
+                                          fit: BoxFit.contain,
+                                          alignment: Alignment.center,
+                                          child: RepaintBoundary(
+                                            key: _cardBoundaryKey,
+                                            child: _ListeningRecapHeroCard(
+                                              recap: recap,
+                                              frameSize: _RecapPosterDimensions
+                                                  .referenceSize,
                                             ),
-                                          );
-                                        },
+                                          ),
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(
                                       height: AppConstants.spacingMd,
                                     ),
-                                    _buildActionRow(context),
+                                    _buildActionRow(),
                                     const SizedBox(
                                       height: AppConstants.spacingLg,
                                     ),
@@ -403,26 +382,12 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
     );
   }
 
-  Widget _buildActionRow(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _RecapActionButton(
-            icon: Icons.crop_free_rounded,
-            label: 'Screenshot View',
-            onTap: _openScreenshotView,
-          ),
-        ),
-        const SizedBox(width: AppConstants.spacingSm),
-        Expanded(
-          child: _RecapActionButton(
-            icon: Icons.download_rounded,
-            label: _isSaving ? 'Saving...' : 'Save to Gallery',
-            isPrimary: true,
-            onTap: _isSaving ? null : _saveCurrentRecap,
-          ),
-        ),
-      ],
+  Widget _buildActionRow() {
+    return _RecapActionButton(
+      icon: Icons.download_rounded,
+      label: _isSaving ? 'Saving...' : 'Save to Gallery',
+      isPrimary: true,
+      onTap: _isSaving ? null : _saveCurrentRecap,
     );
   }
 
@@ -564,9 +529,9 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
 
 class _ListeningRecapHeroCard extends StatelessWidget {
   final ListeningRecap recap;
-  final Size? frameSize;
+  final Size frameSize;
 
-  const _ListeningRecapHeroCard({required this.recap, this.frameSize});
+  const _ListeningRecapHeroCard({required this.recap, required this.frameSize});
 
   @override
   Widget build(BuildContext context) {
@@ -657,7 +622,7 @@ class _ListeningRecapHeroCard extends StatelessWidget {
                       height: 0.92,
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
-                      fontSize: context.responsiveText(38),
+                      fontSize: 38,
                     ),
                   ),
                   const SizedBox(height: AppConstants.spacingSm),
@@ -755,16 +720,9 @@ class _ListeningRecapHeroCard extends StatelessWidget {
       ),
     );
 
-    if (frameSize != null) {
-      return SizedBox(
-        width: frameSize!.width,
-        height: frameSize!.height,
-        child: card,
-      );
-    }
-
-    return AspectRatio(
-      aspectRatio: _RecapPosterDimensions.aspectRatio,
+    return SizedBox(
+      width: frameSize.width,
+      height: frameSize.height,
       child: card,
     );
   }
@@ -845,136 +803,6 @@ extension _RecapRankingPosterTypeX on _RecapRankingPosterType {
   }
 }
 
-class _ListeningRecapPosterScreen extends StatefulWidget {
-  final ListeningRecap recap;
-
-  const _ListeningRecapPosterScreen({required this.recap});
-
-  @override
-  State<_ListeningRecapPosterScreen> createState() =>
-      _ListeningRecapPosterScreenState();
-}
-
-class _ListeningRecapPosterScreenState
-    extends State<_ListeningRecapPosterScreen> {
-  final GlobalKey _posterBoundaryKey = GlobalKey();
-  final GallerySaveService _gallerySaveService = GallerySaveService();
-  bool _isSaving = false;
-
-  Future<void> _savePoster() async {
-    if (_isSaving) return;
-    setState(() => _isSaving = true);
-
-    try {
-      final bytes = await _captureRecapPng(_posterBoundaryKey);
-      if (bytes == null) {
-        throw const GallerySaveException(
-          'The recap poster is still rendering.',
-        );
-      }
-
-      await _gallerySaveService.saveImage(
-        bytes: bytes,
-        fileName: _buildRecapFileName(widget.recap),
-      );
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Recap saved to your gallery')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_saveErrorMessage(error))));
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    final posterSize = _RecapPosterDimensions.fullViewSize(
-      maxWidth: mediaQuery.size.width - mediaQuery.padding.horizontal,
-      maxHeight: mediaQuery.size.height - mediaQuery.padding.vertical,
-    );
-
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          const Positioned.fill(child: _RecapBackdrop()),
-          SafeArea(
-            child: Stack(
-              children: [
-                Center(
-                  child: RepaintBoundary(
-                    key: _posterBoundaryKey,
-                    child: _ListeningRecapHeroCard(
-                      recap: widget.recap,
-                      frameSize: posterSize,
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(AppConstants.spacingMd),
-                  child: Row(
-                    children: [
-                      _PosterActionIcon(
-                        icon: LucideIcons.arrowLeft,
-                        onTap: () => Navigator.of(context).pop(),
-                      ),
-                      const Spacer(),
-                      _PosterActionIcon(
-                        icon: _isSaving
-                            ? Icons.hourglass_top_rounded
-                            : Icons.download_rounded,
-                        onTap: _isSaving ? null : _savePoster,
-                      ),
-                    ],
-                  ),
-                ),
-                Positioned(
-                  left: AppConstants.spacingLg,
-                  right: AppConstants.spacingLg,
-                  bottom: AppConstants.spacingLg,
-                  child: IgnorePointer(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppConstants.spacingMd,
-                        vertical: AppConstants.spacingSm,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.36),
-                        borderRadius: BorderRadius.circular(
-                          AppConstants.radiusRound,
-                        ),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.08),
-                        ),
-                      ),
-                      child: Text(
-                        'Use your device screenshot gesture here, or save the poster directly to your gallery.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _RecapRankingPosterScreen extends StatefulWidget {
   final ListeningRecap recap;
   final _RecapRankingPosterType type;
@@ -1029,12 +857,6 @@ class _RecapRankingPosterScreenState extends State<_RecapRankingPosterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    final posterSize = _RecapPosterDimensions.fullViewSize(
-      maxWidth: mediaQuery.size.width - mediaQuery.padding.horizontal,
-      maxHeight: mediaQuery.size.height - mediaQuery.padding.vertical,
-    );
-
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
@@ -1043,13 +865,19 @@ class _RecapRankingPosterScreenState extends State<_RecapRankingPosterScreen> {
           SafeArea(
             child: Stack(
               children: [
-                Center(
-                  child: RepaintBoundary(
-                    key: _posterBoundaryKey,
-                    child: _RecapRankingPosterCard(
-                      recap: widget.recap,
-                      type: widget.type,
-                      frameSize: posterSize,
+                Positioned.fill(
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      alignment: Alignment.center,
+                      child: RepaintBoundary(
+                        key: _posterBoundaryKey,
+                        child: _RecapRankingPosterCard(
+                          recap: widget.recap,
+                          type: widget.type,
+                          frameSize: _RecapPosterDimensions.referenceSize,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -1214,7 +1042,7 @@ class _RecapRankingPosterCard extends StatelessWidget {
                         height: 0.92,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
-                        fontSize: context.responsiveText(34),
+                        fontSize: 34,
                       ),
                     ),
                     const SizedBox(height: AppConstants.spacingSm),
@@ -1507,23 +1335,7 @@ class _RecapPosterDimensions {
   static const double referenceWidth = 420;
   static const double referenceHeight = 760;
   static const Size referenceSize = Size(referenceWidth, referenceHeight);
-  static const double compactPreviewMaxWidth = 304;
   static const double aspectRatio = referenceWidth / referenceHeight;
-
-  static double compactPreviewWidth(double maxWidth) {
-    return math.min(maxWidth, compactPreviewMaxWidth);
-  }
-
-  static Size fullViewSize({
-    required double maxWidth,
-    required double maxHeight,
-  }) {
-    final fittedWidth = maxWidth * 0.98;
-    final fittedHeight = maxHeight * 0.98;
-    final width = math.min(fittedWidth, fittedHeight * aspectRatio);
-
-    return Size(width, width / aspectRatio);
-  }
 }
 
 class _RecapBackdrop extends StatelessWidget {
@@ -1591,7 +1403,7 @@ class _HeroAlbumArt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = context.scaleSize(144);
+    const size = 144.0;
 
     return Container(
       width: size,
@@ -1620,7 +1432,7 @@ class _HeroAlbumArt extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.08),
                 child: Icon(
                   Icons.music_note_rounded,
-                  size: context.responsiveIcon(48),
+                  size: 48,
                   color: Colors.white.withValues(alpha: 0.76),
                 ),
               )
@@ -1631,7 +1443,7 @@ class _HeroAlbumArt extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.08),
                   child: Icon(
                     Icons.music_note_rounded,
-                    size: context.responsiveIcon(48),
+                    size: 48,
                     color: Colors.white.withValues(alpha: 0.76),
                   ),
                 ),

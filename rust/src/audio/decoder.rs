@@ -13,6 +13,7 @@ use std::thread::{self, JoinHandle};
 
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::conv::IntoSample;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
 use symphonia::core::io::MediaSourceStream;
@@ -146,8 +147,9 @@ impl DecoderThread {
     pub fn spawn(
         path: PathBuf,
         output_sample_rate: u32,
+        output_channels: usize,
     ) -> Result<(AudioSource, Self), DecoderError> {
-        Self::spawn_with_seek(path, output_sample_rate, None)
+        Self::spawn_with_seek(path, output_sample_rate, output_channels, None)
     }
 
     /// Spawn a new decoder thread and start decoding from a specific position.
@@ -156,24 +158,31 @@ impl DecoderThread {
     pub fn spawn_with_seek(
         path: PathBuf,
         output_sample_rate: u32,
+        output_channels: usize,
         start_position_secs: Option<f64>,
     ) -> Result<(AudioSource, Self), DecoderError> {
         let probe_result = probe_file(&path)?;
-        Self::spawn_from_probe_result(probe_result, output_sample_rate, start_position_secs)
+        Self::spawn_from_probe_result(
+            probe_result,
+            output_sample_rate,
+            output_channels,
+            start_position_secs,
+        )
     }
 
     /// Spawn a decoder thread using a probe result that has already been created.
     pub fn spawn_from_probe_result(
         probe_result: ProbeResult,
         output_sample_rate: u32,
+        output_channels: usize,
         start_position_secs: Option<f64>,
     ) -> Result<(AudioSource, Self), DecoderError> {
         let path = probe_result.source_info.path.clone();
         let mut source_info = probe_result.source_info.clone();
         source_info.output_sample_rate = output_sample_rate;
-        source_info.total_samples = (source_info.duration_secs
-            * output_sample_rate as f64
-            * source_info.channels as f64) as u64;
+        source_info.channels = output_channels;
+        source_info.total_samples =
+            (source_info.duration_secs * output_sample_rate as f64 * output_channels as f64) as u64;
 
         // Create the source and producer
         let (source, producer) = AudioSource::new(source_info);
@@ -193,6 +202,7 @@ impl DecoderThread {
                     probe_result,
                     producer,
                     output_sample_rate,
+                    output_channels,
                     stop_signal_clone,
                     start_position_secs,
                 )
@@ -244,6 +254,7 @@ fn decode_thread(
     probe_result: ProbeResult,
     mut producer: SourceProducer,
     output_sample_rate: u32,
+    output_channels: usize,
     stop_signal: Arc<AtomicBool>,
     start_position_secs: Option<f64>,
 ) -> Result<(), DecoderError> {
@@ -269,14 +280,17 @@ fn decode_thread(
         }
     }
 
+    let source_channels = source_info.channels;
+
     // Create resampler if needed
     let needs_resampling = source_info.original_sample_rate != output_sample_rate;
+    let needs_channel_remix = source_channels != output_channels;
     let mut resampler = if needs_resampling {
         Some(
             AudioResampler::new(
                 source_info.original_sample_rate,
                 output_sample_rate,
-                source_info.channels,
+                output_channels,
                 DECODE_CHUNK_SIZE,
             )
             .map_err(DecoderError::ResamplingFailed)?,
@@ -285,16 +299,35 @@ fn decode_thread(
         None
     };
 
+    log::info!(
+        "[DECODER] decoded_file_sample_rate_hz={} decoder_output_sample_rate_hz={} source_channels={} output_channels={} resampling_active={} channel_remix_active={}",
+        source_info.original_sample_rate,
+        output_sample_rate,
+        source_channels,
+        output_channels,
+        needs_resampling,
+        needs_channel_remix,
+    );
+    if needs_resampling {
+        log::warn!(
+            "[DECODER] Resampling {}→{} Hz. For USB bit-perfect playback, engine + DAC should match the file rate (resampling=false).",
+            source_info.original_sample_rate,
+            output_sample_rate
+        );
+    }
+
     // Pre-allocated buffers (avoid allocations in the loop)
-    let mut decode_buffer: Vec<f32> =
-        Vec::with_capacity(DECODE_CHUNK_SIZE * source_info.channels * 2);
+    let mut decode_buffer: Vec<f32> = Vec::with_capacity(DECODE_CHUNK_SIZE * source_channels * 2);
+    let mut remix_buffer: Vec<f32> = Vec::with_capacity(DECODE_CHUNK_SIZE * output_channels * 2);
     let mut resample_buffer: Vec<f32> = Vec::with_capacity(
         (DECODE_CHUNK_SIZE as f64 * output_sample_rate as f64
             / source_info.original_sample_rate as f64
             * 1.2) as usize
-            * source_info.channels
+            * output_channels
             + 256,
     );
+
+    let mut logged_meaningful_f32_peak = false;
 
     // Decode loop
     loop {
@@ -344,11 +377,45 @@ fn decode_thread(
         decode_buffer.clear();
         convert_to_interleaved_f32(&decoded, &mut decode_buffer);
 
+        if !logged_meaningful_f32_peak {
+            let mut peak = 0.0f32;
+            for &s in decode_buffer.iter() {
+                let a = s.abs();
+                if a > peak {
+                    peak = a;
+                }
+            }
+            if peak >= 0.1 {
+                log::info!(
+                    "[DECODER] first chunk with |f32| max >= 0.1: peak={:.6} (S32→f32 via Symphonia: i32 as f64 / 2^31; quiet intros log lower)",
+                    peak
+                );
+                logged_meaningful_f32_peak = true;
+            }
+        }
+
+        let remixed_samples = if needs_channel_remix {
+            remix_buffer.clear();
+            remix_buffer.resize(
+                (decode_buffer.len() / source_channels.max(1)) * output_channels,
+                0.0,
+            );
+            remix_interleaved_channels(
+                &decode_buffer,
+                source_channels,
+                output_channels,
+                &mut remix_buffer,
+            );
+            &remix_buffer[..]
+        } else {
+            &decode_buffer[..]
+        };
+
         // Resample if needed
         let output_samples = if let Some(ref mut resampler) = resampler {
             resample_buffer.clear();
             resample_buffer.resize(
-                (decode_buffer.len() as f64 * output_sample_rate as f64
+                (remixed_samples.len() as f64 * output_sample_rate as f64
                     / source_info.original_sample_rate as f64
                     * 1.2) as usize
                     + 256,
@@ -356,12 +423,12 @@ fn decode_thread(
             );
 
             let written = resampler
-                .process_interleaved(&decode_buffer, &mut resample_buffer)
+                .process_interleaved(remixed_samples, &mut resample_buffer)
                 .map_err(DecoderError::ResamplingFailed)?;
 
             &resample_buffer[..written]
         } else {
-            &decode_buffer[..]
+            remixed_samples
         };
 
         // Write to ring buffer, waiting if necessary
@@ -391,8 +458,63 @@ fn decode_thread(
     Ok(())
 }
 
+fn remix_interleaved_channels(
+    input: &[f32],
+    source_channels: usize,
+    output_channels: usize,
+    output: &mut [f32],
+) {
+    if source_channels == 0 || output_channels == 0 {
+        return;
+    }
+
+    let frames = input.len() / source_channels;
+    for frame in 0..frames {
+        let input_start = frame * source_channels;
+        let output_start = frame * output_channels;
+        let source_frame = &input[input_start..input_start + source_channels];
+        let output_frame = &mut output[output_start..output_start + output_channels];
+
+        match (source_channels, output_channels) {
+            (1, 2) => {
+                output_frame[0] = source_frame[0];
+                output_frame[1] = source_frame[0];
+            }
+            (_, 1) => {
+                let sum: f32 = source_frame.iter().copied().sum();
+                output_frame[0] = sum / source_channels as f32;
+            }
+            (2, 2) => {
+                output_frame.copy_from_slice(source_frame);
+            }
+            _ => {
+                for ch in 0..output_channels {
+                    output_frame[ch] = if ch < source_channels {
+                        source_frame[ch]
+                    } else {
+                        source_frame[source_channels - 1]
+                    };
+                }
+            }
+        }
+    }
+}
+
 /// Convert an AudioBufferRef to interleaved f32 samples.
 fn convert_to_interleaved_f32(buffer: &AudioBufferRef, output: &mut Vec<f32>) {
+    use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+    static LOGGED_VARIANT: AtomicBool = AtomicBool::new(false);
+    if !LOGGED_VARIANT.swap(true, AtomicOrdering::Relaxed) {
+        let variant = match buffer {
+            AudioBufferRef::F32(_) => "F32",
+            AudioBufferRef::S16(_) => "S16",
+            AudioBufferRef::S24(_) => "S24",
+            AudioBufferRef::S32(_) => "S32",
+            AudioBufferRef::U8(_) => "U8",
+            _ => "Unknown",
+        };
+        log::info!("[DECODER] AudioBufferRef variant: {}", variant);
+    }
     match buffer {
         AudioBufferRef::F32(buf) => {
             let channels = buf.spec().channels.count();
@@ -437,7 +559,9 @@ fn convert_to_interleaved_f32(buffer: &AudioBufferRef, output: &mut Vec<f32>) {
 
             for frame in 0..frames {
                 for ch in 0..channels {
-                    output.push(buf.chan(ch)[frame] as f32 / 2147483648.0);
+                    // Must match symphonia_core::conv: (i32 as f64 / 2^31) as f32 — casting i32 to
+                    // f32 before dividing quantizes large PCM values and causes audible distortion.
+                    output.push(buf.chan(ch)[frame].into_sample());
                 }
             }
         }

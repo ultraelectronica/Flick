@@ -54,6 +54,19 @@ pub enum AudioCommand {
         ceiling_db: f32,
         release_ms: f32,
     },
+    /// Configure spatial/time FX settings.
+    SetFx {
+        enabled: bool,
+        balance: f32,
+        tempo: f32,
+        damp: f32,
+        filter_hz: f32,
+        delay_ms: f32,
+        size: f32,
+        mix: f32,
+        feedback: f32,
+        width: f32,
+    },
     /// Trigger crossfade to next track immediately
     CrossfadeToNext,
     /// Skip to the next track (with crossfade if enabled)

@@ -6,11 +6,22 @@
 use crate::audio::commands::{AudioCommand, AudioEvent, PlaybackProgress, PlaybackState};
 use crate::audio::crossfader::Crossfader;
 use crate::audio::decoder::DecoderThread;
+#[cfg(target_os = "android")]
+use crate::audio::device::current_device_profile;
 use crate::audio::dynamics::DynamicsChain;
 use crate::audio::equalizer::Equalizer;
+use crate::audio::fx::SpatialFx;
 use crate::audio::source::{AudioSource, SourceProvider};
+use crate::audio::strategy::OutputStrategy;
+#[cfg(target_os = "android")]
+use crate::audio::strategy::{select_strategy, DeviceCaps, TrackInfo};
+#[cfg(target_os = "android")]
+use crate::audio::verifier::OutputVerification;
 #[cfg(all(feature = "uac2", target_os = "android"))]
-use crate::uac2::{android_direct_output_signature, create_android_usb_backend};
+use crate::uac2::{
+    android_direct_debug_state, android_direct_output_signature, create_android_usb_backend,
+    validate_android_direct_request,
+};
 
 #[cfg(not(target_os = "android"))]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -25,10 +36,23 @@ use oboe::{
     SampleRateConversionQuality, SharingMode, Stereo, Usage,
 };
 use parking_lot::Mutex;
+use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::thread;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AudioOutputRuntimeState {
+    pub strategy: String,
+    pub requested_sample_rate: u32,
+    pub actual_sample_rate: u32,
+    pub resampler_active: bool,
+    pub passthrough_allowed: bool,
+    pub verification_reason: Option<String>,
+    pub direct_usb_active: bool,
+    pub direct_usb_verified: bool,
+}
 
 /// Audio callback data shared between engine and audio thread.
 ///
@@ -41,6 +65,10 @@ pub struct AudioCallbackData {
     playback_speed: std::sync::atomic::AtomicU32, // Using AtomicU32 for f32 bit pattern
     /// Pause state
     paused: AtomicBool,
+    /// Bit-perfect bypass: when true, audio_callback skips ALL DSP
+    /// (volume, EQ, dynamics, speed, crossfade). Samples pass through
+    /// from the decoded source to the output buffer unmodified.
+    bit_perfect: AtomicBool,
     /// Output channel count
     channels: usize,
     /// Crossfader state
@@ -56,6 +84,8 @@ pub struct AudioCallbackData {
     speed_frac_pos: Mutex<f64>,
     /// Graphic EQ (10 bands). try_lock in callback to avoid blocking.
     equalizer: Mutex<Equalizer>,
+    /// Creative spatial/time FX.
+    fx: Mutex<SpatialFx>,
     /// Lightweight compressor + limiter chain.
     dynamics: Mutex<DynamicsChain>,
     /// Channel for sending finished tracks to command thread
@@ -73,6 +103,7 @@ impl AudioCallbackData {
             volume: std::sync::atomic::AtomicU32::new(1.0f32.to_bits()),
             playback_speed: std::sync::atomic::AtomicU32::new(1.0f32.to_bits()),
             paused: AtomicBool::new(false),
+            bit_perfect: AtomicBool::new(false),
             channels,
             crossfader: Mutex::new(Crossfader::disabled(sample_rate)),
             sources: Mutex::new(SourceProvider::new(sample_rate, channels)),
@@ -81,6 +112,7 @@ impl AudioCallbackData {
             speed_buffer: Mutex::new(vec![0.0; speed_buffer_size]),
             speed_frac_pos: Mutex::new(0.0),
             equalizer: Mutex::new(Equalizer::new()),
+            fx: Mutex::new(SpatialFx::new(sample_rate)),
             dynamics: Mutex::new(DynamicsChain::new(sample_rate)),
             finished_tracks,
         }
@@ -121,6 +153,30 @@ impl AudioCallbackData {
     pub fn set_paused(&self, paused: bool) {
         self.paused.store(paused, Ordering::Relaxed);
     }
+
+    #[inline]
+    pub fn is_bit_perfect(&self) -> bool {
+        self.bit_perfect.load(Ordering::Relaxed)
+    }
+
+    #[inline]
+    pub fn set_bit_perfect(&self, enabled: bool) {
+        self.bit_perfect.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn reconfigure_sample_rate(&self, sample_rate: u32) {
+        let buffer_size = (sample_rate as usize / 10) * self.channels;
+        let speed_buffer_size = buffer_size * 3;
+
+        *self.crossfader.lock() = Crossfader::disabled(sample_rate);
+        *self.sources.lock() = SourceProvider::new(sample_rate, self.channels);
+        *self.mix_buffer_a.lock() = vec![0.0; buffer_size];
+        *self.mix_buffer_b.lock() = vec![0.0; buffer_size];
+        *self.speed_buffer.lock() = vec![0.0; speed_buffer_size];
+        *self.speed_frac_pos.lock() = 0.0;
+        self.fx.lock().reconfigure_sample_rate(sample_rate);
+        *self.dynamics.lock() = DynamicsChain::new(sample_rate);
+    }
 }
 
 /// Handle for controlling the audio engine from any thread.
@@ -141,6 +197,8 @@ pub struct AudioEngineHandle {
     channels: usize,
     /// Output/backend signature used to determine when the engine must be recreated.
     output_signature: String,
+    /// Runtime output state after strategy selection and verification.
+    output_runtime: AudioOutputRuntimeState,
     /// Active decoder threads (kept alive for the duration of playback)
     #[allow(dead_code)]
     decoders: Arc<Mutex<Vec<DecoderThread>>>,
@@ -278,6 +336,35 @@ impl AudioEngineHandle {
         })
     }
 
+    /// Configure spatial/time FX settings.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_fx(
+        &self,
+        enabled: bool,
+        balance: f32,
+        tempo: f32,
+        damp: f32,
+        filter_hz: f32,
+        delay_ms: f32,
+        size: f32,
+        mix: f32,
+        feedback: f32,
+        width: f32,
+    ) -> Result<(), String> {
+        self.send_command(AudioCommand::SetFx {
+            enabled,
+            balance,
+            tempo,
+            damp,
+            filter_hz,
+            delay_ms,
+            size,
+            mix,
+            feedback,
+            width,
+        })
+    }
+
     /// Get the current playback speed.
     pub fn get_playback_speed(&self) -> f32 {
         self.callback_data.get_playback_speed()
@@ -332,6 +419,10 @@ impl AudioEngineHandle {
         &self.output_signature
     }
 
+    pub fn output_runtime(&self) -> &AudioOutputRuntimeState {
+        &self.output_runtime
+    }
+
     /// Shutdown the engine.
     pub fn shutdown(&self) -> Result<(), String> {
         self.shutdown.store(true, Ordering::Release);
@@ -354,8 +445,10 @@ fn device_supports_sample_rate(device: &cpal::Device, channels: u16, sample_rate
 
 #[cfg(not(target_os = "android"))]
 pub fn desired_output_signature(preferred_sample_rate: Option<u32>) -> String {
-    let _ = preferred_sample_rate;
-    "native-shared".to_string()
+    format!(
+        "native-shared:{}",
+        preferred_sample_rate.unwrap_or_default()
+    )
 }
 
 /// Initialize the audio engine and return a handle.
@@ -364,6 +457,7 @@ pub fn desired_output_signature(preferred_sample_rate: Option<u32>) -> String {
 #[cfg(not(target_os = "android"))]
 pub fn create_audio_engine(
     preferred_sample_rate: Option<u32>,
+    _allow_dap_native: bool,
 ) -> Result<AudioEngineHandle, String> {
     // Get the default audio device
     let host = cpal::default_host();
@@ -480,6 +574,16 @@ pub fn create_audio_engine(
         sample_rate: target_sample_rate,
         channels,
         output_signature: desired_output_signature(Some(target_sample_rate)),
+        output_runtime: AudioOutputRuntimeState {
+            strategy: OutputStrategy::MixerMatched.as_str().to_string(),
+            requested_sample_rate: target_sample_rate,
+            actual_sample_rate: target_sample_rate,
+            resampler_active: false,
+            passthrough_allowed: false,
+            verification_reason: None,
+            direct_usb_active: false,
+            direct_usb_verified: false,
+        },
         decoders,
         shutdown,
     })
@@ -497,7 +601,10 @@ pub fn desired_output_signature(preferred_sample_rate: Option<u32>) -> String {
         return signature;
     }
 
-    format!("android-shared:{}", preferred_sample_rate.unwrap_or(48_000))
+    format!(
+        "android-shared:requested:{}",
+        preferred_sample_rate.unwrap_or(48_000)
+    )
 }
 
 #[cfg(target_os = "android")]
@@ -516,20 +623,176 @@ fn parse_android_output_channels(output_signature: &str) -> Option<usize> {
 }
 
 #[cfg(target_os = "android")]
+fn android_output_signature_for_strategy(
+    strategy: OutputStrategy,
+    requested_sample_rate: u32,
+) -> String {
+    match strategy {
+        OutputStrategy::DapNative => {
+            format!("android-shared:dap-native:{}", requested_sample_rate)
+        }
+        OutputStrategy::MixerBitPerfect => {
+            format!("android-shared:mixer-bit-perfect:{}", requested_sample_rate)
+        }
+        OutputStrategy::MixerMatched => {
+            format!("android-shared:mixer-matched:{}", requested_sample_rate)
+        }
+        OutputStrategy::UsbDirect => {
+            #[cfg(feature = "uac2")]
+            {
+                return android_direct_output_signature(Some(requested_sample_rate))
+                    .unwrap_or_else(|| {
+                        format!("android-uac2:requested:{}", requested_sample_rate)
+                    });
+            }
+
+            #[cfg(not(feature = "uac2"))]
+            {
+                format!("android-uac2:requested:{}", requested_sample_rate)
+            }
+        }
+        OutputStrategy::ResampledFallback => {
+            format!(
+                "android-shared:resampled-fallback:{}",
+                requested_sample_rate
+            )
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn build_output_runtime_state(
+    strategy: OutputStrategy,
+    verification: OutputVerification,
+    direct_usb_active: bool,
+    direct_usb_verified: bool,
+) -> AudioOutputRuntimeState {
+    AudioOutputRuntimeState {
+        strategy: verification
+            .resolved_strategy(strategy)
+            .as_str()
+            .to_string(),
+        requested_sample_rate: verification.requested_rate,
+        actual_sample_rate: verification.actual_rate,
+        resampler_active: verification.resampler_active,
+        passthrough_allowed: verification.bit_perfect,
+        verification_reason: verification.reason,
+        direct_usb_active,
+        direct_usb_verified,
+    }
+}
+
+#[cfg(target_os = "android")]
+struct AndroidManagedStream {
+    stream: AudioStreamAsync<Output, AndroidOutputCallbackState>,
+    actual_sample_rate: u32,
+}
+
+#[cfg(target_os = "android")]
 pub fn create_audio_engine(
     preferred_sample_rate: Option<u32>,
+    allow_dap_native: bool,
 ) -> Result<AudioEngineHandle, String> {
-    let target_sample_rate = preferred_sample_rate.unwrap_or(48_000);
-    let output_signature = desired_output_signature(Some(target_sample_rate));
-    let channels =
-        parse_android_output_channels(&output_signature).unwrap_or(ANDROID_DIRECT_CHANNELS);
+    let requested_sample_rate = preferred_sample_rate.unwrap_or(48_000);
+    let device_profile = current_device_profile();
+
+    #[cfg(feature = "uac2")]
+    let debug_state = android_direct_debug_state();
+    #[cfg(feature = "uac2")]
+    let will_attempt_usb = debug_state.registered;
+    #[cfg(not(feature = "uac2"))]
+    let will_attempt_usb = false;
+
+    #[cfg(feature = "uac2")]
+    if will_attempt_usb {
+        validate_android_direct_request(Some(requested_sample_rate))?;
+    }
+
+    let selected_output_device = select_android_output_device(requested_sample_rate).ok();
+    let shared_supports_requested_rate = selected_output_device
+        .as_ref()
+        .map(|device| android_device_supports_sample_rate(device, requested_sample_rate))
+        .unwrap_or(false);
+    let confirmed_dap_native = allow_dap_native
+        && selected_output_device.as_ref().is_some_and(|device| {
+            device_profile.as_ref().is_some_and(|profile| {
+                profile.confirmed_bit_perfect
+                    && android_device_supports_dap_native_strategy(device.device_type)
+            })
+        });
+    let desired_strategy = if will_attempt_usb {
+        OutputStrategy::UsbDirect
+    } else {
+        select_strategy(
+            TrackInfo {
+                sample_rate: requested_sample_rate,
+                channels: ANDROID_DIRECT_CHANNELS,
+            },
+            &DeviceCaps {
+                api_level: None,
+                confirmed_dap_native,
+                supports_mixer_bit_perfect: false,
+                supports_requested_rate: shared_supports_requested_rate,
+                direct_usb_available: false,
+                direct_usb_verified: false,
+            },
+        )
+    };
+
+    #[cfg(feature = "uac2")]
+    let channels = {
+        eprintln!(
+            "create_audio_engine: requested_rate={} Hz, strategy={:?}, debug_state: registered={}, effective_rate={:?}, requested_rate={:?}, effective_ch={:?}, requested_ch={:?}",
+            requested_sample_rate,
+            desired_strategy,
+            debug_state.registered,
+            debug_state.playback_format_sample_rate,
+            debug_state.requested_playback_sample_rate,
+            debug_state.playback_format_channels,
+            debug_state.requested_playback_channels,
+        );
+
+        if !will_attempt_usb {
+            ANDROID_DIRECT_CHANNELS
+        } else {
+            let effective_matches =
+                debug_state.playback_format_sample_rate == Some(requested_sample_rate);
+            let requested_matches =
+                debug_state.requested_playback_sample_rate == Some(requested_sample_rate);
+
+            let channels = if effective_matches {
+                debug_state
+                    .playback_format_channels
+                    .map(|c| c as usize)
+                    .unwrap_or(ANDROID_DIRECT_CHANNELS)
+            } else if requested_matches {
+                debug_state
+                    .requested_playback_channels
+                    .map(|c| c as usize)
+                    .unwrap_or(ANDROID_DIRECT_CHANNELS)
+            } else {
+                ANDROID_DIRECT_CHANNELS
+            };
+
+            eprintln!(
+                "create_audio_engine: DAC registered, will attempt USB backend with {} channels (format_matches: effective={}, requested={})",
+                channels, effective_matches, requested_matches
+            );
+            channels
+        }
+    };
+
+    #[cfg(not(feature = "uac2"))]
+    let channels = ANDROID_DIRECT_CHANNELS;
 
     // Create finished tracks channel (from audio callback to command thread)
     let (finished_tx, finished_rx) = bounded::<AudioSource>(32);
 
-    // Create shared data
+    // Create shared data before the output path is opened. If the platform
+    // changes the actual stream rate, we reconfigure the processing state
+    // before any playback commands are accepted.
     let callback_data = Arc::new(AudioCallbackData::new(
-        target_sample_rate,
+        requested_sample_rate,
         channels,
         finished_tx,
     ));
@@ -558,23 +821,151 @@ pub fn create_audio_engine(
     let callback_data_for_thread = Arc::clone(&callback_data);
 
     #[cfg(feature = "uac2")]
-    let direct_usb_backend = if output_signature.starts_with("android-uac2:") {
+    let mut direct_usb_backend = None;
+
+    let mut final_sample_rate = requested_sample_rate;
+    let mut output_runtime = build_output_runtime_state(
+        desired_strategy,
+        OutputVerification::verify(requested_sample_rate, requested_sample_rate, false, true),
+        false,
+        false,
+    );
+    let mut output_signature =
+        android_output_signature_for_strategy(desired_strategy, requested_sample_rate);
+
+    #[cfg(feature = "uac2")]
+    if desired_strategy == OutputStrategy::UsbDirect {
         match create_android_usb_backend(
             Arc::clone(&callback_data_clone),
             event_tx_clone.clone(),
-            target_sample_rate,
-        )? {
-            Some(backend) => Some(backend),
-            None => {
-                return Err(
-                    "Android direct USB backend was requested but no matching USB DAC format is configured"
+            requested_sample_rate,
+        ) {
+            Ok(Some(mut backend)) => {
+                let debug_state = android_direct_debug_state();
+                let actual_sample_rate = debug_state
+                    .clock_reported_sample_rate
+                    .or(debug_state.playback_format_sample_rate)
+                    .or(debug_state.requested_playback_sample_rate)
+                    .unwrap_or(requested_sample_rate);
+                let verification = OutputVerification::verify(
+                    requested_sample_rate,
+                    actual_sample_rate,
+                    true,
+                    debug_state.clock_verification_passed,
+                );
+
+                if verification.bit_perfect {
+                    final_sample_rate = actual_sample_rate;
+                    callback_data.reconfigure_sample_rate(final_sample_rate);
+                    callback_data.set_bit_perfect(true);
+                    output_runtime = build_output_runtime_state(
+                        OutputStrategy::UsbDirect,
+                        verification,
+                        true,
+                        debug_state.clock_verification_passed,
+                    );
+                    output_signature = android_output_signature_for_strategy(
+                        OutputStrategy::UsbDirect,
+                        requested_sample_rate,
+                    );
+                    direct_usb_backend = Some(backend);
+                } else {
+                    let reason = verification
+                        .reason
+                        .clone()
+                        .unwrap_or_else(|| "USB direct verification failed".to_string());
+                    log::warn!(
+                        "[ENGINE] USB direct rejected after verification: {}. Falling back to Android-managed output.",
+                        reason
+                    );
+                    let _ = backend.stop();
+                    crate::uac2::force_release_usb_session();
+                    output_runtime = build_output_runtime_state(
+                        OutputStrategy::UsbDirect,
+                        verification,
+                        false,
+                        debug_state.clock_verification_passed,
+                    );
+                    output_signature = android_output_signature_for_strategy(
+                        OutputStrategy::ResampledFallback,
+                        requested_sample_rate,
+                    );
+                }
+            }
+            Ok(None) => {
+                log::warn!(
+                    "[ENGINE] Android direct USB was selected for {} Hz but no backend was created; falling back to Android-managed output",
+                    requested_sample_rate
+                );
+                output_runtime.verification_reason = Some(
+                    "USB direct backend was unavailable; Android-managed fallback active"
                         .to_string(),
-                )
+                );
+                output_runtime.strategy = OutputStrategy::ResampledFallback.as_str().to_string();
+                output_signature = android_output_signature_for_strategy(
+                    OutputStrategy::ResampledFallback,
+                    requested_sample_rate,
+                );
+            }
+            Err(error) => {
+                log::warn!(
+                    "[ENGINE] Android direct USB init failed: {}. Falling back to Android-managed output.",
+                    error
+                );
+                output_runtime.verification_reason = Some(error);
+                output_runtime.strategy = OutputStrategy::ResampledFallback.as_str().to_string();
+                output_signature = android_output_signature_for_strategy(
+                    OutputStrategy::ResampledFallback,
+                    requested_sample_rate,
+                );
             }
         }
-    } else {
-        None
-    };
+    }
+
+    let mut managed_stream = None;
+    #[cfg(feature = "uac2")]
+    let use_managed_fallback = direct_usb_backend.is_none();
+    #[cfg(not(feature = "uac2"))]
+    let use_managed_fallback = true;
+
+    if use_managed_fallback {
+        let desired_shared_strategy = if desired_strategy == OutputStrategy::UsbDirect {
+            OutputStrategy::ResampledFallback
+        } else {
+            desired_strategy
+        };
+        let managed = open_android_output_stream(
+            Arc::clone(&callback_data_clone),
+            event_tx_clone.clone(),
+            requested_sample_rate,
+        )?;
+        let verification = OutputVerification::verify(
+            requested_sample_rate,
+            managed.actual_sample_rate,
+            desired_shared_strategy.requests_passthrough(),
+            true,
+        );
+        let resolved_shared_strategy = verification.resolved_strategy(desired_shared_strategy);
+        final_sample_rate = managed.actual_sample_rate;
+        callback_data.reconfigure_sample_rate(final_sample_rate);
+        callback_data.set_bit_perfect(verification.bit_perfect);
+        output_runtime =
+            build_output_runtime_state(desired_shared_strategy, verification, false, false);
+        output_signature =
+            android_output_signature_for_strategy(resolved_shared_strategy, requested_sample_rate);
+        managed_stream = Some(managed);
+    }
+
+    log::info!(
+        "[ENGINE] requested_rate_hz={} actual_rate_hz={} strategy={} resampler_active={} passthrough_allowed={} channels={} dap_profile={:?}",
+        requested_sample_rate,
+        final_sample_rate,
+        output_runtime.strategy,
+        output_runtime.resampler_active,
+        output_runtime.passthrough_allowed,
+        channels,
+        device_profile.as_ref().map(|profile| &profile.kind)
+    );
 
     // Spawn the audio thread (which owns the Oboe stream)
     thread::Builder::new()
@@ -582,6 +973,7 @@ pub fn create_audio_engine(
         .spawn(move || {
             #[cfg(feature = "uac2")]
             let mut direct_usb_backend = direct_usb_backend;
+            let mut managed_stream = managed_stream;
 
             #[cfg(feature = "uac2")]
             if direct_usb_backend.is_some() {
@@ -592,7 +984,7 @@ pub fn create_audio_engine(
                     callback_data_for_thread,
                     state_clone,
                     decoders_clone,
-                    target_sample_rate,
+                    final_sample_rate,
                     shutdown_clone,
                 );
 
@@ -602,25 +994,20 @@ pub fn create_audio_engine(
                 return;
             }
 
-            let mut stream = match open_android_output_stream(
-                Arc::clone(&callback_data_clone),
-                event_tx_clone.clone(),
-                target_sample_rate,
-            ) {
-                Ok(stream) => stream,
-                Err(error) => {
-                    eprintln!("Failed to open Android direct output stream: {}", error);
+            let mut stream = match managed_stream.take() {
+                Some(stream) => stream.stream,
+                None => {
                     let _ = event_tx.try_send(AudioEvent::Error {
-                        message: format!("Failed to open Android direct output stream: {}", error),
+                        message: "No Android managed output stream was prepared".to_string(),
                     });
                     return;
                 }
             };
 
             if let Err(error) = stream.start() {
-                eprintln!("Failed to start Android direct output stream: {}", error);
+                eprintln!("Failed to start Android managed output stream: {}", error);
                 let _ = event_tx.try_send(AudioEvent::Error {
-                    message: format!("Failed to start Android direct output stream: {}", error),
+                    message: format!("Failed to start Android managed output stream: {}", error),
                 });
                 return;
             }
@@ -632,7 +1019,7 @@ pub fn create_audio_engine(
                 callback_data_for_thread,
                 state_clone,
                 decoders_clone,
-                target_sample_rate,
+                final_sample_rate,
                 shutdown_clone,
             );
 
@@ -647,9 +1034,10 @@ pub fn create_audio_engine(
         command_tx,
         event_rx,
         state,
-        sample_rate: target_sample_rate,
+        sample_rate: final_sample_rate,
         channels,
         output_signature,
+        output_runtime,
         decoders,
         shutdown,
     })
@@ -683,7 +1071,7 @@ impl AudioOutputCallback for AndroidOutputCallbackState {
         error: oboe::Error,
     ) {
         eprintln!(
-            "Android direct output error before close: {:?} (device_id={}, sample_rate={} Hz, sharing={:?}, api={:?})",
+            "Android managed output error before close: {:?} (device_id={}, sample_rate={} Hz, sharing={:?}, api={:?})",
             error,
             audio_stream.get_device_id(),
             audio_stream.get_sample_rate(),
@@ -698,7 +1086,7 @@ impl AudioOutputCallback for AndroidOutputCallbackState {
         error: oboe::Error,
     ) {
         eprintln!(
-            "Android direct output error after close: {:?} (device_id={}, sample_rate={} Hz, sharing={:?}, api={:?})",
+            "Android managed output error after close: {:?} (device_id={}, sample_rate={} Hz, sharing={:?}, api={:?})",
             error,
             audio_stream.get_device_id(),
             audio_stream.get_sample_rate(),
@@ -738,12 +1126,13 @@ fn open_android_output_stream(
     callback_data: Arc<AudioCallbackData>,
     event_tx: Sender<AudioEvent>,
     target_sample_rate: u32,
-) -> Result<AudioStreamAsync<Output, AndroidOutputCallbackState>, String> {
+) -> Result<AndroidManagedStream, String> {
     let selected_device = select_android_output_device(target_sample_rate)?;
     let frames_per_callback = android_frames_per_callback(target_sample_rate);
     let attempts = [AudioApi::AAudio, AudioApi::Unspecified];
 
     let mut last_error = None;
+    let mut fallback_stream = None;
 
     for audio_api in attempts {
         let builder = oboe::AudioStreamBuilder::default()
@@ -752,7 +1141,7 @@ fn open_android_output_stream(
             .set_sample_rate(target_sample_rate as i32)
             .set_frames_per_callback(frames_per_callback)
             .set_device_id(selected_device.id)
-            .set_sharing_mode(SharingMode::Exclusive)
+            .set_sharing_mode(SharingMode::Shared)
             .set_performance_mode(PerformanceMode::LowLatency)
             .set_usage(Usage::Media)
             .set_content_type(ContentType::Music)
@@ -789,7 +1178,7 @@ fn open_android_output_stream(
         let actual_channels = stream.get_channel_count();
 
         eprintln!(
-            "Android direct output opened '{}' (id {}, type {:?}) requested {} Hz -> actual {} Hz, api {:?}, sharing {:?}, format {:?}, channels {:?}",
+            "Android managed output opened '{}' (id {}, type {:?}) requested {} Hz -> actual {} Hz, api {:?}, sharing {:?}, format {:?}, channels {:?}",
             selected_device.product_name,
             selected_device.id,
             selected_device.device_type,
@@ -809,15 +1198,28 @@ fn open_android_output_stream(
                 actual_rate,
                 target_sample_rate,
             ));
+            if fallback_stream.is_none() {
+                fallback_stream = Some(AndroidManagedStream {
+                    stream,
+                    actual_sample_rate: actual_rate.max(1) as u32,
+                });
+            }
             continue;
         }
 
+        return Ok(AndroidManagedStream {
+            stream,
+            actual_sample_rate: actual_rate.max(1) as u32,
+        });
+    }
+
+    if let Some(stream) = fallback_stream {
         return Ok(stream);
     }
 
     Err(last_error.unwrap_or_else(|| {
         format!(
-            "No Android direct output stream could be opened for '{}' at {} Hz",
+            "No Android managed output stream could be opened for '{}' at {} Hz",
             selected_device.product_name, target_sample_rate
         )
     }))
@@ -873,6 +1275,17 @@ fn android_device_supports_f32(device: &AudioDeviceInfo) -> bool {
 }
 
 #[cfg(target_os = "android")]
+fn android_device_supports_dap_native_strategy(device_type: AudioDeviceType) -> bool {
+    matches!(
+        device_type,
+        AudioDeviceType::WiredHeadphones
+            | AudioDeviceType::WiredHeadset
+            | AudioDeviceType::LineAnalog
+            | AudioDeviceType::LineDigital
+    )
+}
+
+#[cfg(target_os = "android")]
 fn android_output_device_priority(device_type: AudioDeviceType) -> u8 {
     match device_type {
         AudioDeviceType::UsbDevice
@@ -925,18 +1338,38 @@ pub(crate) fn audio_callback(
     data: &AudioCallbackData,
     _event_tx: &Sender<AudioEvent>,
 ) {
-    // Check if paused
     if data.is_paused() {
         output.fill(0.0);
         return;
     }
 
-    // Get volume and speed
+    // Bit-perfect path: raw samples from decoder straight to output.
+    // No volume scaling, no EQ, no dynamics, no speed, no crossfade.
+    if data.is_bit_perfect() {
+        let mut sources = match data.sources.try_lock() {
+            Some(s) => s,
+            None => {
+                output.fill(0.0);
+                return;
+            }
+        };
+
+        let (read, old_source) = sources.read(output);
+        if let Some(source) = old_source {
+            let _ = data.finished_tracks.try_send(source);
+        }
+        if read < output.len() {
+            output[read..].fill(0.0);
+        }
+        return;
+    }
+
+    // --- Normal (non-bit-perfect) path with full DSP chain ---
+
     let volume = data.get_volume();
     let speed = data.get_playback_speed();
     let channels = data.channels();
 
-    // Try to lock sources (non-blocking)
     let mut sources = match data.sources.try_lock() {
         Some(s) => s,
         None => {
@@ -945,11 +1378,9 @@ pub(crate) fn audio_callback(
         }
     };
 
-    // Try to lock crossfader
     let mut crossfader = match data.crossfader.try_lock() {
         Some(c) => c,
         None => {
-            // Couldn't get lock - just read from current source without speed processing
             let (read, old_source) = sources.read(output);
 
             if let Some(source) = old_source {
@@ -965,6 +1396,9 @@ pub(crate) fn audio_callback(
             if let Some(mut eq) = data.equalizer.try_lock() {
                 eq.process(output, channels);
             }
+            if let Some(mut fx) = data.fx.try_lock() {
+                fx.process(output, channels);
+            }
             if let Some(mut dynamics) = data.dynamics.try_lock() {
                 dynamics.process(output, channels);
             }
@@ -972,9 +1406,7 @@ pub(crate) fn audio_callback(
         }
     };
 
-    // Handle crossfading
     if crossfader.is_active() && sources.next_mut().is_some() {
-        // Get mix buffers
         let mut buf_a = match data.mix_buffer_a.try_lock() {
             Some(b) => b,
             None => {
@@ -996,7 +1428,6 @@ pub(crate) fn audio_callback(
             return;
         }
 
-        // Read from both sources
         let read_a = sources
             .current_mut()
             .map(|s| s.read(&mut buf_a[..needed]))
@@ -1013,7 +1444,6 @@ pub(crate) fn audio_callback(
             buf_b[read_b..needed].fill(0.0);
         }
 
-        // Mix with crossfade
         let _ = crossfader.mix(&buf_a[..needed], &buf_b[..needed], output, channels);
 
         if !crossfader.is_active() {
@@ -1023,9 +1453,7 @@ pub(crate) fn audio_callback(
             }
         }
     } else {
-        // Normal playback - apply speed processing if needed
         if (speed - 1.0).abs() < 0.001 {
-            // Speed is 1.0 - direct read
             let (read, old_source) = sources.read(output);
 
             if let Some(source) = old_source {
@@ -1036,7 +1464,6 @@ pub(crate) fn audio_callback(
                 output[read..].fill(0.0);
             }
         } else {
-            // Speed processing with linear interpolation
             let mut speed_buf = match data.speed_buffer.try_lock() {
                 Some(b) => b,
                 None => {
@@ -1053,7 +1480,6 @@ pub(crate) fn audio_callback(
             };
 
             let output_frames = output.len() / channels;
-            // Calculate how many input samples we need
             let input_samples_needed =
                 ((output_frames as f64 * speed as f64) + 2.0) as usize * channels;
 
@@ -1062,7 +1488,6 @@ pub(crate) fn audio_callback(
                 return;
             }
 
-            // Read source samples
             let (read, old_source) = sources.read(&mut speed_buf[..input_samples_needed]);
 
             if let Some(source) = old_source {
@@ -1076,19 +1501,16 @@ pub(crate) fn audio_callback(
 
             let input_frames = read / channels;
 
-            // Linear interpolation for speed change
             for out_frame in 0..output_frames {
                 let in_pos = *frac_pos;
                 let in_frame = in_pos as usize;
                 let frac = (in_pos - in_frame as f64) as f32;
 
                 if in_frame + 1 >= input_frames {
-                    // Not enough input - fill with silence
                     for ch in 0..channels {
                         output[out_frame * channels + ch] = 0.0;
                     }
                 } else {
-                    // Linear interpolation between frames
                     for ch in 0..channels {
                         let s0 = speed_buf[in_frame * channels + ch];
                         let s1 = speed_buf[(in_frame + 1) * channels + ch];
@@ -1099,18 +1521,19 @@ pub(crate) fn audio_callback(
                 *frac_pos += speed as f64;
             }
 
-            // Keep fractional part for next callback
             let consumed_frames = (*frac_pos) as usize;
             *frac_pos -= consumed_frames as f64;
         }
     }
 
-    // Apply volume
     for sample in output.iter_mut() {
         *sample *= volume;
     }
     if let Some(mut eq) = data.equalizer.try_lock() {
         eq.process(output, channels);
+    }
+    if let Some(mut fx) = data.fx.try_lock() {
+        fx.process(output, channels);
     }
     if let Some(mut dynamics) = data.dynamics.try_lock() {
         dynamics.process(output, channels);
@@ -1257,6 +1680,23 @@ fn command_processing_loop(
                             release_ms,
                         );
                     }
+                    AudioCommand::SetFx {
+                        enabled,
+                        balance,
+                        tempo,
+                        damp,
+                        filter_hz,
+                        delay_ms,
+                        size,
+                        mix,
+                        feedback,
+                        width,
+                    } => {
+                        callback_data.fx.lock().set(
+                            enabled, balance, tempo, damp, filter_hz, delay_ms, size, mix,
+                            feedback, width,
+                        );
+                    }
                     AudioCommand::CrossfadeToNext | AudioCommand::SkipToNext => {
                         handle_skip_to_next(&callback_data, &state, &event_tx);
                     }
@@ -1301,7 +1741,7 @@ fn handle_play(
     callback_data.crossfader.lock().reset();
 
     // Spawn decoder
-    match DecoderThread::spawn(path.clone(), sample_rate) {
+    match DecoderThread::spawn(path.clone(), sample_rate, callback_data.channels()) {
         Ok((source, decoder_thread)) => {
             start_playback_source(
                 source,
@@ -1353,7 +1793,7 @@ fn handle_queue_next(
     sample_rate: u32,
 ) {
     // Spawn decoder for next track
-    match DecoderThread::spawn(path.clone(), sample_rate) {
+    match DecoderThread::spawn(path.clone(), sample_rate, callback_data.channels()) {
         Ok((source, decoder_thread)) => {
             queue_playback_source(source, decoder_thread, callback_data, decoders, event_tx);
         }
@@ -1470,7 +1910,12 @@ fn handle_seek(
         }
     }
 
-    match DecoderThread::spawn_with_seek(path.clone(), sample_rate, Some(target_secs)) {
+    match DecoderThread::spawn_with_seek(
+        path.clone(),
+        sample_rate,
+        callback_data.channels(),
+        Some(target_secs),
+    ) {
         Ok((mut source, decoder_thread)) => {
             source.set_ready();
             if !was_paused {
@@ -1501,5 +1946,101 @@ fn handle_seek(
             state.store(PlaybackState::Idle as u8, Ordering::Relaxed);
             let _ = event_tx.try_send(AudioEvent::StateChanged(PlaybackState::Idle));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::source::{AudioSource, SourceInfo};
+    use crossbeam_channel::bounded;
+    use std::path::PathBuf;
+
+    fn build_source(samples: &[f32], sample_rate: u32, channels: usize) -> AudioSource {
+        let duration_secs = samples.len() as f64 / channels as f64 / sample_rate as f64;
+        let info = SourceInfo {
+            path: PathBuf::from("test.wav"),
+            original_sample_rate: sample_rate,
+            output_sample_rate: sample_rate,
+            channels,
+            total_samples: samples.len() as u64,
+            duration_secs,
+        };
+        let (mut source, mut producer) = AudioSource::new(info);
+
+        assert_eq!(producer.write(samples), samples.len());
+        producer.finish();
+        source.set_ready();
+        source.set_playing();
+        source
+    }
+
+    fn build_callback_data(sample_rate: u32, channels: usize) -> AudioCallbackData {
+        let (finished_tx, _finished_rx) = bounded::<AudioSource>(8);
+        AudioCallbackData::new(sample_rate, channels, finished_tx)
+    }
+
+    fn run_callback(data: &AudioCallbackData, output_len: usize) -> Vec<f32> {
+        let (event_tx, _event_rx) = bounded::<AudioEvent>(8);
+        let mut output = vec![123.0; output_len];
+        audio_callback(&mut output, data, &event_tx);
+        output
+    }
+
+    #[test]
+    fn callback_bit_perfect_bypasses_volume_scaling() {
+        let data = build_callback_data(48_000, 2);
+        let input = vec![0.0, 0.25, -0.5, 0.5, -0.25, 0.0, 1.0, -1.0];
+
+        data.set_volume(0.25);
+        data.set_bit_perfect(true);
+        data.sources
+            .lock()
+            .set_current(build_source(&input, 48_000, 2));
+
+        let output = run_callback(&data, input.len());
+
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn callback_bit_perfect_zero_fills_tail_on_underrun() {
+        let data = build_callback_data(48_000, 2);
+        let input = vec![0.5, -0.5, 0.25, -0.25];
+
+        data.set_bit_perfect(true);
+        data.sources
+            .lock()
+            .set_current(build_source(&input, 48_000, 2));
+
+        let output = run_callback(&data, 8);
+
+        assert_eq!(output, vec![0.5, -0.5, 0.25, -0.25, 0.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn callback_zero_fills_when_no_source_available() {
+        let data = build_callback_data(48_000, 2);
+        data.set_bit_perfect(false);
+
+        let output = run_callback(&data, 8);
+
+        assert_eq!(output, vec![0.0; 8]);
+    }
+
+    #[test]
+    fn callback_applies_volume_when_not_bit_perfect() {
+        let data = build_callback_data(48_000, 2);
+        let input = vec![0.5, -0.5, 0.25, -0.25];
+
+        data.set_volume(0.5);
+        data.set_bit_perfect(false);
+        data.sources
+            .lock()
+            .set_current(build_source(&input, 48_000, 2));
+
+        let output = run_callback(&data, input.len());
+
+        assert_eq!(output, vec![0.25, -0.25, 0.125, -0.125]);
     }
 }

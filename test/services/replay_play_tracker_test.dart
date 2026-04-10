@@ -75,6 +75,51 @@ void main() {
     });
 
     test(
+      'counts coarse position updates when wall time matches progression',
+      () {
+        var now = DateTime(2026, 1, 1, 0, 0, 0);
+        final tracker = ReplayPlayTracker(now: () => now);
+        tracker.startTrack('song-1');
+
+        now = now.add(const Duration(seconds: 8));
+        expect(
+          tracker.onPositionChanged(
+            songId: 'song-1',
+            position: const Duration(seconds: 8),
+          ),
+          isFalse,
+        );
+
+        now = now.add(const Duration(seconds: 8));
+        expect(
+          tracker.onPositionChanged(
+            songId: 'song-1',
+            position: const Duration(seconds: 16),
+          ),
+          isFalse,
+        );
+
+        now = now.add(const Duration(seconds: 8));
+        expect(
+          tracker.onPositionChanged(
+            songId: 'song-1',
+            position: const Duration(seconds: 24),
+          ),
+          isFalse,
+        );
+
+        now = now.add(const Duration(seconds: 8));
+        expect(
+          tracker.onPositionChanged(
+            songId: 'song-1',
+            position: const Duration(seconds: 32),
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test(
       'restarts the threshold when the same track is explicitly restarted',
       () {
         final tracker = ReplayPlayTracker();

@@ -13,9 +13,10 @@ class QueueScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final playerState = ref.watch(playerProvider);
-    final queue = playerState.queue;
-    final currentSong = playerState.currentSong;
+    final queue = ref.watch(playerProvider.select((state) => state.queue));
+    final currentSong = ref.watch(
+      playerProvider.select((state) => state.currentSong),
+    );
 
     return Scaffold(
       backgroundColor: AppColors.background,

@@ -13,15 +13,18 @@ typedef RustPlaybackPathResolver = Future<String?> Function(Song track);
 
 class RustAudioEngine implements AudioEngine {
   RustAudioEngine({
+    required AudioEngineType playbackMode,
     required RustAudioService rustAudioService,
     required RustEngineInitializer ensureInitialized,
     required RustPlaybackPathResolver resolvePlaybackPath,
     required RustEngineDisposer disposeEngine,
-  }) : _rustAudioService = rustAudioService,
+  }) : _playbackMode = playbackMode,
+       _rustAudioService = rustAudioService,
        _ensureInitialized = ensureInitialized,
        _resolvePlaybackPath = resolvePlaybackPath,
        _disposeEngine = disposeEngine;
 
+  final AudioEngineType _playbackMode;
   final RustAudioService _rustAudioService;
   final RustEngineInitializer _ensureInitialized;
   final RustPlaybackPathResolver _resolvePlaybackPath;
@@ -30,12 +33,34 @@ class RustAudioEngine implements AudioEngine {
   final StreamController<PlaybackState> _controller =
       StreamController<PlaybackState>.broadcast();
   final List<VoidCallback> _notifierUnsubscribers = [];
-  PlaybackState _state = PlaybackState.empty(AudioEngineType.usb);
+  late PlaybackState _state = PlaybackState.empty(_playbackMode);
   Song? _loadedTrack;
   Duration? _pendingSeekPosition;
+  bool _initialized = false;
+  Future<void>? _initInFlight;
+  bool _needsFreshPlay = false;
 
   @override
   Stream<PlaybackState> get playbackStateStream => _controller.stream;
+
+  Future<void> _safeEnsureInitialized() async {
+    if (_initialized) return;
+    final inFlight = _initInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+    final future = _ensureInitialized();
+    _initInFlight = future;
+    try {
+      await future;
+      _initialized = true;
+    } finally {
+      if (identical(_initInFlight, future)) {
+        _initInFlight = null;
+      }
+    }
+  }
 
   void _attachListeners() {
     if (_notifierUnsubscribers.isNotEmpty) return;
@@ -89,9 +114,10 @@ class RustAudioEngine implements AudioEngine {
 
   @override
   Future<void> load(Song track) async {
-    await _ensureInitialized();
+    await _safeEnsureInitialized();
     _attachListeners();
     _loadedTrack = track;
+    _needsFreshPlay = true;
     _pendingSeekPosition = Duration.zero;
     _emit(
       _state.copyWith(
@@ -106,16 +132,22 @@ class RustAudioEngine implements AudioEngine {
 
   @override
   Future<void> play() async {
-    await _ensureInitialized();
+    await _safeEnsureInitialized();
     _attachListeners();
     final track = _loadedTrack;
     if (track == null) {
+      final currentPath = _rustAudioService.currentPath;
+      if (currentPath == null || currentPath.isEmpty) {
+        throw StateError(
+          'RustAudioEngine.play() was called before load(track) prepared a source',
+        );
+      }
       await _rustAudioService.resume();
       return;
     }
 
     final rustState = _rustAudioService.stateNotifier.value;
-    if (rustState == RustPlaybackState.paused) {
+    if (rustState == RustPlaybackState.paused && !_needsFreshPlay) {
       await _rustAudioService.resume();
       final pendingSeek = _pendingSeekPosition;
       if (pendingSeek != null && pendingSeek > Duration.zero) {
@@ -125,6 +157,7 @@ class RustAudioEngine implements AudioEngine {
       return;
     }
 
+    _needsFreshPlay = false;
     final path = await _resolvePlaybackPath(track);
     if (path == null || path.isEmpty) {
       throw StateError('Failed to resolve Rust playback path');
@@ -140,21 +173,21 @@ class RustAudioEngine implements AudioEngine {
 
   @override
   Future<void> pause() async {
-    await _ensureInitialized();
+    await _safeEnsureInitialized();
     _attachListeners();
     await _rustAudioService.pause();
   }
 
   @override
   Future<void> stop() async {
-    await _ensureInitialized();
+    await _safeEnsureInitialized();
     _attachListeners();
     await _rustAudioService.stop();
   }
 
   @override
   Future<void> seek(Duration position) async {
-    await _ensureInitialized();
+    await _safeEnsureInitialized();
     _attachListeners();
     _pendingSeekPosition = position;
     _emit(_state.copyWith(position: position));

@@ -13,6 +13,7 @@ class EqPreset {
   final List<ParametricBand> parametricBands;
   final CompressorSettings compressor;
   final LimiterSettings limiter;
+  final FxSettings fx;
 
   const EqPreset({
     required this.id,
@@ -23,6 +24,7 @@ class EqPreset {
     required this.parametricBands,
     this.compressor = const CompressorSettings(),
     this.limiter = const LimiterSettings(),
+    this.fx = const FxSettings(),
   });
 
   EqPreset copyWith({
@@ -34,6 +36,7 @@ class EqPreset {
     List<ParametricBand>? parametricBands,
     CompressorSettings? compressor,
     LimiterSettings? limiter,
+    FxSettings? fx,
   }) {
     return EqPreset(
       id: id ?? this.id,
@@ -44,6 +47,7 @@ class EqPreset {
       parametricBands: parametricBands ?? this.parametricBands,
       compressor: compressor ?? this.compressor,
       limiter: limiter ?? this.limiter,
+      fx: fx ?? this.fx,
     );
   }
 
@@ -60,6 +64,7 @@ class EqPreset {
             'frequencyHz': b.frequencyHz,
             'gainDb': b.gainDb,
             'q': b.q,
+            'type': b.type.name,
           },
         )
         .toList(),
@@ -76,6 +81,18 @@ class EqPreset {
       'inputGainDb': limiter.inputGainDb,
       'ceilingDb': limiter.ceilingDb,
       'releaseMs': limiter.releaseMs,
+    },
+    'fx': {
+      'enabled': fx.enabled,
+      'balance': fx.balance,
+      'tempo': fx.tempo,
+      'damp': fx.damp,
+      'filterHz': fx.filterHz,
+      'delayMs': fx.delayMs,
+      'size': fx.size,
+      'mix': fx.mix,
+      'feedback': fx.feedback,
+      'width': fx.width,
     },
   };
 
@@ -94,11 +111,18 @@ class EqPreset {
     final bands = bandsJson
         .map((e) {
           final m = e as Map<String, dynamic>;
+          final typeName =
+              (m['type'] as String?) ?? ParametricBandType.peaking.name;
+          final type = ParametricBandType.values.firstWhere(
+            (t) => t.name == typeName,
+            orElse: () => ParametricBandType.peaking,
+          );
           return ParametricBand(
             enabled: (m['enabled'] as bool?) ?? true,
             frequencyHz: (m['frequencyHz'] as num?)?.toDouble() ?? 1000.0,
             gainDb: (m['gainDb'] as num?)?.toDouble() ?? 0.0,
             q: (m['q'] as num?)?.toDouble() ?? 1.0,
+            type: type,
           );
         })
         .toList(growable: false);
@@ -106,6 +130,7 @@ class EqPreset {
     final compressorJson = (json['compressor'] as Map?)
         ?.cast<String, dynamic>();
     final limiterJson = (json['limiter'] as Map?)?.cast<String, dynamic>();
+    final fxJson = (json['fx'] as Map?)?.cast<String, dynamic>();
 
     return EqPreset(
       id: (json['id'] as String?) ?? '',
@@ -139,6 +164,18 @@ class EqPreset {
         inputGainDb: (limiterJson?['inputGainDb'] as num?)?.toDouble() ?? 0.0,
         ceilingDb: (limiterJson?['ceilingDb'] as num?)?.toDouble() ?? -0.8,
         releaseMs: (limiterJson?['releaseMs'] as num?)?.toDouble() ?? 80.0,
+      ),
+      fx: FxSettings(
+        enabled: (fxJson?['enabled'] as bool?) ?? false,
+        balance: (fxJson?['balance'] as num?)?.toDouble() ?? 0.0,
+        tempo: (fxJson?['tempo'] as num?)?.toDouble() ?? 1.0,
+        damp: (fxJson?['damp'] as num?)?.toDouble() ?? 0.35,
+        filterHz: (fxJson?['filterHz'] as num?)?.toDouble() ?? 6800.0,
+        delayMs: (fxJson?['delayMs'] as num?)?.toDouble() ?? 240.0,
+        size: (fxJson?['size'] as num?)?.toDouble() ?? 0.55,
+        mix: (fxJson?['mix'] as num?)?.toDouble() ?? 0.25,
+        feedback: (fxJson?['feedback'] as num?)?.toDouble() ?? 0.35,
+        width: (fxJson?['width'] as num?)?.toDouble() ?? 1.0,
       ),
     );
   }
@@ -198,6 +235,7 @@ class BuiltInEqPresets {
     required List<ParametricBand> parametricBands,
     CompressorSettings compressor = const CompressorSettings(),
     LimiterSettings limiter = const LimiterSettings(),
+    FxSettings fx = const FxSettings(),
   }) {
     return EqPreset(
       id: id,
@@ -208,6 +246,7 @@ class BuiltInEqPresets {
       parametricBands: List<ParametricBand>.unmodifiable(parametricBands),
       compressor: compressor,
       limiter: limiter,
+      fx: fx,
     );
   }
 

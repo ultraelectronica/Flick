@@ -435,3 +435,23 @@ pub fn uac2_deactivate_fallback() -> Result<(), String> {
         Err("UAC2 not available".to_string())
     }
 }
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn uac2_is_usb_session_active() -> bool {
+    #[cfg(all(feature = "uac2", target_os = "android"))]
+    {
+        crate::uac2::is_usb_session_active()
+    }
+    #[cfg(not(all(feature = "uac2", target_os = "android")))]
+    {
+        false
+    }
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn uac2_force_release_usb_session() {
+    #[cfg(all(feature = "uac2", target_os = "android"))]
+    {
+        crate::uac2::force_release_usb_session();
+    }
+}

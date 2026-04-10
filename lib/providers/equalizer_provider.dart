@@ -1,8 +1,75 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/services/equalizer_service.dart';
 
 enum EqMode { graphic, parametric }
+
+enum ParametricBandType {
+  peaking,
+  lowShelf,
+  highShelf,
+  lowPass,
+  highPass,
+  bandPass,
+  notch,
+  allPass,
+}
+
+extension ParametricBandTypeX on ParametricBandType {
+  String get displayName {
+    switch (this) {
+      case ParametricBandType.peaking:
+        return 'Peaking';
+      case ParametricBandType.lowShelf:
+        return 'Low Shelf';
+      case ParametricBandType.highShelf:
+        return 'High Shelf';
+      case ParametricBandType.lowPass:
+        return 'Low Pass';
+      case ParametricBandType.highPass:
+        return 'High Pass';
+      case ParametricBandType.bandPass:
+        return 'Band Pass';
+      case ParametricBandType.notch:
+        return 'Notch';
+      case ParametricBandType.allPass:
+        return 'All Pass';
+    }
+  }
+
+  bool get supportsGain {
+    switch (this) {
+      case ParametricBandType.peaking:
+      case ParametricBandType.lowShelf:
+      case ParametricBandType.highShelf:
+      case ParametricBandType.notch:
+        return true;
+      case ParametricBandType.lowPass:
+      case ParametricBandType.highPass:
+      case ParametricBandType.bandPass:
+      case ParametricBandType.allPass:
+        return false;
+    }
+  }
+
+  String get qLabel {
+    switch (this) {
+      case ParametricBandType.lowShelf:
+      case ParametricBandType.highShelf:
+        return 'Slope';
+      case ParametricBandType.lowPass:
+      case ParametricBandType.highPass:
+      case ParametricBandType.bandPass:
+      case ParametricBandType.notch:
+      case ParametricBandType.allPass:
+        return 'Resonance';
+      case ParametricBandType.peaking:
+        return 'Q';
+    }
+  }
+}
 
 @immutable
 class CompressorSettings {
@@ -71,17 +138,72 @@ class LimiterSettings {
 }
 
 @immutable
+class FxSettings {
+  final bool enabled;
+  final double balance;
+  final double tempo;
+  final double damp;
+  final double filterHz;
+  final double delayMs;
+  final double size;
+  final double mix;
+  final double feedback;
+  final double width;
+
+  const FxSettings({
+    this.enabled = false,
+    this.balance = 0.0,
+    this.tempo = 1.0,
+    this.damp = 0.35,
+    this.filterHz = 6800.0,
+    this.delayMs = 240.0,
+    this.size = 0.55,
+    this.mix = 0.25,
+    this.feedback = 0.35,
+    this.width = 1.0,
+  });
+
+  FxSettings copyWith({
+    bool? enabled,
+    double? balance,
+    double? tempo,
+    double? damp,
+    double? filterHz,
+    double? delayMs,
+    double? size,
+    double? mix,
+    double? feedback,
+    double? width,
+  }) {
+    return FxSettings(
+      enabled: enabled ?? this.enabled,
+      balance: balance ?? this.balance,
+      tempo: tempo ?? this.tempo,
+      damp: damp ?? this.damp,
+      filterHz: filterHz ?? this.filterHz,
+      delayMs: delayMs ?? this.delayMs,
+      size: size ?? this.size,
+      mix: mix ?? this.mix,
+      feedback: feedback ?? this.feedback,
+      width: width ?? this.width,
+    );
+  }
+}
+
+@immutable
 class ParametricBand {
   final bool enabled;
   final double frequencyHz; // 20..20000
   final double gainDb; // -12..+12 (UI only)
   final double q; // 0.2..10
+  final ParametricBandType type;
 
   const ParametricBand({
     this.enabled = true,
     required this.frequencyHz,
     this.gainDb = 0.0,
     this.q = 1.0,
+    this.type = ParametricBandType.peaking,
   });
 
   ParametricBand copyWith({
@@ -89,14 +211,75 @@ class ParametricBand {
     double? frequencyHz,
     double? gainDb,
     double? q,
+    ParametricBandType? type,
   }) {
     return ParametricBand(
       enabled: enabled ?? this.enabled,
       frequencyHz: frequencyHz ?? this.frequencyHz,
       gainDb: gainDb ?? this.gainDb,
       q: q ?? this.q,
+      type: type ?? this.type,
     );
   }
+}
+
+const double _passFilterDepthDb = 12.0;
+
+double _sigmoid(double x) => 1.0 / (1.0 + math.exp(-x));
+
+double _bandSigma(double q) => (0.55 / q.clamp(0.2, 10.0)).clamp(0.04, 1.2);
+
+double parametricBandContributionDb({
+  required ParametricBand band,
+  required double hz,
+}) {
+  if (!band.enabled) return 0.0;
+
+  final safeHz = hz.clamp(20.0, 20000.0).toDouble();
+  final centerHz = band.frequencyHz.clamp(20.0, 20000.0).toDouble();
+  final sigma = _bandSigma(band.q);
+  final x = math.log(safeHz / centerHz);
+  final gaussian = math.exp(-(x * x) / (2.0 * sigma * sigma));
+
+  switch (band.type) {
+    case ParametricBandType.peaking:
+      return band.gainDb * gaussian;
+    case ParametricBandType.lowShelf:
+      return band.gainDb * _sigmoid(-x / sigma);
+    case ParametricBandType.highShelf:
+      return band.gainDb * _sigmoid(x / sigma);
+    case ParametricBandType.lowPass:
+      return -_passFilterDepthDb * _sigmoid(x / sigma);
+    case ParametricBandType.highPass:
+      return -_passFilterDepthDb * _sigmoid(-x / sigma);
+    case ParametricBandType.bandPass:
+      return -_passFilterDepthDb * (1.0 - gaussian);
+    case ParametricBandType.notch:
+      final depth = band.gainDb.abs().clamp(0.0, 12.0).toDouble();
+      return -depth * gaussian;
+    case ParametricBandType.allPass:
+      return 0.0;
+  }
+}
+
+double parametricResponseDbAtHz({
+  required double hz,
+  required List<ParametricBand> bands,
+  double minDb = -12.0,
+  double maxDb = 12.0,
+}) {
+  double sum = 0.0;
+  for (final band in bands) {
+    sum += parametricBandContributionDb(band: band, hz: hz);
+  }
+  return sum.clamp(minDb, maxDb).toDouble();
+}
+
+double parametricBandMarkerDb(ParametricBand band) {
+  return parametricBandContributionDb(
+    band: band,
+    hz: band.frequencyHz,
+  ).clamp(-12.0, 12.0).toDouble();
 }
 
 @immutable
@@ -116,6 +299,7 @@ class EqualizerState {
 
   final CompressorSettings compressor;
   final LimiterSettings limiter;
+  final FxSettings fx;
 
   const EqualizerState({
     this.enabled = true,
@@ -125,6 +309,7 @@ class EqualizerState {
     this.activePresetName,
     this.compressor = const CompressorSettings(),
     this.limiter = const LimiterSettings(),
+    this.fx = const FxSettings(),
   });
 
   EqualizerState copyWith({
@@ -135,6 +320,7 @@ class EqualizerState {
     String? activePresetName,
     CompressorSettings? compressor,
     LimiterSettings? limiter,
+    FxSettings? fx,
     bool clearActivePresetName = false,
   }) {
     return EqualizerState(
@@ -147,6 +333,7 @@ class EqualizerState {
           : (activePresetName ?? this.activePresetName),
       compressor: compressor ?? this.compressor,
       limiter: limiter ?? this.limiter,
+      fx: fx ?? this.fx,
     );
   }
 
@@ -184,6 +371,7 @@ class EqualizerState {
       activePresetName: null,
       compressor: const CompressorSettings(),
       limiter: const LimiterSettings(),
+      fx: const FxSettings(),
     );
   }
 }
@@ -218,6 +406,24 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
   static const double limiterCeilingMaxDb = 0.0;
   static const double limiterReleaseMinMs = 20.0;
   static const double limiterReleaseMaxMs = 300.0;
+  static const double fxBalanceMin = -1.0;
+  static const double fxBalanceMax = 1.0;
+  static const double fxTempoMin = 0.5;
+  static const double fxTempoMax = 2.0;
+  static const double fxDampMin = 0.0;
+  static const double fxDampMax = 1.0;
+  static const double fxFilterMinHz = 200.0;
+  static const double fxFilterMaxHz = 18000.0;
+  static const double fxDelayMinMs = 10.0;
+  static const double fxDelayMaxMs = 1600.0;
+  static const double fxSizeMin = 0.0;
+  static const double fxSizeMax = 1.0;
+  static const double fxMixMin = 0.0;
+  static const double fxMixMax = 1.0;
+  static const double fxFeedbackMin = 0.0;
+  static const double fxFeedbackMax = 0.95;
+  static const double fxWidthMin = 0.0;
+  static const double fxWidthMax = 2.0;
   static const int maxParametricBands = 8;
 
   @override
@@ -292,6 +498,18 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     final clamped = q.clamp(0.2, 10.0).toDouble();
     final next = List<ParametricBand>.of(state.parametricBands);
     next[index] = next[index].copyWith(q: clamped);
+    state = state.copyWith(parametricBands: next, clearActivePresetName: true);
+    ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
+  }
+
+  void setParamBandType(int index, ParametricBandType type) {
+    final next = List<ParametricBand>.of(state.parametricBands);
+    var updated = next[index].copyWith(type: type);
+    if (type == ParametricBandType.notch && updated.gainDb > 0.0) {
+      updated = updated.copyWith(gainDb: -updated.gainDb);
+    }
+    next[index] = updated;
     state = state.copyWith(parametricBands: next, clearActivePresetName: true);
     ref.read(eqGraphRepaintControllerProvider).bump();
     _syncToAudio();
@@ -429,6 +647,103 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     _syncToAudio();
   }
 
+  void setFxEnabled(bool enabled) {
+    state = state.copyWith(
+      fx: state.fx.copyWith(enabled: enabled),
+      clearActivePresetName: true,
+    );
+    _syncToAudio();
+  }
+
+  void setFxBalance(double balance) {
+    state = state.copyWith(
+      fx: state.fx.copyWith(
+        balance: balance.clamp(fxBalanceMin, fxBalanceMax).toDouble(),
+      ),
+      clearActivePresetName: true,
+    );
+    _syncToAudio();
+  }
+
+  void setFxTempo(double tempo) {
+    state = state.copyWith(
+      fx: state.fx.copyWith(
+        tempo: tempo.clamp(fxTempoMin, fxTempoMax).toDouble(),
+      ),
+      clearActivePresetName: true,
+    );
+    _syncToAudio();
+  }
+
+  void setFxDamp(double damp) {
+    state = state.copyWith(
+      fx: state.fx.copyWith(damp: damp.clamp(fxDampMin, fxDampMax).toDouble()),
+      clearActivePresetName: true,
+    );
+    _syncToAudio();
+  }
+
+  void setFxFilterHz(double filterHz) {
+    state = state.copyWith(
+      fx: state.fx.copyWith(
+        filterHz: filterHz.clamp(fxFilterMinHz, fxFilterMaxHz).toDouble(),
+      ),
+      clearActivePresetName: true,
+    );
+    _syncToAudio();
+  }
+
+  void setFxDelayMs(double delayMs) {
+    state = state.copyWith(
+      fx: state.fx.copyWith(
+        delayMs: delayMs.clamp(fxDelayMinMs, fxDelayMaxMs).toDouble(),
+      ),
+      clearActivePresetName: true,
+    );
+    _syncToAudio();
+  }
+
+  void setFxSize(double size) {
+    state = state.copyWith(
+      fx: state.fx.copyWith(size: size.clamp(fxSizeMin, fxSizeMax).toDouble()),
+      clearActivePresetName: true,
+    );
+    _syncToAudio();
+  }
+
+  void setFxMix(double mix) {
+    state = state.copyWith(
+      fx: state.fx.copyWith(mix: mix.clamp(fxMixMin, fxMixMax).toDouble()),
+      clearActivePresetName: true,
+    );
+    _syncToAudio();
+  }
+
+  void setFxFeedback(double feedback) {
+    state = state.copyWith(
+      fx: state.fx.copyWith(
+        feedback: feedback.clamp(fxFeedbackMin, fxFeedbackMax).toDouble(),
+      ),
+      clearActivePresetName: true,
+    );
+    _syncToAudio();
+  }
+
+  void setFxWidth(double width) {
+    state = state.copyWith(
+      fx: state.fx.copyWith(
+        width: width.clamp(fxWidthMin, fxWidthMax).toDouble(),
+      ),
+      clearActivePresetName: true,
+    );
+    _syncToAudio();
+  }
+
+  void resetFx() {
+    state = state.copyWith(fx: const FxSettings(), clearActivePresetName: true);
+    _syncToAudio();
+  }
+
   void addParametricBand() {
     if (state.parametricBands.length >= maxParametricBands) {
       return;
@@ -454,6 +769,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     required List<ParametricBand> parametricBands,
     CompressorSettings compressor = const CompressorSettings(),
     LimiterSettings limiter = const LimiterSettings(),
+    FxSettings fx = const FxSettings(),
   }) {
     state = state.copyWith(
       enabled: enabled,
@@ -466,6 +782,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
       activePresetName: presetName,
       compressor: compressor,
       limiter: limiter,
+      fx: fx,
     );
     ref.read(eqGraphRepaintControllerProvider).bump();
     _syncToAudio();
@@ -506,4 +823,8 @@ final eqCompressorProvider = Provider<CompressorSettings>((ref) {
 
 final eqLimiterProvider = Provider<LimiterSettings>((ref) {
   return ref.watch(equalizerProvider.select((s) => s.limiter));
+});
+
+final eqFxProvider = Provider<FxSettings>((ref) {
+  return ref.watch(equalizerProvider.select((s) => s.fx));
 });

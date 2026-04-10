@@ -1,4 +1,4 @@
-//! Custom USB Audio Class 2.0 (UAC 2.0) support for DAC/AMP detection and bit-perfect playback.
+//! Custom USB Audio Class 2.0 (UAC 2.0) support for DAC/AMP detection and direct playback paths.
 
 #[cfg(all(feature = "uac2", target_os = "android"))]
 mod android_direct;
@@ -60,8 +60,12 @@ mod tests;
 
 #[cfg(all(feature = "uac2", target_os = "android"))]
 pub use android_direct::{
-    android_direct_output_signature, clear_android_usb_device, create_android_usb_backend,
-    register_android_usb_device, set_android_usb_playback_format, AndroidDirectUsbBackend,
+    android_direct_debug_state, android_direct_output_signature,
+    android_direct_preferred_sample_rate, clear_android_usb_device, create_android_usb_backend,
+    force_release_usb_session, is_usb_session_active, mark_android_usb_fallback,
+    negotiate_android_direct_output_sample_rate, register_android_usb_device,
+    set_android_direct_usb_enabled, set_android_usb_lock_enabled, set_android_usb_playback_format,
+    validate_android_direct_request, AndroidDirectUsbBackend, AndroidDirectUsbDebugState,
     AndroidDirectUsbDevice, AndroidDirectUsbPlaybackFormat,
 };
 #[cfg(feature = "uac2")]

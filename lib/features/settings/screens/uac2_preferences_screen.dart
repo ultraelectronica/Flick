@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
+import 'package:flick/models/audio_output_diagnostics.dart';
 import 'package:flick/providers/providers.dart';
 import 'package:flick/services/uac2_preferences_service.dart';
 import 'package:flick/services/uac2_service.dart';
@@ -26,6 +27,9 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     final formatPrefAsync = ref.watch(uac2FormatPreferenceProvider);
     final preferredFormatAsync = ref.watch(uac2PreferredFormatProvider);
     final hiFiModeAsync = ref.watch(uac2HiFiModeProvider);
+    final audioEngineAsync = ref.watch(audioEnginePreferenceProvider);
+    final developerModeAsync = ref.watch(developerModeEnabledProvider);
+    final diagnostics = ref.watch(audioOutputDiagnosticsProvider);
 
     return DisplayModeWrapper(
       child: Scaffold(
@@ -65,7 +69,10 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                       _buildAdvancedOptions(
                         context,
                         preferencesService,
+                        audioEngineAsync,
+                        developerModeAsync,
                         hiFiModeAsync,
+                        diagnostics,
                       ),
                       const SizedBox(height: AppConstants.navBarHeight + 120),
                     ],
@@ -178,6 +185,9 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     AsyncValue<Uac2FormatPreference> formatPrefAsync,
     AsyncValue<Uac2AudioFormat?> preferredFormatAsync,
   ) {
+    final bitPerfectAsync = ref.watch(uac2BitPerfectEnabledProvider);
+    final isBitPerfectEnabled = bitPerfectAsync.value ?? false;
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.6),
@@ -191,9 +201,21 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               context,
               icon: LucideIcons.settings,
               title: 'Format Strategy',
-              subtitle: _getFormatPreferenceLabel(formatPref),
-              onTap: () =>
-                  _showFormatPreferenceDialog(context, service, formatPref),
+              subtitle: isBitPerfectEnabled
+                  ? 'Disabled in bit-perfect mode (exact rate required)'
+                  : _getFormatPreferenceLabel(formatPref),
+              onTap: isBitPerfectEnabled
+                  ? () => _showBitPerfectBlockedDialog(
+                      context,
+                      'Format Strategy',
+                      'Format strategy is disabled in bit-perfect mode because exact sample rate matching is required. Disable bit-perfect mode to change format preferences.',
+                    )
+                  : () => _showFormatPreferenceDialog(
+                      context,
+                      service,
+                      formatPref,
+                    ),
+              isDisabled: isBitPerfectEnabled,
             ),
             loading: () => _buildLoadingTile(context),
             error: (_, _) => _buildErrorTile(context),
@@ -204,10 +226,19 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               context,
               icon: LucideIcons.music,
               title: 'Custom Format',
-              subtitle: format != null
+              subtitle: isBitPerfectEnabled
+                  ? 'Disabled in bit-perfect mode (exact rate required)'
+                  : format != null
                   ? '${format.sampleRate ~/ 1000}kHz / ${format.bitDepth}bit / ${format.channels}ch'
                   : 'Not set',
-              onTap: () => _showCustomFormatDialog(context, service, format),
+              onTap: isBitPerfectEnabled
+                  ? () => _showBitPerfectBlockedDialog(
+                      context,
+                      'Custom Format',
+                      'Custom format is disabled in bit-perfect mode because exact sample rate matching is required. Disable bit-perfect mode to set custom formats.',
+                    )
+                  : () => _showCustomFormatDialog(context, service, format),
+              isDisabled: isBitPerfectEnabled,
             ),
             loading: () => _buildLoadingTile(context),
             error: (_, _) => _buildErrorTile(context),
@@ -220,8 +251,14 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
   Widget _buildAdvancedOptions(
     BuildContext context,
     Uac2PreferencesService service,
+    AsyncValue<AudioEnginePreference> audioEngineAsync,
+    AsyncValue<bool> developerModeAsync,
     AsyncValue<bool> hiFiModeAsync,
+    AudioOutputDiagnostics? diagnostics,
   ) {
+    final detectedDap = diagnostics?.detectedDap == true;
+    final detectedDapBrand = diagnostics?.detectedDapBrand;
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.6),
@@ -230,17 +267,69 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
       ),
       child: Column(
         children: [
+          audioEngineAsync.when(
+            data: (engine) => _buildNavigationTile(
+              context,
+              icon: LucideIcons.audioLines,
+              title: 'Playback Engine',
+              subtitle: _audioEnginePreferenceSubtitle(engine),
+              onTap: () => _showAudioEngineDialog(context, service, engine),
+            ),
+            loading: () => _buildLoadingTile(context),
+            error: (_, _) => _buildErrorTile(context),
+          ),
+          _buildDivider(),
+          developerModeAsync.when(
+            data: (enabled) => _buildSwitchTile(
+              context,
+              icon: LucideIcons.badgeInfo,
+              title: 'Developer Mode',
+              subtitle:
+                  'Show verbose audio diagnostics and engine/session trace logs.',
+              value: enabled,
+              onChanged: (value) async {
+                await service.setDeveloperModeEnabled(value);
+                ref.invalidate(developerModeEnabledProvider);
+              },
+            ),
+            loading: () => _buildLoadingTile(context),
+            error: (_, _) => _buildErrorTile(context),
+          ),
+          _buildDivider(),
+          _buildModeStatusTile(context, diagnostics),
+          _buildDivider(),
+          _buildComingSoonTile(
+            context,
+            icon: LucideIcons.lock,
+            title: 'Bit-perfect USB',
+            subtitle:
+                'Coming soon. The current implementation is temporarily disabled while the direct USB path is being fixed.',
+          ),
+          _buildDivider(),
           hiFiModeAsync.when(
             data: (enabled) => _buildSwitchTile(
               context,
               icon: LucideIcons.zap,
-              title: 'HiFi Mode',
-              subtitle:
-                  'Experimental override for DAP/internal routes. Android internal playback still commonly stops at 48kHz.',
+              title: detectedDap ? 'DAP Bit-Perfect' : 'HiFi Mode',
+              subtitle: detectedDap
+                  ? 'Open ${detectedDapBrand ?? 'the DAP'} native output at each track\'s sample rate and disable software DSP controls that would break bit-perfect playback.'
+                  : 'Experimental override for DAP/internal routes. Android internal playback still commonly stops at 48kHz.',
               value: enabled,
               onChanged: (value) async {
-                await ref.read(playerServiceProvider).setHiFiModeEnabled(value);
+                final changed = value != enabled;
+                if (detectedDap) {
+                  await ref
+                      .read(playerServiceProvider)
+                      .setDapBitPerfectEnabled(value);
+                } else {
+                  await ref
+                      .read(playerServiceProvider)
+                      .setHiFiModeEnabled(value);
+                }
                 ref.invalidate(uac2HiFiModeProvider);
+                if (changed && context.mounted) {
+                  _showRestartRequiredToast(context);
+                }
               },
             ),
             loading: () => _buildLoadingTile(context),
@@ -312,6 +401,384 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     );
   }
 
+  Widget _buildComingSoonTile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.all(AppConstants.spacingMd),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.glassBackground,
+              borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+            ),
+            child: Icon(icon, color: context.adaptiveTextSecondary, size: 20),
+          ),
+          const SizedBox(width: AppConstants.spacingMd),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppConstants.spacingSm,
+                  runSpacing: 6,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: context.adaptiveTextPrimary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusSm,
+                        ),
+                      ),
+                      child: Text(
+                        'Coming soon',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.adaptiveTextTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _audioEnginePreferenceSubtitle(AudioEnginePreference engine) {
+    return switch (engine) {
+      AudioEnginePreference.exoPlayer => 'just_audio / ExoPlayer (default)',
+      AudioEnginePreference.rustOboe => 'Rust via Oboe',
+      AudioEnginePreference.isochronousUsb => 'Isochronous USB (coming soon)',
+    };
+  }
+
+  Future<void> _showAudioEngineDialog(
+    BuildContext context,
+    Uac2PreferencesService service,
+    AudioEnginePreference current,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+          ),
+          title: Text(
+            'Playback Engine',
+            style: TextStyle(color: context.adaptiveTextPrimary),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildAudioEngineOption(
+                dialogContext,
+                title: 'just_audio / ExoPlayer',
+                subtitle:
+                    'Default Android playback engine used by Flick right now.',
+                selected: current == AudioEnginePreference.exoPlayer,
+                onTap: () async {
+                  final changed = current != AudioEnginePreference.exoPlayer;
+                  await service.setAudioEnginePreference(
+                    AudioEnginePreference.exoPlayer,
+                  );
+                  ref.invalidate(audioEnginePreferenceProvider);
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                  if (changed && context.mounted) {
+                    _showRestartRequiredToast(context);
+                  }
+                },
+              ),
+              const SizedBox(height: AppConstants.spacingSm),
+              _buildAudioEngineOption(
+                dialogContext,
+                title: 'Rust via Oboe',
+                subtitle:
+                    'Android-managed Rust playback path using the native Oboe backend.',
+                selected: current == AudioEnginePreference.rustOboe,
+                onTap: () async {
+                  final changed = current != AudioEnginePreference.rustOboe;
+                  await service.setAudioEnginePreference(
+                    AudioEnginePreference.rustOboe,
+                  );
+                  ref.invalidate(audioEnginePreferenceProvider);
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                  if (changed && context.mounted) {
+                    _showRestartRequiredToast(context);
+                  }
+                },
+              ),
+              const SizedBox(height: AppConstants.spacingSm),
+              _buildAudioEngineOption(
+                dialogContext,
+                title: 'Isochronous USB',
+                subtitle:
+                    'Coming soon. This engine is temporarily unavailable while the direct USB path is being fixed.',
+                selected: current == AudioEnginePreference.isochronousUsb,
+                enabled: false,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAudioEngineOption(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required bool selected,
+    bool enabled = true,
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        child: Opacity(
+          opacity: enabled ? 1 : 0.55,
+          child: Container(
+            padding: const EdgeInsets.all(AppConstants.spacingMd),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+              border: Border.all(
+                color: selected
+                    ? AppColors.accent.withValues(alpha: 0.45)
+                    : AppColors.glassBorder,
+              ),
+              color: AppColors.surfaceLight.withValues(alpha: 0.35),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                  color: selected
+                      ? AppColors.accent
+                      : context.adaptiveTextTertiary,
+                  size: 20,
+                ),
+                const SizedBox(width: AppConstants.spacingMd),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: context.adaptiveTextPrimary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ),
+                          if (!enabled)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.accent.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(
+                                  AppConstants.radiusSm,
+                                ),
+                              ),
+                              child: Text(
+                                'Coming soon',
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(
+                                      color: AppColors.accent,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: context.adaptiveTextSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showRestartRequiredToast(BuildContext context) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Restart the app to apply playback changes.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showDeviceRestartRequiredToast(BuildContext context) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Restart your device to apply output format changes.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Widget _buildFormatWarningCallout(BuildContext context, String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppConstants.spacingMd),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.warning_amber_rounded,
+            color: Colors.amber.shade300,
+            size: 18,
+          ),
+          const SizedBox(width: AppConstants.spacingSm),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: context.adaptiveTextSecondary,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeStatusTile(
+    BuildContext context,
+    AudioOutputDiagnostics? diagnostics,
+  ) {
+    final modeLabel = _currentPlaybackModeLabel(diagnostics);
+    final modeDescription = switch (diagnostics?.pathManagement) {
+      AudioPathManagement.directUsbExperimental =>
+        'Exclusive USB is active and bypassing the Android mixer.',
+      AudioPathManagement.androidManagedLowLatency =>
+        'Playback is using Android-managed output and may be resampled.',
+      AudioPathManagement.androidManagedShared =>
+        'Playback is using the standard Android output path.',
+      null =>
+        'Playback mode will update after the next route or playback refresh.',
+    };
+
+    return Padding(
+      padding: const EdgeInsets.all(AppConstants.spacingMd),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.glassBackground,
+              borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+            ),
+            child: Icon(
+              LucideIcons.badgeInfo,
+              color: context.adaptiveTextSecondary,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: AppConstants.spacingMd),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Current Playback Mode',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: context.adaptiveTextPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  modeLabel,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.adaptiveTextSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  modeDescription,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.adaptiveTextTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _currentPlaybackModeLabel(AudioOutputDiagnostics? diagnostics) {
+    return diagnostics?.capabilityStateLabel ?? 'Waiting for playback';
+  }
+
   Widget _buildNavigationTile(
     BuildContext context, {
     required IconData icon,
@@ -319,62 +786,67 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     required String subtitle,
     required VoidCallback onTap,
     bool isDestructive = false,
+    bool isDisabled = false,
   }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: isDisabled ? null : onTap,
         borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-        child: Padding(
-          padding: const EdgeInsets.all(AppConstants.spacingMd),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: isDestructive
-                      ? Colors.red.withValues(alpha: 0.1)
-                      : AppColors.glassBackground,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+        child: Opacity(
+          opacity: isDisabled ? 0.5 : 1.0,
+          child: Padding(
+            padding: const EdgeInsets.all(AppConstants.spacingMd),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: isDestructive
+                        ? Colors.red.withValues(alpha: 0.1)
+                        : AppColors.glassBackground,
+                    borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: isDestructive
+                        ? Colors.red.shade400
+                        : context.adaptiveTextSecondary,
+                    size: 20,
+                  ),
                 ),
-                child: Icon(
-                  icon,
-                  color: isDestructive
-                      ? Colors.red.shade400
-                      : context.adaptiveTextSecondary,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: AppConstants.spacingMd),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: isDestructive
-                            ? Colors.red.shade400
-                            : context.adaptiveTextPrimary,
-                        fontWeight: FontWeight.w500,
+                const SizedBox(width: AppConstants.spacingMd),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: isDestructive
+                              ? Colors.red.shade400
+                              : context.adaptiveTextPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: context.adaptiveTextTertiary,
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: context.adaptiveTextTertiary,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              Icon(
-                LucideIcons.chevronRight,
-                color: context.adaptiveTextTertiary,
-                size: 20,
-              ),
-            ],
+                if (!isDisabled)
+                  Icon(
+                    LucideIcons.chevronRight,
+                    color: context.adaptiveTextTertiary,
+                    size: 20,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -421,6 +893,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppConstants.radiusLg),
@@ -432,11 +905,16 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _buildFormatWarningCallout(
+              context,
+              'Changing sample rate, bit depth, or channel handling can resample songs and may affect playback quality, pitch, speed, or stability on some devices.',
+            ),
+            const SizedBox(height: AppConstants.spacingMd),
             _buildFormatOption(
               context,
               Uac2FormatPreference.highestQuality,
               'Highest Quality',
-              'Always use maximum sample rate and bit depth',
+              'Use the highest fixed output rate and bit depth available',
               current,
               service,
             ),
@@ -445,7 +923,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               context,
               Uac2FormatPreference.compatibility,
               'Compatibility',
-              'Use 48kHz/16bit for better compatibility',
+              'Use a fixed 48kHz/16bit output for better compatibility',
               current,
               service,
             ),
@@ -454,7 +932,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               context,
               Uac2FormatPreference.custom,
               'Custom',
-              'Use custom format settings',
+              'Use your selected fixed sample rate, bit depth, and channels',
               current,
               service,
             ),
@@ -477,9 +955,13 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
       color: Colors.transparent,
       child: InkWell(
         onTap: () async {
+          final changed = preference != current;
           await service.setFormatPreference(preference);
           ref.invalidate(uac2FormatPreferenceProvider);
           if (context.mounted) Navigator.of(context).pop();
+          if (changed && mounted) {
+            _showDeviceRestartRequiredToast(this.context);
+          }
         },
         borderRadius: BorderRadius.circular(AppConstants.radiusMd),
         child: Container(
@@ -539,6 +1021,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
+          scrollable: true,
           backgroundColor: AppColors.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppConstants.radiusLg),
@@ -551,6 +1034,11 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _buildFormatWarningCallout(
+                context,
+                'Custom format forces playback to the selected output format. If the chosen sample rate, bit depth, or channels do not suit the song or device, you may hear altered sound, pitch, speed, or instability.',
+              ),
+              const SizedBox(height: AppConstants.spacingMd),
               Text(
                 'Sample Rate',
                 style: TextStyle(
@@ -635,6 +1123,11 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
             ),
             TextButton(
               onPressed: () async {
+                final formatChanged =
+                    current?.sampleRate != sampleRate ||
+                    current?.bitDepth != bitDepth ||
+                    current?.channels != channels;
+                final previousPreference = await service.getFormatPreference();
                 final format = Uac2AudioFormat(
                   sampleRate: sampleRate,
                   bitDepth: bitDepth,
@@ -645,6 +1138,11 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                 ref.invalidate(uac2PreferredFormatProvider);
                 ref.invalidate(uac2FormatPreferenceProvider);
                 if (context.mounted) Navigator.of(context).pop();
+                if ((formatChanged ||
+                        previousPreference != Uac2FormatPreference.custom) &&
+                    mounted) {
+                  _showDeviceRestartRequiredToast(this.context);
+                }
               },
               child: const Text(
                 'Save',
@@ -687,11 +1185,16 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
           TextButton(
             onPressed: () async {
               await service.clearAllPreferences();
+              await ref
+                  .read(uac2ServiceProvider)
+                  .setBitPerfectEnabled(false, persist: false);
               ref.invalidate(uac2AutoConnectProvider);
               ref.invalidate(uac2AutoSelectDeviceProvider);
               ref.invalidate(uac2FormatPreferenceProvider);
               ref.invalidate(uac2PreferredFormatProvider);
               ref.invalidate(uac2HiFiModeProvider);
+              ref.invalidate(uac2BitPerfectEnabledProvider);
+              ref.invalidate(uac2ExclusiveDacModeProvider);
               if (context.mounted) {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -702,6 +1205,48 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               }
             },
             child: Text('Reset', style: TextStyle(color: Colors.red.shade400)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showBitPerfectBlockedDialog(
+    BuildContext context,
+    String featureName,
+    String message,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.amber.shade300,
+              size: 24,
+            ),
+            const SizedBox(width: AppConstants.spacingSm),
+            Expanded(
+              child: Text(
+                '$featureName Unavailable',
+                style: TextStyle(color: context.adaptiveTextPrimary),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: TextStyle(color: context.adaptiveTextSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK', style: TextStyle(color: AppColors.accent)),
           ),
         ],
       ),

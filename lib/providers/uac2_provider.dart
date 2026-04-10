@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flick/models/audio_engine_type.dart';
+import 'package:flick/models/audio_output_diagnostics.dart';
 import 'package:flick/services/uac2_service.dart';
 import 'package:flick/services/uac2_preferences_service.dart';
 import 'package:flick/providers/player_provider.dart';
@@ -126,17 +128,29 @@ final rustBackendActiveProvider = Provider<bool>((ref) {
   return notifier.value;
 });
 
+final currentPlaybackModeProvider = Provider<AudioEngineType>((ref) {
+  final notifier = ref
+      .watch(playerServiceProvider)
+      .selectedPlaybackModeNotifier;
+  void listener() => ref.invalidateSelf();
+  notifier.addListener(listener);
+  ref.onDispose(() => notifier.removeListener(listener));
+  return notifier.value;
+});
+
+final audioOutputDiagnosticsProvider = Provider<AudioOutputDiagnostics?>((ref) {
+  final notifier = ref
+      .watch(playerServiceProvider)
+      .audioOutputDiagnosticsNotifier;
+  void listener() => ref.invalidateSelf();
+  notifier.addListener(listener);
+  ref.onDispose(() => notifier.removeListener(listener));
+  return notifier.value;
+});
+
 final uac2BitPerfectIndicatorProvider = Provider<bool>((ref) {
-  final status = ref.watch(uac2DeviceStatusProvider);
-  if (status == null || status.state != Uac2State.streaming) {
-    return false;
-  }
-  final isRustActive = ref.watch(rustBackendActiveProvider);
-  if (status.routeType == Uac2RouteType.externalUsb ||
-      status.routeType == Uac2RouteType.dock) {
-    return isRustActive;
-  }
-  return true;
+  final diagnostics = ref.watch(audioOutputDiagnosticsProvider);
+  return diagnostics?.capabilityFlags.supportsVerifiedBitPerfect == true;
 });
 
 final uac2PreferencesServiceProvider = Provider((ref) {
@@ -171,3 +185,22 @@ final uac2HiFiModeProvider = FutureProvider<bool>((ref) async {
   final service = ref.watch(uac2PreferencesServiceProvider);
   return service.getHiFiModeEnabled();
 });
+
+final audioEnginePreferenceProvider = FutureProvider<AudioEnginePreference>((
+  ref,
+) async {
+  final service = ref.watch(uac2PreferencesServiceProvider);
+  return service.getAudioEnginePreference();
+});
+
+final developerModeEnabledProvider = FutureProvider<bool>((ref) async {
+  final service = ref.watch(uac2PreferencesServiceProvider);
+  return service.getDeveloperModeEnabled();
+});
+
+final uac2BitPerfectEnabledProvider = FutureProvider<bool>((ref) async {
+  final service = ref.watch(uac2PreferencesServiceProvider);
+  return service.getBitPerfectEnabled();
+});
+
+final uac2ExclusiveDacModeProvider = uac2BitPerfectEnabledProvider;

@@ -193,7 +193,11 @@ class _FoldersScreenState extends State<FoldersScreen> {
       itemCount: _folders.length,
       itemBuilder: (context, index) {
         final folder = _folders[index];
-        return _FolderCard(folder: folder, onTap: () => _openFolder(folder));
+        return _FolderCard(
+          key: ValueKey(folder.uri),
+          folder: folder,
+          onTap: () => _openFolder(folder),
+        );
       },
     );
   }
@@ -203,7 +207,7 @@ class _FolderCard extends StatelessWidget {
   final MusicFolder folder;
   final VoidCallback onTap;
 
-  const _FolderCard({required this.folder, required this.onTap});
+  const _FolderCard({super.key, required this.folder, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

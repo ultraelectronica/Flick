@@ -68,6 +68,22 @@ flutter {
 tasks.register("copyNdkLibs") {
     description = "Copy libc++_shared.so from Android NDK to jniLibs"
     doLast {
+        fun llvmStripFromPath(): String? {
+            val executableName =
+                if (System.getProperty("os.name").lowercase().contains("win")) {
+                    "llvm-strip.exe"
+                } else {
+                    "llvm-strip"
+                }
+
+            return (System.getenv("PATH") ?: "")
+                .split(File.pathSeparatorChar)
+                .asSequence()
+                .map { File(it, executableName) }
+                .firstOrNull { it.isFile && it.canExecute() }
+                ?.absolutePath
+        }
+
         fun ndkHomeFromLocalProperties(): String? {
             val propsFile = rootProject.file("local.properties")
             if (!propsFile.exists()) return null
@@ -106,6 +122,7 @@ tasks.register("copyNdkLibs") {
         )
 
         val jniLibsDir = project.file("src/main/jniLibs")
+        val llvmStrip = llvmStripFromPath()
         val prebuiltRoots = listOf(
             "toolchains/llvm/prebuilt/windows-x86_64",
             "toolchains/llvm/prebuilt/linux-x86_64",
@@ -129,7 +146,30 @@ tasks.register("copyNdkLibs") {
 
             val sourceLib = candidates.firstOrNull { it.exists() }
             if (sourceLib != null) {
-                sourceLib.copyTo(File(abiOutDir, "libc++_shared.so"), overwrite = true)
+                val outputLib = File(abiOutDir, "libc++_shared.so")
+                sourceLib.copyTo(outputLib, overwrite = true)
+
+                if (llvmStrip != null) {
+                    val sizeBeforeBytes = outputLib.length()
+                    val stripResult =
+                        project.exec {
+                            executable = llvmStrip
+                            args("--strip-debug", outputLib.absolutePath)
+                            isIgnoreExitValue = true
+                        }
+
+                    if (stripResult.exitValue == 0) {
+                        val sizeAfterBytes = outputLib.length()
+                        logger.lifecycle(
+                            "Stripped libc++_shared.so for $abi: ${sizeBeforeBytes / 1024} KB -> ${sizeAfterBytes / 1024} KB",
+                        )
+                    } else {
+                        logger.warn("Warning: failed to strip libc++_shared.so for $abi")
+                    }
+                } else {
+                    logger.warn("Warning: llvm-strip not found on PATH; leaving libc++_shared.so unstripped for $abi")
+                }
+
                 logger.lifecycle("Copied libc++_shared.so for $abi from ${sourceLib.absolutePath}")
             } else {
                 logger.warn("Warning: libc++_shared.so not found for $abi in NDK $ndkHome")
