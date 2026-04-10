@@ -21,6 +21,7 @@ pub mod device;
 pub mod dynamics;
 pub mod engine;
 pub mod equalizer;
+pub mod fx;
 pub mod manager;
 pub mod resampler;
 pub mod source;
