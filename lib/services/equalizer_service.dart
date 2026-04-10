@@ -102,21 +102,12 @@ Future<void> reapplyEqualizer() async {
 
 /// Map parametric bands to 10-band gains for Rust engine (graphic-only).
 List<double> _parametricToGraphicGains(List<ParametricBand> bands) {
-  final out = List<double>.filled(10, 0.0, growable: false);
   final freqs = EqualizerState.defaultGraphicFrequenciesHz;
-  for (var i = 0; i < 10; i++) {
-    final f = freqs[i];
-    for (final b in bands) {
-      if (!b.enabled) continue;
-      final dist = (b.frequencyHz - f).abs();
-      final bw = b.frequencyHz / b.q;
-      if (dist < bw) {
-        final t = dist / bw;
-        out[i] = out[i] + b.gainDb * (1.0 - t);
-      }
-    }
-  }
-  return out;
+  return List<double>.generate(
+    freqs.length,
+    (i) => parametricResponseDbAtHz(hz: freqs[i], bands: bands),
+    growable: false,
+  );
 }
 
 EqualizerState _snapshotState(EqualizerState state) {

@@ -52,7 +52,10 @@ class ParametricEqGraph extends ConsumerWidget {
               final dotSpots = <FlSpot>[
                 for (final b in bands)
                   if (b.enabled)
-                    FlSpot(_hzToX(b.frequencyHz), enabled ? b.gainDb : 0.0),
+                    FlSpot(
+                      _hzToX(b.frequencyHz),
+                      enabled ? parametricBandMarkerDb(b) : 0.0,
+                    ),
               ];
 
               return ClipRRect(
@@ -277,29 +280,17 @@ List<FlSpot> _buildParametricSpots({
   for (var i = 0; i <= sampleCount; i++) {
     final t = i / sampleCount;
     final hz = _tToHz(t);
-    final db = enabled ? _approxResponseDb(hz, bands) : 0.0;
+    final db = enabled
+        ? parametricResponseDbAtHz(
+            hz: hz,
+            bands: bands,
+            minDb: _minDb,
+            maxDb: _maxDb,
+          )
+        : 0.0;
     spots.add(FlSpot(_hzToX(hz), db));
   }
   return spots;
-}
-
-/// UI-only smooth approximation:
-/// Sum of gaussian bumps in log-frequency space, scaled by gain.
-/// Q controls width (higher Q => narrower).
-double _approxResponseDb(double hz, List<ParametricBand> bands) {
-  final logHz = math.log(hz);
-  double sum = 0.0;
-
-  for (final b in bands) {
-    if (!b.enabled) continue;
-    // Width in log-space: map Q roughly into sigma.
-    final sigma = (0.55 / b.q.clamp(0.2, 10.0)).clamp(0.04, 1.2);
-    final d = (logHz - math.log(b.frequencyHz)).abs();
-    final w = math.exp(-(d * d) / (2 * sigma * sigma));
-    sum += b.gainDb * w;
-  }
-
-  return sum.clamp(_minDb, _maxDb).toDouble();
 }
 
 bool _isGuideLogX(double x) {
