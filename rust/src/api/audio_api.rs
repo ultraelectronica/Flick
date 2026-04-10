@@ -65,6 +65,7 @@ fn resolve_track_playback_output_sample_rate(
 fn prepare_decoder_source(
     path: &PathBuf,
     output_sample_rate: u32,
+    output_channels: usize,
 ) -> Result<(crate::audio::source::AudioSource, DecoderThread), String> {
     let probe_result = probe_file(path.as_path())
         .map_err(|error| format!("Failed to probe {}: {}", path.display(), error))?;
@@ -82,7 +83,7 @@ fn prepare_decoder_source(
         );
     }
 
-    DecoderThread::spawn_from_probe_result(probe_result, output_sample_rate, None)
+    DecoderThread::spawn_from_probe_result(probe_result, output_sample_rate, output_channels, None)
         .map_err(|error| format!("Failed to decode {}: {}", path.display(), error))
 }
 
@@ -352,7 +353,8 @@ pub fn audio_play(path: String) -> Result<(), String> {
     ensure_audio_engine(resolve_track_playback_output_sample_rate(Some(
         probe_result.source_info.original_sample_rate,
     ))?)?;
-    let output_sample_rate = with_audio_engine(|handle| Ok(handle.sample_rate()))?;
+    let (output_sample_rate, output_channels) =
+        with_audio_engine(|handle| Ok((handle.sample_rate(), handle.channels())))?;
     let file_rate = probe_result.source_info.original_sample_rate;
     if output_sample_rate != file_rate {
         log_warn!(
@@ -366,9 +368,13 @@ pub fn audio_play(path: String) -> Result<(), String> {
             file_rate
         );
     }
-    let (source, decoder_thread) =
-        DecoderThread::spawn_from_probe_result(probe_result, output_sample_rate, None)
-            .map_err(|error| format!("Failed to decode {}: {}", path.display(), error))?;
+    let (source, decoder_thread) = DecoderThread::spawn_from_probe_result(
+        probe_result,
+        output_sample_rate,
+        output_channels,
+        None,
+    )
+    .map_err(|error| format!("Failed to decode {}: {}", path.display(), error))?;
     with_audio_engine(|handle| handle.play_prepared(source, decoder_thread))
 }
 
@@ -381,7 +387,8 @@ pub fn audio_queue_next(path: String) -> Result<(), String> {
         ensure_audio_engine(resolve_track_playback_output_sample_rate(Some(
             probe_result.source_info.original_sample_rate,
         ))?)?;
-        let output_sample_rate = with_audio_engine(|handle| Ok(handle.sample_rate()))?;
+        let (output_sample_rate, output_channels) =
+            with_audio_engine(|handle| Ok((handle.sample_rate(), handle.channels())))?;
         let file_rate = probe_result.source_info.original_sample_rate;
         if output_sample_rate != file_rate {
             log_warn!(
@@ -395,14 +402,20 @@ pub fn audio_queue_next(path: String) -> Result<(), String> {
                 file_rate
             );
         }
-        let (source, decoder_thread) =
-            DecoderThread::spawn_from_probe_result(probe_result, output_sample_rate, None)
-                .map_err(|error| format!("Failed to decode {}: {}", path.display(), error))?;
+        let (source, decoder_thread) = DecoderThread::spawn_from_probe_result(
+            probe_result,
+            output_sample_rate,
+            output_channels,
+            None,
+        )
+        .map_err(|error| format!("Failed to decode {}: {}", path.display(), error))?;
         return with_audio_engine(|handle| handle.queue_next_prepared(source, decoder_thread));
     }
 
-    let output_sample_rate = with_audio_engine(|handle| Ok(handle.sample_rate()))?;
-    let (source, decoder_thread) = prepare_decoder_source(&path, output_sample_rate)?;
+    let (output_sample_rate, output_channels) =
+        with_audio_engine(|handle| Ok((handle.sample_rate(), handle.channels())))?;
+    let (source, decoder_thread) =
+        prepare_decoder_source(&path, output_sample_rate, output_channels)?;
     with_audio_engine(|handle| handle.queue_next_prepared(source, decoder_thread))
 }
 

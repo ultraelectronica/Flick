@@ -1684,7 +1684,7 @@ fn handle_play(
     callback_data.crossfader.lock().reset();
 
     // Spawn decoder
-    match DecoderThread::spawn(path.clone(), sample_rate) {
+    match DecoderThread::spawn(path.clone(), sample_rate, callback_data.channels()) {
         Ok((source, decoder_thread)) => {
             start_playback_source(
                 source,
@@ -1736,7 +1736,7 @@ fn handle_queue_next(
     sample_rate: u32,
 ) {
     // Spawn decoder for next track
-    match DecoderThread::spawn(path.clone(), sample_rate) {
+    match DecoderThread::spawn(path.clone(), sample_rate, callback_data.channels()) {
         Ok((source, decoder_thread)) => {
             queue_playback_source(source, decoder_thread, callback_data, decoders, event_tx);
         }
@@ -1853,7 +1853,12 @@ fn handle_seek(
         }
     }
 
-    match DecoderThread::spawn_with_seek(path.clone(), sample_rate, Some(target_secs)) {
+    match DecoderThread::spawn_with_seek(
+        path.clone(),
+        sample_rate,
+        callback_data.channels(),
+        Some(target_secs),
+    ) {
         Ok((mut source, decoder_thread)) => {
             source.set_ready();
             if !was_paused {

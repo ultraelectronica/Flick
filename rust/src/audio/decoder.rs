@@ -147,8 +147,9 @@ impl DecoderThread {
     pub fn spawn(
         path: PathBuf,
         output_sample_rate: u32,
+        output_channels: usize,
     ) -> Result<(AudioSource, Self), DecoderError> {
-        Self::spawn_with_seek(path, output_sample_rate, None)
+        Self::spawn_with_seek(path, output_sample_rate, output_channels, None)
     }
 
     /// Spawn a new decoder thread and start decoding from a specific position.
@@ -157,24 +158,31 @@ impl DecoderThread {
     pub fn spawn_with_seek(
         path: PathBuf,
         output_sample_rate: u32,
+        output_channels: usize,
         start_position_secs: Option<f64>,
     ) -> Result<(AudioSource, Self), DecoderError> {
         let probe_result = probe_file(&path)?;
-        Self::spawn_from_probe_result(probe_result, output_sample_rate, start_position_secs)
+        Self::spawn_from_probe_result(
+            probe_result,
+            output_sample_rate,
+            output_channels,
+            start_position_secs,
+        )
     }
 
     /// Spawn a decoder thread using a probe result that has already been created.
     pub fn spawn_from_probe_result(
         probe_result: ProbeResult,
         output_sample_rate: u32,
+        output_channels: usize,
         start_position_secs: Option<f64>,
     ) -> Result<(AudioSource, Self), DecoderError> {
         let path = probe_result.source_info.path.clone();
         let mut source_info = probe_result.source_info.clone();
         source_info.output_sample_rate = output_sample_rate;
-        source_info.total_samples = (source_info.duration_secs
-            * output_sample_rate as f64
-            * source_info.channels as f64) as u64;
+        source_info.channels = output_channels;
+        source_info.total_samples =
+            (source_info.duration_secs * output_sample_rate as f64 * output_channels as f64) as u64;
 
         // Create the source and producer
         let (source, producer) = AudioSource::new(source_info);
@@ -194,6 +202,7 @@ impl DecoderThread {
                     probe_result,
                     producer,
                     output_sample_rate,
+                    output_channels,
                     stop_signal_clone,
                     start_position_secs,
                 )
@@ -245,6 +254,7 @@ fn decode_thread(
     probe_result: ProbeResult,
     mut producer: SourceProducer,
     output_sample_rate: u32,
+    output_channels: usize,
     stop_signal: Arc<AtomicBool>,
     start_position_secs: Option<f64>,
 ) -> Result<(), DecoderError> {
@@ -270,14 +280,17 @@ fn decode_thread(
         }
     }
 
+    let source_channels = source_info.channels;
+
     // Create resampler if needed
     let needs_resampling = source_info.original_sample_rate != output_sample_rate;
+    let needs_channel_remix = source_channels != output_channels;
     let mut resampler = if needs_resampling {
         Some(
             AudioResampler::new(
                 source_info.original_sample_rate,
                 output_sample_rate,
-                source_info.channels,
+                output_channels,
                 DECODE_CHUNK_SIZE,
             )
             .map_err(DecoderError::ResamplingFailed)?,
@@ -287,10 +300,13 @@ fn decode_thread(
     };
 
     log::info!(
-        "[DECODER] decoded_file_sample_rate_hz={} decoder_output_sample_rate_hz={} resampling_active={}",
+        "[DECODER] decoded_file_sample_rate_hz={} decoder_output_sample_rate_hz={} source_channels={} output_channels={} resampling_active={} channel_remix_active={}",
         source_info.original_sample_rate,
         output_sample_rate,
-        needs_resampling
+        source_channels,
+        output_channels,
+        needs_resampling,
+        needs_channel_remix,
     );
     if needs_resampling {
         log::warn!(
@@ -301,13 +317,13 @@ fn decode_thread(
     }
 
     // Pre-allocated buffers (avoid allocations in the loop)
-    let mut decode_buffer: Vec<f32> =
-        Vec::with_capacity(DECODE_CHUNK_SIZE * source_info.channels * 2);
+    let mut decode_buffer: Vec<f32> = Vec::with_capacity(DECODE_CHUNK_SIZE * source_channels * 2);
+    let mut remix_buffer: Vec<f32> = Vec::with_capacity(DECODE_CHUNK_SIZE * output_channels * 2);
     let mut resample_buffer: Vec<f32> = Vec::with_capacity(
         (DECODE_CHUNK_SIZE as f64 * output_sample_rate as f64
             / source_info.original_sample_rate as f64
             * 1.2) as usize
-            * source_info.channels
+            * output_channels
             + 256,
     );
 
@@ -378,11 +394,28 @@ fn decode_thread(
             }
         }
 
+        let remixed_samples = if needs_channel_remix {
+            remix_buffer.clear();
+            remix_buffer.resize(
+                (decode_buffer.len() / source_channels.max(1)) * output_channels,
+                0.0,
+            );
+            remix_interleaved_channels(
+                &decode_buffer,
+                source_channels,
+                output_channels,
+                &mut remix_buffer,
+            );
+            &remix_buffer[..]
+        } else {
+            &decode_buffer[..]
+        };
+
         // Resample if needed
         let output_samples = if let Some(ref mut resampler) = resampler {
             resample_buffer.clear();
             resample_buffer.resize(
-                (decode_buffer.len() as f64 * output_sample_rate as f64
+                (remixed_samples.len() as f64 * output_sample_rate as f64
                     / source_info.original_sample_rate as f64
                     * 1.2) as usize
                     + 256,
@@ -390,12 +423,12 @@ fn decode_thread(
             );
 
             let written = resampler
-                .process_interleaved(&decode_buffer, &mut resample_buffer)
+                .process_interleaved(remixed_samples, &mut resample_buffer)
                 .map_err(DecoderError::ResamplingFailed)?;
 
             &resample_buffer[..written]
         } else {
-            &decode_buffer[..]
+            remixed_samples
         };
 
         // Write to ring buffer, waiting if necessary
@@ -423,6 +456,48 @@ fn decode_thread(
     producer.finish();
 
     Ok(())
+}
+
+fn remix_interleaved_channels(
+    input: &[f32],
+    source_channels: usize,
+    output_channels: usize,
+    output: &mut [f32],
+) {
+    if source_channels == 0 || output_channels == 0 {
+        return;
+    }
+
+    let frames = input.len() / source_channels;
+    for frame in 0..frames {
+        let input_start = frame * source_channels;
+        let output_start = frame * output_channels;
+        let source_frame = &input[input_start..input_start + source_channels];
+        let output_frame = &mut output[output_start..output_start + output_channels];
+
+        match (source_channels, output_channels) {
+            (1, 2) => {
+                output_frame[0] = source_frame[0];
+                output_frame[1] = source_frame[0];
+            }
+            (_, 1) => {
+                let sum: f32 = source_frame.iter().copied().sum();
+                output_frame[0] = sum / source_channels as f32;
+            }
+            (2, 2) => {
+                output_frame.copy_from_slice(source_frame);
+            }
+            _ => {
+                for ch in 0..output_channels {
+                    output_frame[ch] = if ch < source_channels {
+                        source_frame[ch]
+                    } else {
+                        source_frame[source_channels - 1]
+                    };
+                }
+            }
+        }
+    }
 }
 
 /// Convert an AudioBufferRef to interleaved f32 samples.

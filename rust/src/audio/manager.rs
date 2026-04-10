@@ -247,13 +247,27 @@ impl EngineManager {
             );
         }
 
+        let allow_dap_native = selection.high_res_mode;
         let desired_signature = desired_output_signature(preferred_sample_rate);
         {
             let mut state = self.state.lock();
-            let should_reuse = state
-                .rust_handle
-                .as_ref()
-                .is_some_and(|handle| handle.output_signature() == desired_signature);
+            let should_reuse = state.rust_handle.as_ref().is_some_and(|handle| {
+                if handle.output_signature() == desired_signature {
+                    return true;
+                }
+
+                #[cfg(target_os = "android")]
+                {
+                    let requested_rate = preferred_sample_rate.unwrap_or(48_000);
+                    let strategy = handle.output_runtime().strategy.as_str();
+                    return handle.output_signature().starts_with("android-shared:")
+                        && handle.sample_rate() == requested_rate
+                        && (allow_dap_native || strategy != "dap_native");
+                }
+
+                #[allow(unreachable_code)]
+                false
+            });
 
             if should_reuse {
                 state.current = Some(AudioEngine::Rust);
@@ -276,7 +290,6 @@ impl EngineManager {
         #[cfg(all(feature = "uac2", target_os = "android"))]
         crate::uac2::force_release_usb_session();
 
-        let allow_dap_native = selection.high_res_mode;
         let new_handle = tokio::task::spawn_blocking(move || {
             create_audio_engine(preferred_sample_rate, allow_dap_native)
         })
