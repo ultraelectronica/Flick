@@ -244,6 +244,32 @@ class AudioSessionManager {
         info.hasUsbDac ||
         capabilityReportsUsb ||
         looksLikeUsbAudioRoute) {
+      if (audioEnginePreference == AudioEnginePreference.rustOboe) {
+        _debugLog(
+          '[Session] Selected RUST_OBOE because an external USB DAC is '
+          'attached and the user prefers the Rust Android-managed engine '
+          '(${info.routeLabel ?? info.routeType ?? 'unknown'}; '
+          'attachedUac2=${info.hasAttachedUac2Device}; '
+          'audioManagerUsb=${info.hasUsbDac}; '
+          'capabilityUsb=$capabilityReportsUsb; '
+          'routeLooksUsb=$looksLikeUsbAudioRoute)',
+        );
+        return AudioEngineType.rustOboe;
+      }
+
+      if (audioEnginePreference != AudioEnginePreference.isochronousUsb) {
+        _debugLog(
+          '[Session] Keeping NORMAL_ANDROID because an external USB DAC is '
+          'attached but the user prefers the default Android engine '
+          '(${info.routeLabel ?? info.routeType ?? 'unknown'}; '
+          'attachedUac2=${info.hasAttachedUac2Device}; '
+          'audioManagerUsb=${info.hasUsbDac}; '
+          'capabilityUsb=$capabilityReportsUsb; '
+          'routeLooksUsb=$looksLikeUsbAudioRoute)',
+        );
+        return AudioEngineType.normalAndroid;
+      }
+
       if (!bitPerfectEnabled) {
         _debugLog(
           '[Session] Keeping NORMAL_ANDROID because Bit-perfect USB is '
