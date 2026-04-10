@@ -425,7 +425,9 @@ class PlayerService {
       _sessionManager.initializedModeNotifier;
   AudioEngineType get currentEngineType =>
       _sessionManager.initializedMode ?? _sessionManager.selectedMode;
-  bool get isBitPerfectModeEnabled => _uac2Service.isBitPerfectEnabledSync;
+  bool get isBitPerfectModeEnabled =>
+      _uac2Service.isBitPerfectEnabledSync ||
+      currentEngineType == AudioEngineType.dapInternalHighRes;
   bool get isBitPerfectProcessingLocked =>
       isBitPerfectModeEnabled ||
       currentEngineType == AudioEngineType.usbDacExperimental;
@@ -480,9 +482,17 @@ class PlayerService {
     await _sessionManager.setHiFiModeEnabled(enabled);
   }
 
+  Future<void> setDapBitPerfectEnabled(bool enabled) async {
+    await setHiFiModeEnabled(enabled);
+  }
+
   Future<bool> isHiFiModeEnabled() async {
     await initAudio();
     return _sessionManager.isHiFiModeEnabled();
+  }
+
+  Future<bool> isDapBitPerfectEnabled() async {
+    return isHiFiModeEnabled();
   }
 
   Future<void> _initializeAudio() async {
@@ -750,6 +760,9 @@ class PlayerService {
     final rustAudioState = _mapValue(debugState?['rustAudioState']);
     final engineState = _mapValue(rustAudioState?['engine']);
     final directUsbState = _mapValue(rustAudioState?['direct_usb']);
+    final deviceProfile = _mapValue(rustAudioState?['device_profile']);
+    final detectedDap = _isDetectedDapProfile(deviceProfile);
+    final detectedDapBrand = _detectedDapBrand(deviceProfile);
 
     final outputSignature = _stringValue(
       engineState?['output_signature'] ?? engineState?['outputSignature'],
@@ -857,6 +870,7 @@ class PlayerService {
     final outputStrategyLabel = !usesRustDiagnostics
         ? 'Android shared'
         : switch (outputStrategy) {
+            'dap_native' => 'DAP native',
             'mixer_bit_perfect' => 'Mixer bit-perfect',
             'mixer_matched' => 'Mixer matched',
             'usb_direct' => 'USB direct',
@@ -869,6 +883,9 @@ class PlayerService {
             'usb_direct' when passthroughAllowed =>
               'Rust engine via libusb direct USB (verified)',
             'usb_direct' => 'Rust engine via libusb direct USB',
+            'dap_native' when passthroughAllowed =>
+              'Rust engine via native DAP HAL path (verified)',
+            'dap_native' => 'Rust engine via native DAP HAL path',
             'mixer_bit_perfect' =>
               'Rust engine via Android mixer bit-perfect path',
             'mixer_matched' =>
@@ -885,6 +902,8 @@ class PlayerService {
         : switch (outputStrategy) {
             'usb_direct' when passthroughAllowed => 'Verified USB direct',
             'usb_direct' => 'USB direct',
+            'dap_native' when passthroughAllowed => 'Verified DAP native',
+            'dap_native' => 'DAP native',
             'mixer_bit_perfect' when passthroughAllowed => 'Mixer bit-perfect',
             'mixer_matched' => 'Android matched',
             'resampled_fallback' when androidManagedUsbRoute =>
@@ -920,7 +939,8 @@ class PlayerService {
           usesRustDiagnostics &&
           passthroughAllowed &&
           (pathManagement == AudioPathManagement.directUsbExperimental ||
-              outputStrategy == 'mixer_bit_perfect'),
+              outputStrategy == 'mixer_bit_perfect' ||
+              outputStrategy == 'dap_native'),
       supportsAndroidManagedHighResOnly:
           activeEngineType == AudioEngineType.dapInternalHighRes,
       supportsInternalDapPathOnly:
@@ -931,6 +951,8 @@ class PlayerService {
     audioOutputDiagnosticsNotifier.value = AudioOutputDiagnostics(
       selectedMode: _sessionManager.selectedMode,
       initializedMode: _sessionManager.initializedMode,
+      detectedDap: detectedDap,
+      detectedDapBrand: detectedDapBrand,
       pathManagement: pathManagement,
       outputStrategyLabel: outputStrategyLabel,
       capabilityStateLabel: capabilityStateLabel,
@@ -1086,6 +1108,16 @@ class PlayerService {
 
   int? _intValue(dynamic value) {
     return value is num ? value.toInt() : null;
+  }
+
+  bool _isDetectedDapProfile(Map<String, dynamic>? profile) {
+    final kind = _mapValue(profile?['kind']);
+    return kind?['Dap'] is String;
+  }
+
+  String? _detectedDapBrand(Map<String, dynamic>? profile) {
+    final kind = _mapValue(profile?['kind']);
+    return _stringValue(kind?['Dap']);
   }
 
   List<int>? _dynamicListValue(dynamic value) {

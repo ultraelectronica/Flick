@@ -324,13 +324,56 @@ fn capability_priority(capability: AudioCapability) -> u8 {
     }
 }
 
+#[cfg(target_os = "android")]
+fn merge_android_device_profile(mut snapshot: AudioCapabilitySnapshot) -> AudioCapabilitySnapshot {
+    let Some(profile) = crate::audio::device::current_device_profile() else {
+        return snapshot.normalize();
+    };
+
+    let internal_route = matches!(
+        snapshot.route_type.as_str(),
+        "unknown" | "internal" | "wired"
+    );
+    if internal_route && (profile.confirmed_bit_perfect || profile.max_sample_rate > 48_000) {
+        snapshot.capabilities.push(AudioCapability::HiResInternal);
+    }
+
+    if snapshot.route_type == "unknown" && profile.is_dap() {
+        snapshot.route_type = "internal".to_string();
+    }
+
+    if profile.max_sample_rate > snapshot.max_sample_rate.unwrap_or_default() {
+        snapshot.max_sample_rate = Some(profile.max_sample_rate);
+    }
+
+    if snapshot.route_label.is_none() && internal_route {
+        if let crate::audio::device::DeviceKind::Dap(brand) = profile.kind {
+            snapshot.route_label = Some(format!("{} internal DAC", brand.as_str()));
+        }
+    }
+
+    snapshot.normalize()
+}
+
 fn detect_capabilities_blocking(
     preferred_sample_rate: Option<u32>,
     capability_hint: AudioCapabilitySnapshot,
 ) -> AudioCapabilitySnapshot {
+    let snapshot = {
+        #[cfg(target_os = "android")]
+        {
+            merge_android_device_profile(capability_hint)
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            capability_hint.normalize()
+        }
+    };
+
     #[cfg(all(feature = "uac2", target_os = "android"))]
     {
-        let mut snapshot = capability_hint.normalize();
+        let mut snapshot = snapshot;
         if crate::uac2::android_direct_output_signature(preferred_sample_rate).is_some()
             && !snapshot.has_capability(AudioCapability::UsbDac)
         {
@@ -355,13 +398,13 @@ fn detect_capabilities_blocking(
             .normalize();
         }
 
-        return capability_hint.normalize();
+        return snapshot;
     }
 
     #[cfg(not(feature = "uac2"))]
     {
         let _ = preferred_sample_rate;
-        capability_hint.normalize()
+        snapshot
     }
 }
 

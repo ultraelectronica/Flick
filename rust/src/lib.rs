@@ -24,9 +24,9 @@ use jni::{
 static ANDROID_APP_CONTEXT: OnceLock<GlobalRef> = OnceLock::new();
 
 #[cfg(target_os = "android")]
-fn initialize_android_app_context(
-    env: &mut JNIEnv<'_>,
-    context: JObject<'_>,
+fn initialize_android_app_context<'local>(
+    env: &mut JNIEnv<'local>,
+    context: &JObject<'local>,
 ) -> Result<(), String> {
     if ANDROID_APP_CONTEXT.get().is_some() {
         return Ok(());
@@ -65,13 +65,30 @@ pub extern "system" fn JNI_OnLoad(_vm: JavaVM, _reserved: *mut c_void) -> jni::s
 
 #[cfg(target_os = "android")]
 #[no_mangle]
-pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeInitRustAndroidContext(
-    mut env: JNIEnv<'_>,
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeInitRustAndroidContext<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
     _activity: JObject<'_>,
-    context: JObject<'_>,
+    context: JObject<'local>,
 ) -> jboolean {
-    match initialize_android_app_context(&mut env, context) {
+    match initialize_android_app_context(&mut env, &context) {
         Ok(()) => {
+            match crate::audio::device::detect_android_device_profile(&mut env, &context) {
+                Ok(profile) => {
+                    log::info!(
+                        "[ANDROID] Cached device profile: kind={:?} bit_perfect={} max_rate_hz={} balanced={}",
+                        profile.kind,
+                        profile.confirmed_bit_perfect,
+                        profile.max_sample_rate,
+                        profile.has_balanced_output,
+                    );
+                    crate::audio::device::cache_android_device_profile(profile);
+                }
+                Err(error) => {
+                    log::warn!("[ANDROID] Failed to detect device profile: {}", error);
+                }
+            }
             eprintln!("Rust Android audio context initialized");
             1
         }
@@ -224,6 +241,7 @@ pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeGetRus
     let direct_usb_state = crate::uac2::android_direct_debug_state();
     let payload = serde_json::json!({
         "engine": engine_state,
+        "device_profile": crate::audio::device::current_device_profile(),
         "direct_usb": direct_usb_state,
     });
     let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
@@ -240,6 +258,7 @@ pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeGetRus
 ) -> jstring {
     let payload = serde_json::json!({
         "engine": crate::api::audio_api::audio_get_runtime_debug_json_state(),
+        "device_profile": crate::audio::device::current_device_profile(),
         "direct_usb": {
             "registered": false,
             "idle_lock_held": false,

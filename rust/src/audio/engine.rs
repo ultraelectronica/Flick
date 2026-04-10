@@ -6,6 +6,8 @@
 use crate::audio::commands::{AudioCommand, AudioEvent, PlaybackProgress, PlaybackState};
 use crate::audio::crossfader::Crossfader;
 use crate::audio::decoder::DecoderThread;
+#[cfg(target_os = "android")]
+use crate::audio::device::current_device_profile;
 use crate::audio::dynamics::DynamicsChain;
 use crate::audio::equalizer::Equalizer;
 use crate::audio::source::{AudioSource, SourceProvider};
@@ -591,6 +593,9 @@ fn android_output_signature_for_strategy(
     requested_sample_rate: u32,
 ) -> String {
     match strategy {
+        OutputStrategy::DapNative => {
+            format!("android-shared:dap-native:{}", requested_sample_rate)
+        }
         OutputStrategy::MixerBitPerfect => {
             format!("android-shared:mixer-bit-perfect:{}", requested_sample_rate)
         }
@@ -653,6 +658,7 @@ pub fn create_audio_engine(
     preferred_sample_rate: Option<u32>,
 ) -> Result<AudioEngineHandle, String> {
     let requested_sample_rate = preferred_sample_rate.unwrap_or(48_000);
+    let device_profile = current_device_profile();
 
     #[cfg(feature = "uac2")]
     let debug_state = android_direct_debug_state();
@@ -666,9 +672,17 @@ pub fn create_audio_engine(
         validate_android_direct_request(Some(requested_sample_rate))?;
     }
 
-    let shared_supports_requested_rate = select_android_output_device(requested_sample_rate)
-        .map(|device| android_device_supports_sample_rate(&device, requested_sample_rate))
+    let selected_output_device = select_android_output_device(requested_sample_rate).ok();
+    let shared_supports_requested_rate = selected_output_device
+        .as_ref()
+        .map(|device| android_device_supports_sample_rate(device, requested_sample_rate))
         .unwrap_or(false);
+    let confirmed_dap_native = selected_output_device.as_ref().is_some_and(|device| {
+        device_profile.as_ref().is_some_and(|profile| {
+            profile.confirmed_bit_perfect
+                && android_device_supports_dap_native_strategy(device.device_type)
+        })
+    });
     let desired_strategy = if will_attempt_usb {
         OutputStrategy::UsbDirect
     } else {
@@ -679,6 +693,7 @@ pub fn create_audio_engine(
             },
             &DeviceCaps {
                 api_level: None,
+                confirmed_dap_native,
                 supports_mixer_bit_perfect: false,
                 supports_requested_rate: shared_supports_requested_rate,
                 direct_usb_available: false,
@@ -890,7 +905,7 @@ pub fn create_audio_engine(
         let verification = OutputVerification::verify(
             requested_sample_rate,
             managed.actual_sample_rate,
-            matches!(desired_shared_strategy, OutputStrategy::MixerBitPerfect),
+            desired_shared_strategy.requests_passthrough(),
             true,
         );
         let resolved_shared_strategy = verification.resolved_strategy(desired_shared_strategy);
@@ -905,13 +920,14 @@ pub fn create_audio_engine(
     }
 
     log::info!(
-        "[ENGINE] requested_rate_hz={} actual_rate_hz={} strategy={} resampler_active={} passthrough_allowed={} channels={}",
+        "[ENGINE] requested_rate_hz={} actual_rate_hz={} strategy={} resampler_active={} passthrough_allowed={} channels={} dap_profile={:?}",
         requested_sample_rate,
         final_sample_rate,
         output_runtime.strategy,
         output_runtime.resampler_active,
         output_runtime.passthrough_allowed,
-        channels
+        channels,
+        device_profile.as_ref().map(|profile| &profile.kind)
     );
 
     // Spawn the audio thread (which owns the Oboe stream)
@@ -1219,6 +1235,17 @@ fn android_device_supports_stereo(device: &AudioDeviceInfo) -> bool {
 #[cfg(target_os = "android")]
 fn android_device_supports_f32(device: &AudioDeviceInfo) -> bool {
     device.formats.is_empty() || device.formats.contains(&AudioFormat::F32)
+}
+
+#[cfg(target_os = "android")]
+fn android_device_supports_dap_native_strategy(device_type: AudioDeviceType) -> bool {
+    matches!(
+        device_type,
+        AudioDeviceType::WiredHeadphones
+            | AudioDeviceType::WiredHeadset
+            | AudioDeviceType::LineAnalog
+            | AudioDeviceType::LineDigital
+    )
 }
 
 #[cfg(target_os = "android")]
