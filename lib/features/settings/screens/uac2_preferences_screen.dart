@@ -256,6 +256,9 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     AsyncValue<bool> hiFiModeAsync,
     AudioOutputDiagnostics? diagnostics,
   ) {
+    final detectedDap = diagnostics?.detectedDap == true;
+    final detectedDapBrand = diagnostics?.detectedDapBrand;
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.6),
@@ -307,12 +310,21 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
             data: (enabled) => _buildSwitchTile(
               context,
               icon: LucideIcons.zap,
-              title: 'HiFi Mode',
-              subtitle:
-                  'Experimental override for DAP/internal routes. Android internal playback still commonly stops at 48kHz.',
+              title: detectedDap ? 'DAP Bit-Perfect' : 'HiFi Mode',
+              subtitle: detectedDap
+                  ? 'Open ${detectedDapBrand ?? 'the DAP'} native output at each track\'s sample rate and disable software DSP controls that would break bit-perfect playback.'
+                  : 'Experimental override for DAP/internal routes. Android internal playback still commonly stops at 48kHz.',
               value: enabled,
               onChanged: (value) async {
-                await ref.read(playerServiceProvider).setHiFiModeEnabled(value);
+                if (detectedDap) {
+                  await ref
+                      .read(playerServiceProvider)
+                      .setDapBitPerfectEnabled(value);
+                } else {
+                  await ref
+                      .read(playerServiceProvider)
+                      .setHiFiModeEnabled(value);
+                }
                 ref.invalidate(uac2HiFiModeProvider);
               },
             ),

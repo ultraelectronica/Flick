@@ -29,6 +29,8 @@ class AudioOutputDiagnostics {
   const AudioOutputDiagnostics({
     required this.selectedMode,
     required this.initializedMode,
+    required this.detectedDap,
+    required this.detectedDapBrand,
     required this.pathManagement,
     required this.outputStrategyLabel,
     required this.capabilityStateLabel,
@@ -54,6 +56,8 @@ class AudioOutputDiagnostics {
 
   final AudioEngineType selectedMode;
   final AudioEngineType? initializedMode;
+  final bool detectedDap;
+  final String? detectedDapBrand;
   final AudioPathManagement pathManagement;
   final String outputStrategyLabel;
   final String capabilityStateLabel;

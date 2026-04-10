@@ -233,6 +233,7 @@ class AudioSessionManager {
     final audioEnginePreference = await _preferencesService
         .getAudioEnginePreference();
     final capabilityInfo = await _uac2Service.getAndroidAudioCapabilityInfo();
+    final dapInfo = await _detectedAndroidDapInfo();
     capabilityInfoNotifier.value = capabilityInfo;
     final capabilityReportsUsb = capabilityInfo.capabilities.contains(
       rust_audio.AudioCapabilityType.usbDac,
@@ -270,15 +271,18 @@ class AudioSessionManager {
       return AudioEngineType.usbDacExperimental;
     }
 
-    final supportsHiResInternal = capabilityInfo.capabilities.contains(
-      rust_audio.AudioCapabilityType.hiResInternal,
-    );
+    final supportsHiResInternal =
+        capabilityInfo.capabilities.contains(
+          rust_audio.AudioCapabilityType.hiResInternal,
+        ) ||
+        dapInfo.detected;
     if (audioEnginePreference == AudioEnginePreference.rustOboe) {
       if (hiFiModeEnabled && supportsHiResInternal) {
         _debugLog(
           '[Session] Selected DAP_INTERNAL_HIGH_RES because Rust via Oboe '
           'is preferred and Android reports a higher-capability internal '
-          'route (${capabilityInfo.routeType}/${capabilityInfo.routeLabel ?? 'unknown'})',
+          'route (${capabilityInfo.routeType}/${capabilityInfo.routeLabel ?? 'unknown'}; '
+          'detectedDap=${dapInfo.brand ?? 'none'})',
         );
         return AudioEngineType.dapInternalHighRes;
       }
@@ -294,7 +298,8 @@ class AudioSessionManager {
       _debugLog(
         '[Session] Selected DAP_INTERNAL_HIGH_RES because HiFi Mode is '
         'enabled and Android reports a higher-capability internal route '
-        '(${capabilityInfo.routeType}/${capabilityInfo.routeLabel ?? 'unknown'})',
+        '(${capabilityInfo.routeType}/${capabilityInfo.routeLabel ?? 'unknown'}; '
+        'detectedDap=${dapInfo.brand ?? 'none'})',
       );
       return AudioEngineType.dapInternalHighRes;
     }
@@ -307,6 +312,28 @@ class AudioSessionManager {
     }
 
     return AudioEngineType.normalAndroid;
+  }
+
+  Future<({bool detected, String? brand})> _detectedAndroidDapInfo() async {
+    final debugState = await _uac2Service.getAndroidPlaybackDebugState();
+    final rustState = _mapValue(debugState?['rustAudioState']);
+    final deviceProfile = _mapValue(rustState?['device_profile']);
+    final kind = _mapValue(deviceProfile?['kind']);
+    final brand = kind?['Dap'];
+    return (
+      detected: brand is String && brand.isNotEmpty,
+      brand: brand is String ? brand : null,
+    );
+  }
+
+  Map<String, dynamic>? _mapValue(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return value.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return null;
   }
 
   String? _suppressedReasonForCurrentUsbDevice(AndroidPlaybackDeviceInfo info) {
