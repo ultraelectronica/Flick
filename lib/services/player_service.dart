@@ -1665,7 +1665,9 @@ class PlayerService {
       await _refreshRustCapabilityInfo();
 
       Uac2AudioFormat? directUsbFormat;
-      int? preferredSampleRate;
+      var preferredSampleRate = await _resolvePreferredRustSampleRate(
+        playbackMode,
+      );
       if (playbackMode == AudioEngineType.usbDacExperimental) {
         debugPrint(
           '[Engine] Ensuring USB DAC is registered before engine preparation',
@@ -1705,6 +1707,63 @@ class PlayerService {
     }
 
     _setupRustAudioListeners();
+  }
+
+  Future<int?> _resolvePreferredRustSampleRate(
+    AudioEngineType playbackMode,
+  ) async {
+    if (!Platform.isAndroid || playbackMode != AudioEngineType.rustOboe) {
+      return null;
+    }
+
+    final debugState = await _uac2Service.getAndroidPlaybackDebugState();
+    final rustAudioState = _mapValue(debugState?['rustAudioState']);
+    final deviceProfile = _mapValue(rustAudioState?['device_profile']);
+    if (!_isDetectedDapProfile(deviceProfile)) {
+      return null;
+    }
+
+    final deviceInfo = await AndroidAudioDeviceService.instance.refresh();
+    final internalRoute = switch (deviceInfo.routeType) {
+      null || 'unknown' || 'internal' || 'wired' => true,
+      _ => false,
+    };
+    if (!internalRoute || deviceInfo.hasUsbDac || deviceInfo.isBluetoothRoute) {
+      return null;
+    }
+
+    final formatPreference = await _preferencesService.getFormatPreference();
+    final preferredSampleRate = await _preferredSampleRateForFormatStrategy(
+      formatPreference,
+    );
+    if (preferredSampleRate == null || preferredSampleRate <= 0) {
+      return null;
+    }
+
+    debugPrint(
+      '[Engine] DAP managed playback pinned to $preferredSampleRate Hz '
+      '(${formatPreference.name}) while DAP bit-perfect is disabled',
+    );
+    return preferredSampleRate;
+  }
+
+  Future<int?> _preferredSampleRateForFormatStrategy(
+    Uac2FormatPreference formatPreference,
+  ) async {
+    switch (formatPreference) {
+      case Uac2FormatPreference.highestQuality:
+        final capabilityInfo = await _uac2Service
+            .getAndroidAudioCapabilityInfo();
+        final maxSampleRate = capabilityInfo.maxSampleRate;
+        return maxSampleRate != null && maxSampleRate > 0
+            ? maxSampleRate
+            : 48000;
+      case Uac2FormatPreference.compatibility:
+        return 48000;
+      case Uac2FormatPreference.custom:
+        final customFormat = await _preferencesService.loadPreferredFormat();
+        return customFormat?.sampleRate ?? 48000;
+    }
   }
 
   /// Ensures USB DAC is registered with Rust before engine preparation.

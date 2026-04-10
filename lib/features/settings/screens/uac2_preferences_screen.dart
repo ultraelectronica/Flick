@@ -316,6 +316,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                   : 'Experimental override for DAP/internal routes. Android internal playback still commonly stops at 48kHz.',
               value: enabled,
               onChanged: (value) async {
+                final changed = value != enabled;
                 if (detectedDap) {
                   await ref
                       .read(playerServiceProvider)
@@ -326,6 +327,9 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                       .setHiFiModeEnabled(value);
                 }
                 ref.invalidate(uac2HiFiModeProvider);
+                if (changed && context.mounted) {
+                  _showRestartRequiredToast(context);
+                }
               },
             ),
             loading: () => _buildLoadingTile(context),
@@ -655,7 +659,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     messenger.removeCurrentSnackBar();
     messenger.showSnackBar(
       const SnackBar(
-        content: Text('Restart your device to apply the new playback engine.'),
+        content: Text('Restart the app to apply playback changes.'),
         behavior: SnackBarBehavior.floating,
       ),
     );
