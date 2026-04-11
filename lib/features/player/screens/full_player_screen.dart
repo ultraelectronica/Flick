@@ -1357,6 +1357,11 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                   formatDuration: _formatDuration,
                   onClose: () => Navigator.of(context).pop(),
                   onOpenQueue: () => _openQueue(context),
+                  onToggleLyrics: () {
+                    setState(() {
+                      _isLyricsMode = !_isLyricsMode;
+                    });
+                  },
                   onQueueSwipe: () => _queueSong(context, song),
                   onShowSongActions: () =>
                       _showSongActionsBottomSheet(context, song),
@@ -1395,6 +1400,7 @@ class _AnimatedSongScene extends StatelessWidget {
   final String Function(Duration) formatDuration;
   final VoidCallback onClose;
   final VoidCallback onOpenQueue;
+  final VoidCallback onToggleLyrics;
   final Future<void> Function() onQueueSwipe;
   final VoidCallback onShowSongActions;
   final Future<void> Function() onPrevious;
@@ -1418,6 +1424,7 @@ class _AnimatedSongScene extends StatelessWidget {
     required this.formatDuration,
     required this.onClose,
     required this.onOpenQueue,
+    required this.onToggleLyrics,
     required this.onQueueSwipe,
     required this.onShowSongActions,
     required this.onPrevious,
@@ -1746,69 +1753,113 @@ class _AnimatedSongScene extends StatelessWidget {
   }
 
   Widget _buildImmersiveLayout(BuildContext context) {
-    return Column(
-      children: [
-        if (lyricsMode) ...[
-          SizedBox(height: context.responsive(8.0, 10.0, 12.0)),
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: context.responsive(20.0, 28.0, 36.0),
-              ),
-              child: Stack(
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 260),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInOutCubic,
+      layoutBuilder: (currentChild, previousChildren) {
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            ...previousChildren,
+            ...?currentChild == null ? null : [currentChild],
+          ],
+        );
+      },
+      transitionBuilder: (child, animation) {
+        final isLyricsChild =
+            child.key == const ValueKey('immersive-lyrics-layout');
+        final offsetAnimation = Tween<Offset>(
+          begin: isLyricsChild ? const Offset(0, -0.04) : const Offset(0, 0.05),
+          end: Offset.zero,
+        ).animate(animation);
+
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(position: offsetAnimation, child: child),
+        );
+      },
+      child: lyricsMode
+          ? KeyedSubtree(
+              key: const ValueKey('immersive-lyrics-layout'),
+              child: Column(
                 children: [
-                  Positioned.fill(
-                    child: _InlineLyricsPanel(
-                      song: song,
-                      playerService: playerService,
-                      lyricsService: lyricsService,
-                    ),
-                  ),
-                  Align(
-                    alignment: Alignment.bottomCenter,
-                    child: IgnorePointer(
-                      child: Container(
-                        height: context.responsive(72.0, 84.0, 96.0),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withValues(alpha: 0.04),
-                              Colors.black.withValues(alpha: 0.14),
-                              Colors.black.withValues(alpha: 0.26),
-                            ],
+                  SizedBox(height: context.responsive(8.0, 10.0, 12.0)),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: context.responsive(20.0, 28.0, 36.0),
+                      ),
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: _InlineLyricsPanel(
+                              song: song,
+                              playerService: playerService,
+                              lyricsService: lyricsService,
+                            ),
                           ),
-                        ),
+                          Align(
+                            alignment: Alignment.bottomCenter,
+                            child: IgnorePointer(
+                              child: Container(
+                                height: context.responsive(72.0, 84.0, 96.0),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.transparent,
+                                      Colors.black.withValues(alpha: 0.04),
+                                      Colors.black.withValues(alpha: 0.14),
+                                      Colors.black.withValues(alpha: 0.26),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
+                  SizedBox(height: context.responsive(10.0, 12.0, 14.0)),
+                  _LyricsModeWaveformStrip(
+                    playerService: playerService,
+                    positionNotifier: throttledPositionNotifier,
+                    currentSong: song,
+                    formatDuration: formatDuration,
+                    horizontalPadding: context.responsive(18.0, 24.0, 30.0),
+                    onSwipeUp: onToggleLyrics,
+                  ),
+                ],
+              ),
+            )
+          : KeyedSubtree(
+              key: const ValueKey('immersive-default-layout'),
+              child: Column(
+                children: [
+                  const Spacer(flex: 2),
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: context.responsive(12.0, 16.0, 20.0),
+                    ),
+                    child: _buildImmersiveSongHeader(context),
+                  ),
+                  SizedBox(height: context.responsive(10.0, 12.0, 14.0)),
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: context.responsive(12.0, 16.0, 20.0),
+                    ),
+                    child: buildFileInfoRow(song, lyricsMode, playerScreenMode),
+                  ),
+                  SizedBox(height: context.responsive(12.0, 14.0, 16.0)),
+                  _buildPlaybackStack(context),
+                  SizedBox(height: context.responsive(16.0, 20.0, 24.0)),
+                  buildDirectoryInfo(song),
                 ],
               ),
             ),
-          ),
-          SizedBox(height: context.responsive(6.0, 8.0, 10.0)),
-        ] else
-          const Spacer(flex: 2),
-        Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: context.responsive(12.0, 16.0, 20.0),
-          ),
-          child: _buildImmersiveSongHeader(context),
-        ),
-        SizedBox(height: context.responsive(10.0, 12.0, 14.0)),
-        Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: context.responsive(12.0, 16.0, 20.0),
-          ),
-          child: buildFileInfoRow(song, lyricsMode, playerScreenMode),
-        ),
-        SizedBox(height: context.responsive(12.0, 14.0, 16.0)),
-        _buildPlaybackStack(context),
-        SizedBox(height: context.responsive(16.0, 20.0, 24.0)),
-        buildDirectoryInfo(song),
-      ],
     );
   }
 
@@ -2712,33 +2763,11 @@ class _PlayerControls extends StatelessWidget {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: timelineHorizontalPadding,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          formatDuration(position),
-                          style: const TextStyle(
-                            fontFamily: 'ProductSans',
-                            fontSize: 12,
-                            color: Colors.white,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                        Text(
-                          formatDuration(duration),
-                          style: const TextStyle(
-                            fontFamily: 'ProductSans',
-                            fontSize: 12,
-                            color: Colors.white,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ],
-                    ),
+                  _PlaybackTimeLabels(
+                    position: position,
+                    duration: duration,
+                    formatDuration: formatDuration,
+                    horizontalPadding: timelineHorizontalPadding,
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -2858,6 +2887,177 @@ class _PlayerControls extends StatelessWidget {
             },
           );
         },
+      ),
+    );
+  }
+}
+
+class _PlaybackTimeRow extends StatelessWidget {
+  final PlayerService playerService;
+  final String Function(Duration) formatDuration;
+  final Song? currentSong;
+  final double horizontalPadding;
+
+  const _PlaybackTimeRow({
+    required this.playerService,
+    required this.formatDuration,
+    required this.currentSong,
+    this.horizontalPadding = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Duration>(
+      valueListenable: playerService.positionNotifier,
+      builder: (context, position, _) {
+        return ValueListenableBuilder<Duration>(
+          valueListenable: playerService.durationNotifier,
+          builder: (context, engineDuration, _) {
+            final duration = engineDuration.inMilliseconds > 0
+                ? engineDuration
+                : (currentSong?.duration ?? Duration.zero);
+
+            return _PlaybackTimeLabels(
+              position: position,
+              duration: duration,
+              formatDuration: formatDuration,
+              horizontalPadding: horizontalPadding,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _LyricsModeWaveformStrip extends StatefulWidget {
+  final PlayerService playerService;
+  final ValueNotifier<Duration> positionNotifier;
+  final Song? currentSong;
+  final String Function(Duration) formatDuration;
+  final double horizontalPadding;
+  final VoidCallback onSwipeUp;
+
+  const _LyricsModeWaveformStrip({
+    required this.playerService,
+    required this.positionNotifier,
+    required this.currentSong,
+    required this.formatDuration,
+    required this.horizontalPadding,
+    required this.onSwipeUp,
+  });
+
+  @override
+  State<_LyricsModeWaveformStrip> createState() =>
+      _LyricsModeWaveformStripState();
+}
+
+class _LyricsModeWaveformStripState extends State<_LyricsModeWaveformStrip> {
+  Offset? _pointerDownPosition;
+  bool _didTriggerSwipe = false;
+
+  void _resetPointerTracking() {
+    _pointerDownPosition = null;
+    _didTriggerSwipe = false;
+  }
+
+  void _handlePointerMove(PointerMoveEvent event) {
+    final start = _pointerDownPosition;
+    if (start == null || _didTriggerSwipe) {
+      return;
+    }
+
+    final delta = event.position - start;
+    final isSwipeUp = delta.dy <= -28;
+    final isPrimarilyVertical = delta.dy.abs() > (delta.dx.abs() * 1.2);
+
+    if (isSwipeUp && isPrimarilyVertical) {
+      _didTriggerSwipe = true;
+      widget.onSwipeUp();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) {
+        _pointerDownPosition = event.position;
+        _didTriggerSwipe = false;
+      },
+      onPointerMove: _handlePointerMove,
+      onPointerUp: (_) => _resetPointerTracking(),
+      onPointerCancel: (_) => _resetPointerTracking(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.keyboard_double_arrow_up_rounded,
+            color: Colors.white.withValues(alpha: 0.72),
+            size: context.responsive(18.0, 20.0, 22.0),
+          ),
+          SizedBox(height: context.responsive(2.0, 4.0, 6.0)),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: widget.horizontalPadding),
+            child: _WaveformLayer(
+              playerService: widget.playerService,
+              positionNotifier: widget.positionNotifier,
+              currentSong: widget.currentSong,
+            ),
+          ),
+          SizedBox(height: context.responsive(4.0, 6.0, 8.0)),
+          _PlaybackTimeRow(
+            playerService: widget.playerService,
+            formatDuration: widget.formatDuration,
+            currentSong: widget.currentSong,
+            horizontalPadding: widget.horizontalPadding,
+          ),
+          SizedBox(height: context.responsive(14.0, 18.0, 22.0)),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaybackTimeLabels extends StatelessWidget {
+  final Duration position;
+  final Duration duration;
+  final String Function(Duration) formatDuration;
+  final double horizontalPadding;
+
+  const _PlaybackTimeLabels({
+    required this.position,
+    required this.duration,
+    required this.formatDuration,
+    this.horizontalPadding = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            formatDuration(position),
+            style: const TextStyle(
+              fontFamily: 'ProductSans',
+              fontSize: 12,
+              color: Colors.white,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+          Text(
+            formatDuration(duration),
+            style: const TextStyle(
+              fontFamily: 'ProductSans',
+              fontSize: 12,
+              color: Colors.white,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
       ),
     );
   }
