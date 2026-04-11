@@ -1605,7 +1605,7 @@ class _AnimatedSongScene extends StatelessWidget {
                 valueListenable: playerService.queueNotifier,
                 builder: (context, queue, _) {
                   final hasQueue = queue.isNotEmpty;
-                  return AnimatedContainer(
+                  final chip = AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     padding: EdgeInsets.symmetric(
                       horizontal: context.responsive(16.0, 18.0, 20.0),
@@ -1636,16 +1636,31 @@ class _AnimatedSongScene extends StatelessWidget {
                                 letterSpacing: 0.8,
                               ),
                             ),
-                            SizedBox(width: context.responsive(6.0, 7.0, 8.0)),
-                            _buildQueueSummaryBadge(
-                              context,
-                              count: queue.length,
-                              highlighted: hasQueue,
-                            ),
+                            if (playerScreenMode !=
+                                PlayerScreenMode.immersive) ...[
+                              SizedBox(
+                                width: context.responsive(6.0, 7.0, 8.0),
+                              ),
+                              _buildQueueSummaryBadge(
+                                context,
+                                count: queue.length,
+                                highlighted: hasQueue,
+                              ),
+                            ],
                           ],
                         ),
                       ],
                     ),
+                  );
+
+                  if (playerScreenMode != PlayerScreenMode.immersive) {
+                    return chip;
+                  }
+
+                  return Align(
+                    alignment: Alignment.center,
+                    widthFactor: 1.0,
+                    child: chip,
                   );
                 },
               ),
@@ -1839,21 +1854,22 @@ class _AnimatedSongScene extends StatelessWidget {
           ),
         ),
         SizedBox(width: context.responsive(12.0, 14.0, 16.0)),
-        GestureDetector(
-          onTap: onOpenQueue,
-          child: Container(
-            padding: EdgeInsets.all(context.responsive(8.0, 9.0, 10.0)),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              LucideIcons.listMusic,
-              color: Colors.white.withValues(alpha: 0.92),
-              size: context.responsive(18.0, 20.0, 22.0),
+        if (playerScreenMode != PlayerScreenMode.immersive)
+          GestureDetector(
+            onTap: onOpenQueue,
+            child: Container(
+              padding: EdgeInsets.all(context.responsive(8.0, 9.0, 10.0)),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                LucideIcons.listMusic,
+                color: Colors.white.withValues(alpha: 0.92),
+                size: context.responsive(18.0, 20.0, 22.0),
+              ),
             ),
           ),
-        ),
       ],
     );
   }
