@@ -1,21 +1,28 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:math' as math;
+import 'package:path_provider/path_provider.dart';
 
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/utils/responsive.dart';
 import 'package:flick/providers/equalizer_provider.dart';
+import 'package:flick/services/eq_preset_file_service.dart';
 import 'package:flick/services/eq_preset_service.dart';
 import 'package:flick/widgets/common/glass_bottom_sheet.dart';
 
 import 'package:flick/widgets/equalizer/parametric_eq_graph.dart';
 import 'package:flick/widgets/equalizer/graphic_eq_graph.dart';
+
+enum _PresetFileFormat { json, txt }
 
 class EqualizerScreen extends ConsumerWidget {
   const EqualizerScreen({super.key});
@@ -104,6 +111,7 @@ class _PresetsSheet extends ConsumerStatefulWidget {
 
 class _PresetsSheetState extends ConsumerState<_PresetsSheet> {
   final EqPresetService _service = EqPresetService();
+  final EqPresetFileService _fileService = const EqPresetFileService();
   bool _loading = true;
   List<EqPreset> _custom = const [];
 
@@ -126,51 +134,72 @@ class _PresetsSheetState extends ConsumerState<_PresetsSheet> {
     final controller = TextEditingController(text: initial ?? '');
     final result = await showDialog<String?>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: AppColors.glassBackgroundStrong,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-            side: BorderSide(color: AppColors.glassBorder),
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.spacingLg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                initial == null ? 'Save Preset' : 'Rename Preset',
+                style: TextStyle(
+                  color: context.adaptiveTextPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingMd),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.glassBackgroundStrong,
+                  borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                  border: Border.all(color: AppColors.glassBorder),
+                ),
+                child: TextField(
+                  controller: controller,
+                  autofocus: true,
+                  style: TextStyle(color: context.adaptiveTextPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Preset name',
+                    hintStyle: TextStyle(color: context.adaptiveTextTertiary),
+                    contentPadding: const EdgeInsets.all(
+                      AppConstants.spacingMd,
+                    ),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingLg),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(null),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(color: context.adaptiveTextSecondary),
+                    ),
+                  ),
+                  const SizedBox(width: AppConstants.spacingSm),
+                  TextButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(controller.text.trim()),
+                    child: Text(
+                      'Save',
+                      style: TextStyle(color: context.adaptiveTextPrimary),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          title: Text(
-            initial == null ? 'Save Preset' : 'Rename Preset',
-            style: TextStyle(color: context.adaptiveTextPrimary),
-          ),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            style: TextStyle(color: context.adaptiveTextPrimary),
-            decoration: InputDecoration(
-              hintText: 'Preset name',
-              hintStyle: TextStyle(color: context.adaptiveTextTertiary),
-              enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: AppColors.glassBorder),
-              ),
-              focusedBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: context.adaptiveTextPrimary),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(null),
-              child: Text(
-                'Cancel',
-                style: TextStyle(color: context.adaptiveTextSecondary),
-              ),
-            ),
-            TextButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(controller.text.trim()),
-              child: Text(
-                'Save',
-                style: TextStyle(color: context.adaptiveTextPrimary),
-              ),
-            ),
-          ],
-        );
-      },
+        ),
+      ),
     );
     controller.dispose();
     final trimmed = result?.trim();
@@ -184,6 +213,7 @@ class _PresetsSheetState extends ConsumerState<_PresetsSheet> {
       name: name,
       enabled: s.enabled,
       mode: s.mode,
+      preampDb: s.preampDb,
       graphicGainsDb: List<double>.of(s.graphicGainsDb, growable: false),
       parametricBands: List<ParametricBand>.of(
         s.parametricBands,
@@ -202,6 +232,7 @@ class _PresetsSheetState extends ConsumerState<_PresetsSheet> {
           presetName: preset.name,
           enabled: preset.enabled,
           mode: preset.mode,
+          preampDb: preset.preampDb,
           graphicGainsDb: preset.graphicGainsDb,
           parametricBands: preset.parametricBands,
           compressor: preset.compressor,
@@ -220,6 +251,158 @@ class _PresetsSheetState extends ConsumerState<_PresetsSheet> {
     await _load();
   }
 
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+      );
+  }
+
+  Future<void> _importPresetFile() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json', 'txt'],
+        withData: kIsWeb,
+      );
+      final file = result?.files.single;
+      if (file == null) return;
+
+      final contents = file.bytes != null
+          ? utf8.decode(file.bytes!)
+          : await File(file.path!).readAsString();
+      final imported = _fileService.fromFileText(
+        text: contents,
+        fileName: file.name,
+      );
+      final preset = imported.copyWith(
+        id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+      );
+
+      await _service.upsertCustomPreset(preset);
+      await _load();
+      ref
+          .read(equalizerProvider.notifier)
+          .applyPreset(
+            presetName: preset.name,
+            enabled: preset.enabled,
+            mode: preset.mode,
+            preampDb: preset.preampDb,
+            graphicGainsDb: preset.graphicGainsDb,
+            parametricBands: preset.parametricBands,
+            compressor: preset.compressor,
+            limiter: preset.limiter,
+            fx: preset.fx,
+          );
+      _showMessage('Imported "${preset.name}"');
+    } on FormatException catch (error) {
+      _showMessage(error.message);
+    } catch (_) {
+      _showMessage('Failed to import preset file.');
+    }
+  }
+
+  Future<void> _exportCurrentPreset() async {
+    final format = await _askForExportFormat();
+    if (format == null) return;
+
+    final state = ref.read(equalizerProvider);
+    final preset = _currentAsPreset(
+      id: 'export_${DateTime.now().millisecondsSinceEpoch}',
+      name: state.activePresetName ?? 'equalizer_preset',
+    );
+
+    final extension = format == _PresetFileFormat.json ? 'json' : 'txt';
+    final contents = format == _PresetFileFormat.json
+        ? _fileService.toJsonText(preset)
+        : _fileService.toTxtText(preset);
+    final bytes = Uint8List.fromList(utf8.encode(contents));
+    final suggestedName = '${_safeFileName(preset.name)}.$extension';
+
+    try {
+      final savePath = await FilePicker.saveFile(
+        dialogTitle: 'Export equalizer preset',
+        fileName: suggestedName,
+        type: FileType.custom,
+        allowedExtensions: [extension],
+        bytes: bytes,
+      );
+      if (savePath == null) {
+        if (kIsWeb) {
+          _showMessage('Started preset download.');
+        }
+        return;
+      }
+
+      _showMessage('Exported preset to $savePath');
+    } catch (_) {
+      final fallbackPath = await _savePresetFallback(
+        fileName: suggestedName,
+        contents: contents,
+      );
+      _showMessage('Exported preset to $fallbackPath');
+    }
+  }
+
+  Future<_PresetFileFormat?> _askForExportFormat() async {
+    return showDialog<_PresetFileFormat>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.spacingLg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Format',
+                style: TextStyle(
+                  color: context.adaptiveTextPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingMd),
+              _FormatOption(
+                label: 'JSON',
+                description: 'Native Flick preset format',
+                onTap: () => Navigator.of(context).pop(_PresetFileFormat.json),
+              ),
+              const SizedBox(height: AppConstants.spacingSm),
+              _FormatOption(
+                label: 'TXT',
+                description: 'Compatible with Poweramp EQ',
+                onTap: () => Navigator.of(context).pop(_PresetFileFormat.txt),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<String> _savePresetFallback({
+    required String fileName,
+    required String contents,
+  }) async {
+    final directory = await getApplicationDocumentsDirectory();
+    final file = File('${directory.path}/$fileName');
+    await file.writeAsString(contents);
+    return file.path;
+  }
+
+  String _safeFileName(String value) {
+    final normalized = value.trim().replaceAll(RegExp(r'\s+'), '_');
+    final sanitized = normalized.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '');
+    return sanitized.isEmpty ? 'equalizer_preset' : sanitized;
+  }
+
   Future<void> _renamePreset(EqPreset preset) async {
     final name = await _askForName(context, initial: preset.name);
     if (name == null) return;
@@ -230,34 +413,60 @@ class _PresetsSheetState extends ConsumerState<_PresetsSheet> {
   Future<void> _deletePreset(EqPreset preset) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.glassBackgroundStrong,
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-          side: BorderSide(color: AppColors.glassBorder),
         ),
-        title: Text(
-          'Delete preset?',
-          style: TextStyle(color: context.adaptiveTextPrimary),
-        ),
-        content: Text(
-          'Delete "${preset.name}"? This cannot be undone.',
-          style: TextStyle(color: context.adaptiveTextSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: context.adaptiveTextSecondary),
-            ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.spacingLg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Delete Preset?',
+                style: TextStyle(
+                  color: context.adaptiveTextPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingSm),
+              Text(
+                'Delete "${preset.name}"? This cannot be undone.',
+                style: TextStyle(
+                  color: context.adaptiveTextSecondary,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: AppConstants.spacingLg),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(color: context.adaptiveTextSecondary),
+                    ),
+                  ),
+                  const SizedBox(width: AppConstants.spacingSm),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text(
+                      'Delete',
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Delete'),
-          ),
-        ],
+        ),
       ),
     );
     if (confirmed != true) return;
@@ -291,6 +500,20 @@ class _PresetsSheetState extends ConsumerState<_PresetsSheet> {
                 title: 'Save current as preset',
                 subtitle: 'Create a custom preset',
                 onTap: _saveNewPreset,
+              ),
+              _Divider(),
+              _PresetActionRow(
+                icon: LucideIcons.fileUp,
+                title: 'Import preset file',
+                subtitle: 'Load a JSON or TXT preset',
+                onTap: _importPresetFile,
+              ),
+              _Divider(),
+              _PresetActionRow(
+                icon: LucideIcons.fileDown,
+                title: 'Export current preset',
+                subtitle: 'Save the current EQ as JSON or TXT',
+                onTap: _exportCurrentPreset,
               ),
             ],
           ),
@@ -397,6 +620,70 @@ class _PresetActionRow extends StatelessWidget {
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: context.adaptiveTextTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                LucideIcons.chevronRight,
+                color: context.adaptiveTextTertiary,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FormatOption extends StatelessWidget {
+  final String label;
+  final String description;
+  final VoidCallback onTap;
+
+  const _FormatOption({
+    required this.label,
+    required this.description,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppConstants.spacingMd),
+          decoration: BoxDecoration(
+            color: AppColors.glassBackgroundStrong,
+            borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+            border: Border.all(color: AppColors.glassBorder),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: context.adaptiveTextPrimary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        color: context.adaptiveTextSecondary,
+                        fontSize: 13,
                       ),
                     ),
                   ],
@@ -1032,7 +1319,10 @@ class _ParametricEqView extends ConsumerWidget {
               icon: LucideIcons.funnel,
               label: 'Multi-filter bands',
             ),
-            const _StatPill(icon: LucideIcons.plus, label: 'Add up to 8 bands'),
+            _StatPill(
+              icon: LucideIcons.plus,
+              label: 'Add up to ${EqualizerNotifier.maxParametricBands} bands',
+            ),
           ],
         ),
         const SizedBox(height: AppConstants.spacingMd),
