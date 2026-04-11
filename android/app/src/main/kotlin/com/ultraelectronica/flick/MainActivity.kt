@@ -18,8 +18,6 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
-import android.media.audiofx.Equalizer
-import android.media.audiofx.AudioEffect
 import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
@@ -31,6 +29,7 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import com.ultraelectronica.flick.audiofx.JustAudioProcessingController
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
@@ -84,7 +83,7 @@ class MainActivity: FlutterActivity() {
             Log.i("UAC2", "Direct USB audio focus changed: $focusChange")
         }
     private var cachedMusicVolumeBeforeMute: Int? = null
-    private var equalizer: Equalizer? = null
+    private val justAudioProcessingController = JustAudioProcessingController()
     private var volumeContentObserver: ContentObserver? = null
     private val volumeObserverHandler = Handler(Looper.getMainLooper())
     private var volumeObserverDebounceRunnable: Runnable? = null
@@ -635,26 +634,10 @@ class MainActivity: FlutterActivity() {
             }
         }
 
-        // Equalizer channel for Android native AudioEffect API
+        // Audio processing channel for Android native AudioEffect counterparts.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, EQUALIZER_CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "setEqualizer" -> {
-                    val enabled = call.argument<Boolean>("enabled") ?: false
-                    val gainsDb = call.argument<List<Double>>("gainsDb")
-                    @Suppress("UNCHECKED_CAST")
-                    val audioSessionId = (call.arguments as? Map<String, Any?>)?.get("audioSessionId")?.let {
-                        when (it) {
-                            is Number -> it.toInt()
-                            else -> null
-                        }
-                    }
-                    if (gainsDb != null && gainsDb.size == 10) {
-                        setEqualizer(enabled, gainsDb, audioSessionId, result)
-                    } else {
-                        result.error("INVALID_ARGUMENT", "gainsDb must be a list of 10 doubles", null)
-                    }
-                }
-                else -> result.notImplemented()
+            if (!justAudioProcessingController.handle(call, result)) {
+                result.notImplemented()
             }
         }
 
@@ -721,68 +704,6 @@ class MainActivity: FlutterActivity() {
 //             else -> result.error("CONVERSION_ERROR", "Unknown error", null)
 //         }
 //     }
-
-    private fun setEqualizer(enabled: Boolean, gainsDb: List<Double>, audioSessionId: Int?, result: MethodChannel.Result) {
-        try {
-            // Release existing equalizer if any
-            equalizer?.release()
-            equalizer = null
-
-            if (!enabled) {
-                result.success(null)
-                return
-            }
-
-            // Must have audio session ID from just_audio (playback must have started at least once)
-            val sessionId = audioSessionId ?: run {
-                result.error("EQUALIZER_ERROR", "Audio session not ready. Start playback first.", null)
-                return
-            }
-
-            // Create equalizer effect attached to the same session as the player
-            equalizer = try {
-                Equalizer(0, sessionId)
-            } catch (e: Exception) {
-                result.error("EQUALIZER_ERROR", "Equalizer not available: ${e.message}", null)
-                return
-            }
-
-            val eq = equalizer ?: run {
-                result.error("EQUALIZER_ERROR", "Failed to create equalizer", null)
-                return
-            }
-
-            // Enable the equalizer
-            eq.enabled = true
-
-            // Map 10-band graphic EQ to Android's equalizer bands
-            // Android Equalizer typically has 5 bands, so we'll map our 10 bands to 5
-            val numBands = eq.numberOfBands
-            val bandLevelRange = eq.bandLevelRange
-            val minLevel = bandLevelRange[0] / 100.0 // Convert from mB to dB
-            val maxLevel = bandLevelRange[1] / 100.0
-
-            // Map 10 bands to available bands (simple averaging)
-            for (i in 0 until numBands) {
-                val startIdx = (i * 10) / numBands
-                val endIdx = ((i + 1) * 10) / numBands
-                var avgGain = 0.0
-                for (j in startIdx until endIdx) {
-                    avgGain += gainsDb[j]
-                }
-                avgGain /= (endIdx - startIdx)
-
-                // Clamp gain to Android's range
-                val clampedGain = avgGain.coerceIn(minLevel, maxLevel)
-                val levelInMillibels = (clampedGain * 100).toInt()
-                eq.setBandLevel(i.toShort(), levelInMillibels.toShort())
-            }
-
-            result.success(null)
-        } catch (e: Exception) {
-            result.error("EQUALIZER_ERROR", "Failed to set equalizer: ${e.message}", null)
-        }
-    }
 
     private fun openDocumentTree() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
@@ -2992,6 +2913,7 @@ class MainActivity: FlutterActivity() {
         unregisterReceiverSafely(usbHotplugReceiver)
         unregisterReceiverSafely(usbPermissionReceiver)
         unregisterVolumeContentObserver()
+        justAudioProcessingController.release()
         usbHotplugReceiver = null
         usbPermissionReceiver = null
         deactivateDirectUsb()

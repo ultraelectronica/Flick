@@ -7,6 +7,8 @@ Flick Player is a high-performance music player application built with Flutter a
 ### Audio Engine
 - **Primary**: Custom Rust audio engine with UAC 2.0 support for bit-perfect playback through USB DACs/AMPs
 - **Fallback**: `just_audio` for standard audio playback on devices without USB audio support
+- **Audio Processing**: Advanced EQ, dynamics, and spatial/time effects via JustAudioProcessingController on Android
+- **EQ Preset Management**: Import/export functionality for EQ presets in JSON and TXT formats with parametric band support
 - **Gapless Playback**: Seamless transitions between tracks without silence
 - **Crossfade Support**: Configurable crossfade between tracks
 
@@ -17,10 +19,12 @@ Flick Player is a high-performance music player application built with Flutter a
 - Hot-plug support for dynamic device connection/disconnection
 - Bit-perfect audio transmission to external USB audio devices
 
-### 10-Band Graphic Equalizer
-- Parametric equalizer with 10 bands
-- Real-time audio processing
-- Preset configurations for common listening scenarios
+### Advanced Equalizer & Audio Effects
+- 10-band graphic equalizer with parametric controls
+- Real-time audio processing with EQ, dynamics, and spatial effects
+- Preset management with import/export functionality (JSON/TXT formats)
+- Spatial and time effects including balance, tempo, damp, filter, delay, size, mix, feedback, and width
+- Android-optimized audio processing via JustAudioProcessingController
 
 ### Library Management
 - Automatic scanning of local music folders
@@ -45,12 +49,10 @@ Flick Player is a high-performance music player application built with Flutter a
 - DSD/DSF support
 - MQA support
 - Poweramp-style EQ filters, including low-pass
-- Advanced audio controls such as balance, tempo, damp, filter, delays, size, and mix
 - Themes and broader UI customization options
 - Album art improvements
 - Lyric clickability and sync
 - Scrobble settings
-- Crossfade and fade controls
 - Resampler enhancements
 - Advanced audio tweaks
 - Visualizations
@@ -102,10 +104,19 @@ flick_player/
 │   │   ├── playlists/            # Playlist management
 │   │   ├── recently_played/      # Recently played tracks
 │   │   ├── settings/             # Settings and equalizer
+│   │   │   ├── equalizer_screen.dart     # Equalizer UI with preset management
+│   │   │   └── ...                       # Other settings screens
 │   │   └── songs/                # Song library
 │   ├── models/                   # Data models
 │   ├── providers/                # Riverpod providers
 │   ├── services/                 # Business logic services
+│   │   ├── eq_preset_service.dart        # EQ preset management
+│   │   ├── eq_preset_file_service.dart   # EQ preset import/export (JSON/TXT)
+│   │   ├── equalizer_service.dart        # EQ and FX application
+│   │   ├── android_audio_processing_service.dart # Android audio processing
+│   │   ├── player_service.dart           # Playback control
+│   │   ├── uac2_service.dart             # USB audio device management
+│   │   └── ...                           # Other services
 │   └── widgets/                 # Reusable widgets
 ├── rust/                         # Rust backend
 │   └── src/
@@ -115,14 +126,22 @@ flick_player/
 │       │   ├── decoder.rs        # Symphonia decoder
 │       │   ├── resampler.rs      # Sample rate conversion
 │       │   ├── equalizer.rs      # 10-band graphic EQ
+│       │   ├── fx.rs             # Spatial and time effects
 │       │   └── crossfader.rs     # Crossfade support
 │       └── uac2/                 # USB Audio Class 2.0
 │           ├── device.rs         # Device representation
 │           ├── descriptors/      # USB descriptor parsing
 │           ├── transfer.rs       # Isochronous transfers
 │           └── audio_pipeline.rs # Format conversion
+├── test/                         # Test files
+│   └── services/
+│       └── eq_preset_file_service_test.dart # EQ preset file service tests
 ├── docs/                         # Architecture documentation
 ├── android/                      # Android platform code
+│   └── app/src/main/kotlin/com/ultraelectronica/flick/
+│       ├── MainActivity.kt               # Android entry point
+│       └── audiofx/
+│           └── JustAudioProcessingController.kt # Android audio effects
 └── pubspec.yaml                  # Flutter dependencies
 ```
 

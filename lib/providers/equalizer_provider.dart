@@ -286,6 +286,7 @@ double parametricBandMarkerDb(ParametricBand band) {
 class EqualizerState {
   final bool enabled;
   final EqMode mode;
+  final double preampDb;
 
   /// Graphic EQ band gains in dB (UI only).
   final List<double> graphicGainsDb; // length = 10
@@ -304,6 +305,7 @@ class EqualizerState {
   const EqualizerState({
     this.enabled = true,
     this.mode = EqMode.graphic,
+    this.preampDb = 0.0,
     required this.graphicGainsDb,
     required this.parametricBands,
     this.activePresetName,
@@ -315,6 +317,7 @@ class EqualizerState {
   EqualizerState copyWith({
     bool? enabled,
     EqMode? mode,
+    double? preampDb,
     List<double>? graphicGainsDb,
     List<ParametricBand>? parametricBands,
     String? activePresetName,
@@ -326,6 +329,7 @@ class EqualizerState {
     return EqualizerState(
       enabled: enabled ?? this.enabled,
       mode: mode ?? this.mode,
+      preampDb: preampDb ?? this.preampDb,
       graphicGainsDb: graphicGainsDb ?? this.graphicGainsDb,
       parametricBands: parametricBands ?? this.parametricBands,
       activePresetName: clearActivePresetName
@@ -362,6 +366,7 @@ class EqualizerState {
     return EqualizerState(
       enabled: true,
       mode: EqMode.graphic,
+      preampDb: 0.0,
       graphicGainsDb: List<double>.filled(10, 0.0, growable: false),
       parametricBands: List<ParametricBand>.generate(
         5,
@@ -392,6 +397,8 @@ final eqGraphRepaintControllerProvider = Provider<EqGraphRepaintController>((
 class EqualizerNotifier extends Notifier<EqualizerState> {
   static const double gainMinDb = -12.0;
   static const double gainMaxDb = 12.0;
+  static const double preampMinDb = -24.0;
+  static const double preampMaxDb = 24.0;
   static const double compressorThresholdMinDb = -36.0;
   static const double compressorThresholdMaxDb = 0.0;
   static const double compressorRatioMin = 1.0;
@@ -424,7 +431,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
   static const double fxFeedbackMax = 0.95;
   static const double fxWidthMin = 0.0;
   static const double fxWidthMax = 2.0;
-  static const int maxParametricBands = 8;
+  static const int maxParametricBands = 10;
 
   @override
   EqualizerState build() {
@@ -461,6 +468,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
 
   void resetGraphic() {
     state = state.copyWith(
+      preampDb: 0.0,
       graphicGainsDb: List<double>.filled(10, 0.0, growable: false),
       clearActivePresetName: true,
     );
@@ -517,6 +525,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
 
   void resetParametric() {
     state = state.copyWith(
+      preampDb: 0.0,
       parametricBands: List<ParametricBand>.generate(
         5,
         (i) => ParametricBand(
@@ -765,6 +774,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     required String presetName,
     required bool enabled,
     required EqMode mode,
+    double preampDb = 0.0,
     required List<double> graphicGainsDb,
     required List<ParametricBand> parametricBands,
     CompressorSettings compressor = const CompressorSettings(),
@@ -774,6 +784,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     state = state.copyWith(
       enabled: enabled,
       mode: mode,
+      preampDb: preampDb.clamp(preampMinDb, preampMaxDb).toDouble(),
       graphicGainsDb: List<double>.of(graphicGainsDb, growable: false),
       parametricBands: List<ParametricBand>.of(
         parametricBands,

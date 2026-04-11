@@ -169,8 +169,7 @@ class AndroidAudioEngine implements AudioEngine {
     await _configurePlayer(player);
 
     final shouldFastStartCurrentTrackOnly =
-        !_loadedSingleTrackOnly &&
-        player.sequence.isEmpty &&
+        (_loadedSingleTrackOnly || player.sequence.isEmpty) &&
         playlist.length > _fastStartPlaylistThreshold;
 
     if (canReusePlaylist &&

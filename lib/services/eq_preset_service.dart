@@ -9,6 +9,7 @@ class EqPreset {
   final String name;
   final bool enabled;
   final EqMode mode;
+  final double preampDb;
   final List<double> graphicGainsDb;
   final List<ParametricBand> parametricBands;
   final CompressorSettings compressor;
@@ -20,6 +21,7 @@ class EqPreset {
     required this.name,
     required this.enabled,
     required this.mode,
+    this.preampDb = 0.0,
     required this.graphicGainsDb,
     required this.parametricBands,
     this.compressor = const CompressorSettings(),
@@ -32,6 +34,7 @@ class EqPreset {
     String? name,
     bool? enabled,
     EqMode? mode,
+    double? preampDb,
     List<double>? graphicGainsDb,
     List<ParametricBand>? parametricBands,
     CompressorSettings? compressor,
@@ -43,6 +46,7 @@ class EqPreset {
       name: name ?? this.name,
       enabled: enabled ?? this.enabled,
       mode: mode ?? this.mode,
+      preampDb: preampDb ?? this.preampDb,
       graphicGainsDb: graphicGainsDb ?? this.graphicGainsDb,
       parametricBands: parametricBands ?? this.parametricBands,
       compressor: compressor ?? this.compressor,
@@ -56,6 +60,7 @@ class EqPreset {
     'name': name,
     'enabled': enabled,
     'mode': mode.name,
+    'preampDb': preampDb,
     'graphicGainsDb': graphicGainsDb,
     'parametricBands': parametricBands
         .map(
@@ -137,6 +142,7 @@ class EqPreset {
       name: (json['name'] as String?) ?? 'Preset',
       enabled: (json['enabled'] as bool?) ?? true,
       mode: mode,
+      preampDb: (json['preampDb'] as num?)?.toDouble() ?? 0.0,
       graphicGainsDb: gains.isEmpty
           ? List<double>.filled(10, 0.0, growable: false)
           : gains,
