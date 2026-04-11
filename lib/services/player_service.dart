@@ -1229,9 +1229,9 @@ class PlayerService {
     };
     _rustAudioService.durationNotifier.addListener(_rustDurationListener!);
 
-    _rustAudioService.onTrackEnded = (_) {
+    _rustAudioService.onTrackEnded = (endedPath) {
       if (!_usingRustBackend) return;
-      _onSongFinished();
+      unawaited(_onSongFinished(endedPath: endedPath));
     };
     _rustAudioService.onError = (message) {
       debugPrint('[PlayerService] Rust backend error: $message');
@@ -1291,6 +1291,7 @@ class PlayerService {
           _debugLog('[Playback] Track cleared');
         }
         if (state.currentTrack != null) {
+          _syncCurrentIndexToTrack(state.currentTrack!);
           _startReplayTracking(
             state.currentTrack!,
             initialPosition: state.position,
@@ -1351,18 +1352,34 @@ class PlayerService {
     );
   }
 
-  Future<void> _onSongFinished() async {
-    debugPrint(
-      '_onSongFinished: loopMode=${loopModeNotifier.value}, currentIndex=$_currentIndex, playlistLength=${_playlist.length}',
+  Future<void> _onSongFinished({String? endedPath}) {
+    return _enqueuePlaybackRequest(
+      () => _onSongFinishedInternal(endedPath: endedPath),
     );
+  }
+
+  Future<void> _onSongFinishedInternal({String? endedPath}) async {
+    debugPrint(
+      '_onSongFinished: loopMode=${loopModeNotifier.value}, currentIndex=$_currentIndex, playlistLength=${_playlist.length}, usingRustBackend=$_usingRustBackend, endedPath=$endedPath',
+    );
+
+    if (!shouldHandleManualCompletion(
+      usingRustBackend: _usingRustBackend,
+      loopMode: loopModeNotifier.value,
+    )) {
+      debugPrint('_onSongFinished: skipping manual completion handling');
+      return;
+    }
+
     if (loopModeNotifier.value == LoopMode.one) {
-      if (currentSongNotifier.value != null) {
+      final songToReplay = currentSongNotifier.value ?? _songAtCurrentIndex();
+      if (songToReplay != null) {
         debugPrint('_onSongFinished: LoopMode.one, replaying current song');
-        await play(currentSongNotifier.value!);
+        await _playInternal(songToReplay);
       }
     } else {
       debugPrint('_onSongFinished: Calling next()');
-      await next();
+      await _nextInternal();
     }
   }
 
@@ -2056,6 +2073,19 @@ class PlayerService {
       return null;
     }
     return _playlist[_currentIndex];
+  }
+
+  void _syncCurrentIndexToTrack(Song song) {
+    if (_playlist.isEmpty) {
+      return;
+    }
+
+    final resolvedIndex = _playlist.indexWhere((entry) => entry.id == song.id);
+    if (resolvedIndex == -1 || resolvedIndex == _currentIndex) {
+      return;
+    }
+
+    _setCurrentIndex(resolvedIndex);
   }
 
   void _rememberRestoredPlaybackContext(Song song, Duration position) {

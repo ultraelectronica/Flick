@@ -398,8 +398,11 @@ impl SourceProvider {
 
                 return (read + next_read, old_source);
             } else {
-                // No next track - fill with silence
+                // No next track - clear the finished source so completion is
+                // observed exactly once by the command thread.
+                let finished_source = self.current.take();
                 output[read..].fill(0.0);
+                return (read, finished_source);
             }
         }
 
@@ -417,5 +420,43 @@ impl SourceProvider {
         } else {
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AudioSource, SourceInfo, SourceProvider};
+    use std::path::PathBuf;
+
+    fn source_info(path: &str) -> SourceInfo {
+        SourceInfo {
+            path: PathBuf::from(path),
+            original_sample_rate: 48_000,
+            output_sample_rate: 48_000,
+            channels: 2,
+            total_samples: 4,
+            duration_secs: 4.0 / 48_000.0 / 2.0,
+        }
+    }
+
+    #[test]
+    fn read_clears_finished_current_source_without_next_track() {
+        let (mut source, mut producer) = AudioSource::new(source_info("track.flac"));
+        source.set_ready();
+        source.set_playing();
+
+        let written = producer.write(&[0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(written, 4);
+        producer.finish();
+
+        let mut provider = SourceProvider::new(48_000, 2);
+        provider.set_current(source);
+
+        let mut output = [0.0; 8];
+        let (read, finished_source) = provider.read(&mut output);
+
+        assert_eq!(read, 4);
+        assert!(finished_source.is_some());
+        assert!(provider.current().is_none());
     }
 }
