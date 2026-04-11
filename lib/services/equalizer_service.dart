@@ -14,9 +14,12 @@ Future<void> applyEqualizer(EqualizerState state) async {
   _lastRequestedState = _snapshotState(state);
 
   final useGraphic = state.mode == EqMode.graphic;
-  final gains = useGraphic
-      ? state.graphicGainsDb
-      : _parametricToGraphicGains(state.parametricBands);
+  final gains = _applyPreamp(
+    gains: useGraphic
+        ? state.graphicGainsDb
+        : _parametricToGraphicGains(state.parametricBands),
+    preampDb: state.preampDb,
+  );
 
   if (gains.length != 10) return;
 
@@ -131,6 +134,7 @@ List<double> _parametricToGraphicGains(List<ParametricBand> bands) {
 
 EqualizerState _snapshotState(EqualizerState state) {
   return state.copyWith(
+    preampDb: state.preampDb,
     graphicGainsDb: List<double>.of(state.graphicGainsDb, growable: false),
     parametricBands: List<ParametricBand>.of(
       state.parametricBands,
@@ -139,5 +143,19 @@ EqualizerState _snapshotState(EqualizerState state) {
     compressor: state.compressor.copyWith(),
     limiter: state.limiter.copyWith(),
     fx: state.fx.copyWith(),
+  );
+}
+
+List<double> _applyPreamp({
+  required List<double> gains,
+  required double preampDb,
+}) {
+  if (preampDb == 0.0) {
+    return List<double>.of(gains, growable: false);
+  }
+  return List<double>.generate(
+    gains.length,
+    (index) => gains[index] + preampDb,
+    growable: false,
   );
 }
