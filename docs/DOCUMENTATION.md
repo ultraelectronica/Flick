@@ -11,9 +11,29 @@ The application leverages the power of **Flutter** for a responsive, animated fr
 Flick Player includes support for Digital Audio Player (DAP) functionality through Android's audio subsystem:
 
 - **DAP Internal High-Res Mode**: When no USB DAC is connected, the app can utilize Android's internal DAC in high-resolution mode through Oboe/AAudio in exclusive mode when supported by the device
-- **Device Qualification**: The app checks device capabilities to confirm bit-perfect support through the internal audio path
+- **Device Qualification**: The app checks device capabilities (manufacturer, brand, model, and audio capabilities) to confirm bit-perfect support through the internal audio path
 - **Sample Rate Handling**: Supports high sample rates up to the device's maximum capabilities
 - **Exclusive Mode**: Attempts to open audio streams in exclusive mode for lower latency and better performance when available
+
+#### Supported DAP Brands & Models
+
+The application identifies and optimizes for several known DAP brands and model series:
+
+- **Supported Brands**:
+  - FiiO
+  - iBasso (including special "Mango Mode" detection)
+  - HiBy
+  - Shanling
+  - Astell&Kern / iRiver
+  - Cayin
+  - Sony (Walkman series)
+- **Known Model Prefixes**:
+  - FiiO: M-series (M11, M15, M17, M21, M23, M27), JM-series (JM21)
+  - iBasso: DX-series (DX160 through DX340)
+  - HiBy: R-series (R3 through R8), M-series (M300, M0 through M8)
+  - Astell&Kern: SA, SP, SE, A& series
+  - Sony: NW-A, NW-WM, NW-ZX series
+  - Other: Any device with a recognized DAP model prefix, no telephony, and high-res internal audio (>= 88.2 kHz) is classified as a DAP and marked as confirmed bit-perfect.
 
 ### Engine Architecture
 
