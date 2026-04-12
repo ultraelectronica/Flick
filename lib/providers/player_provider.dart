@@ -357,7 +357,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   /// Toggle loop mode.
   void toggleLoopMode() {
-    _service.toggleLoopMode();
+    unawaited(_service.toggleLoopMode());
   }
 
   /// Set playback speed.

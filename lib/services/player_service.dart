@@ -614,6 +614,8 @@ class PlayerService {
       shouldSuppressTrackSync: () =>
           _suppressSequenceStateUpdates || _isRebuildingPlaylist,
       shouldIgnoreTrack: (track) => track.filePath == null,
+      shouldFastStartCurrentTrackOnly: () =>
+          loopModeNotifier.value != LoopMode.all,
     );
   }
 
@@ -2806,12 +2808,19 @@ class PlayerService {
     await _updateNotificationState();
   }
 
-  void toggleLoopMode() {
+  Future<void> toggleLoopMode() async {
     final modes = LoopMode.values;
     final nextIndex = (loopModeNotifier.value.index + 1) % modes.length;
     loopModeNotifier.value = modes[nextIndex];
 
-    _updateLoopMode();
+    await _updateLoopMode();
+
+    // Repeat-all needs a real playlist loaded into just_audio. If the Android
+    // engine fast-started a single track, rebuild now so ExoPlayer can advance
+    // to the next item instead of looping the current source forever.
+    if (!_usingRustBackend && loopModeNotifier.value == LoopMode.all) {
+      await _rebuildPlaylist();
+    }
   }
 
   // ==================== Volume ====================

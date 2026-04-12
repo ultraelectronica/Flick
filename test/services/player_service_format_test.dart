@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/services/android_audio_engine.dart';
 
 void main() {
   group('canonicalPlaybackFileType', () {
@@ -85,6 +86,78 @@ void main() {
         shouldHandleManualCompletion(
           usingRustBackend: false,
           loopMode: LoopMode.all,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('shouldUseFastStartCurrentTrackOnly', () {
+    test('disables fast-start when repeat-all is active', () {
+      expect(
+        shouldUseFastStartCurrentTrackOnly(
+          allowFastStart: false,
+          loadedSingleTrackOnly: false,
+          sequenceIsEmpty: true,
+          playlistLength: 100,
+        ),
+        isFalse,
+      );
+    });
+
+    test('allows fast-start only for large eligible playlists', () {
+      expect(
+        shouldUseFastStartCurrentTrackOnly(
+          allowFastStart: true,
+          loadedSingleTrackOnly: false,
+          sequenceIsEmpty: true,
+          playlistLength: 25,
+        ),
+        isTrue,
+      );
+
+      expect(
+        shouldUseFastStartCurrentTrackOnly(
+          allowFastStart: true,
+          loadedSingleTrackOnly: false,
+          sequenceIsEmpty: true,
+          playlistLength: 24,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('shouldExitSingleTrackMode', () {
+    test('exits single-track mode once a real playlist is loaded', () {
+      expect(
+        shouldExitSingleTrackMode(
+          loadedSingleTrackOnly: true,
+          playerSequenceLength: 2,
+        ),
+        isTrue,
+      );
+    });
+
+    test('stays in single-track mode for empty or single-item sequences', () {
+      expect(
+        shouldExitSingleTrackMode(
+          loadedSingleTrackOnly: true,
+          playerSequenceLength: 0,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldExitSingleTrackMode(
+          loadedSingleTrackOnly: true,
+          playerSequenceLength: 1,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldExitSingleTrackMode(
+          loadedSingleTrackOnly: false,
+          playerSequenceLength: 3,
         ),
         isFalse,
       );

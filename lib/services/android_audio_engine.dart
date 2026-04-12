@@ -18,6 +18,27 @@ typedef AndroidPlayerConfigurator =
 typedef AndroidEngineDisposer = Future<void> Function();
 typedef AndroidTrackSyncBlocker = bool Function();
 typedef AndroidTrackIgnorePredicate = bool Function(Song track);
+typedef AndroidFastStartPredicate = bool Function();
+
+@visibleForTesting
+bool shouldUseFastStartCurrentTrackOnly({
+  required bool allowFastStart,
+  required bool loadedSingleTrackOnly,
+  required bool sequenceIsEmpty,
+  required int playlistLength,
+}) {
+  return allowFastStart &&
+      (loadedSingleTrackOnly || sequenceIsEmpty) &&
+      playlistLength > AndroidAudioEngine.fastStartPlaylistThreshold;
+}
+
+@visibleForTesting
+bool shouldExitSingleTrackMode({
+  required bool loadedSingleTrackOnly,
+  required int playerSequenceLength,
+}) {
+  return loadedSingleTrackOnly && playerSequenceLength > 1;
+}
 
 class AndroidAudioEngine implements AudioEngine {
   AndroidAudioEngine({
@@ -29,6 +50,7 @@ class AndroidAudioEngine implements AudioEngine {
     required AndroidEngineDisposer disposeEngine,
     required AndroidTrackSyncBlocker shouldSuppressTrackSync,
     required AndroidTrackIgnorePredicate shouldIgnoreTrack,
+    required AndroidFastStartPredicate shouldFastStartCurrentTrackOnly,
   }) : _playerProvider = playerProvider,
        _sourcesBuilder = sourcesBuilder,
        _sourceBuilder = sourceBuilder,
@@ -36,7 +58,8 @@ class AndroidAudioEngine implements AudioEngine {
        _configurePlayer = configurePlayer,
        _disposeEngine = disposeEngine,
        _shouldSuppressTrackSync = shouldSuppressTrackSync,
-       _shouldIgnoreTrack = shouldIgnoreTrack;
+       _shouldIgnoreTrack = shouldIgnoreTrack,
+       _shouldFastStartCurrentTrackOnly = shouldFastStartCurrentTrackOnly;
 
   final AndroidPlayerProvider _playerProvider;
   final AndroidAudioSourcesBuilder _sourcesBuilder;
@@ -46,6 +69,7 @@ class AndroidAudioEngine implements AudioEngine {
   final AndroidEngineDisposer _disposeEngine;
   final AndroidTrackSyncBlocker _shouldSuppressTrackSync;
   final AndroidTrackIgnorePredicate _shouldIgnoreTrack;
+  final AndroidFastStartPredicate _shouldFastStartCurrentTrackOnly;
 
   final StreamController<PlaybackState> _controller =
       StreamController<PlaybackState>.broadcast();
@@ -57,7 +81,7 @@ class AndroidAudioEngine implements AudioEngine {
   bool _awaitingInitialSeek = false;
   bool _loadedSingleTrackOnly = false;
 
-  static const int _fastStartPlaylistThreshold = 24;
+  static const int fastStartPlaylistThreshold = 24;
 
   @override
   Stream<PlaybackState> get playbackStateStream => _controller.stream;
@@ -75,6 +99,20 @@ class AndroidAudioEngine implements AudioEngine {
     _subscriptions.add(
       player.playerStateStream.listen((state) {
         _emit(_state.copyWith(isPlaying: state.playing));
+      }),
+    );
+
+    _subscriptions.add(
+      player.playbackEventStream.listen((event) {
+        final nextDuration = event.duration ?? _state.duration;
+        _emit(
+          _state.copyWith(
+            position: event.updatePosition,
+            bufferedPosition: event.bufferedPosition,
+            duration: nextDuration,
+          ),
+        );
+        _syncTrackFromIndex(player.currentIndex);
       }),
     );
 
@@ -113,6 +151,7 @@ class AndroidAudioEngine implements AudioEngine {
   }
 
   void _syncTrackFromIndex(int? index) {
+    _syncPlaylistStateFromPlayer();
     if (_shouldSuppressTrackSync()) return;
     if (_awaitingInitialSeek) return;
     final nextTrack = _resolveTrack(index);
@@ -129,6 +168,23 @@ class AndroidAudioEngine implements AudioEngine {
         duration: nextTrack?.duration ?? Duration.zero,
       ),
     );
+  }
+
+  void _syncPlaylistStateFromPlayer() {
+    final player = _player;
+    if (player == null) return;
+
+    if (shouldExitSingleTrackMode(
+      loadedSingleTrackOnly: _loadedSingleTrackOnly,
+      playerSequenceLength: player.sequence.length,
+    )) {
+      _loadedSingleTrackOnly = false;
+      _playlistSignature = _playlistProvider()
+          .map((song) => song.id)
+          .toList(growable: false);
+    } else if (player.sequence.isEmpty) {
+      _playlistSignature = const <String>[];
+    }
   }
 
   Song? _resolveTrack(int? index) {
@@ -168,9 +224,12 @@ class AndroidAudioEngine implements AudioEngine {
     _loadedTrack = track;
     await _configurePlayer(player);
 
-    final shouldFastStartCurrentTrackOnly =
-        (_loadedSingleTrackOnly || player.sequence.isEmpty) &&
-        playlist.length > _fastStartPlaylistThreshold;
+    final shouldFastStartCurrentTrackOnly = shouldUseFastStartCurrentTrackOnly(
+      allowFastStart: _shouldFastStartCurrentTrackOnly(),
+      loadedSingleTrackOnly: _loadedSingleTrackOnly,
+      sequenceIsEmpty: player.sequence.isEmpty,
+      playlistLength: playlist.length,
+    );
 
     if (canReusePlaylist &&
         player.sequence.isNotEmpty &&
