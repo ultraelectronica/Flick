@@ -159,6 +159,25 @@ bool shouldHandleManualCompletion({
   return loopMode == LoopMode.off;
 }
 
+@visibleForTesting
+bool shouldSyncNotificationForRepeatOneLoop({
+  required LoopMode loopMode,
+  required bool sameTrack,
+  required Duration previousPosition,
+  required Duration currentPosition,
+  required Duration trackDuration,
+}) {
+  if (loopMode != LoopMode.one ||
+      !sameTrack ||
+      trackDuration <= Duration.zero) {
+    return false;
+  }
+
+  return currentPosition < previousPosition &&
+      previousPosition >= trackDuration - const Duration(seconds: 3) &&
+      currentPosition <= const Duration(milliseconds: 1500);
+}
+
 /// Singleton service to manage global audio playback state.
 ///
 /// Uses just_audio for playback with gapless playback support.
@@ -1279,6 +1298,15 @@ class PlayerService {
 
       final previousTrackId = previous?.currentTrack?.id;
       final currentTrackId = state.currentTrack?.id;
+      final shouldSyncLoopedNotification =
+          shouldSyncNotificationForRepeatOneLoop(
+            loopMode: loopModeNotifier.value,
+            sameTrack:
+                previousTrackId != null && previousTrackId == currentTrackId,
+            previousPosition: _lastPosition,
+            currentPosition: state.position,
+            trackDuration: state.duration,
+          );
       if (previousTrackId != currentTrackId) {
         if (currentTrackId != null && currentTrackId == _restoredSongId) {
           _clearRestoredPlaybackContext(songId: currentTrackId);
@@ -1315,6 +1343,13 @@ class PlayerService {
           state.currentTrack != null) {
         unawaited(_updateNotificationState());
       }
+
+      if (shouldSyncLoopedNotification && state.currentTrack != null) {
+        _lastNotificationUpdate = DateTime.now();
+        unawaited(_updateNotificationState());
+      }
+
+      _lastPosition = state.position;
 
       unawaited(
         _refreshAudioOutputDiagnostics(

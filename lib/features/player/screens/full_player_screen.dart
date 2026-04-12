@@ -1799,26 +1799,6 @@ class _AnimatedSongScene extends StatelessWidget {
                               lyricsService: lyricsService,
                             ),
                           ),
-                          Align(
-                            alignment: Alignment.bottomCenter,
-                            child: IgnorePointer(
-                              child: Container(
-                                height: context.responsive(72.0, 84.0, 96.0),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.transparent,
-                                      Colors.black.withValues(alpha: 0.04),
-                                      Colors.black.withValues(alpha: 0.14),
-                                      Colors.black.withValues(alpha: 0.26),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ),
