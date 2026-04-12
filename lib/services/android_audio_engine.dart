@@ -32,6 +32,14 @@ bool shouldUseFastStartCurrentTrackOnly({
       playlistLength > AndroidAudioEngine.fastStartPlaylistThreshold;
 }
 
+@visibleForTesting
+bool shouldExitSingleTrackMode({
+  required bool loadedSingleTrackOnly,
+  required int playerSequenceLength,
+}) {
+  return loadedSingleTrackOnly && playerSequenceLength > 1;
+}
+
 class AndroidAudioEngine implements AudioEngine {
   AndroidAudioEngine({
     required AndroidPlayerProvider playerProvider,
@@ -143,6 +151,7 @@ class AndroidAudioEngine implements AudioEngine {
   }
 
   void _syncTrackFromIndex(int? index) {
+    _syncPlaylistStateFromPlayer();
     if (_shouldSuppressTrackSync()) return;
     if (_awaitingInitialSeek) return;
     final nextTrack = _resolveTrack(index);
@@ -159,6 +168,23 @@ class AndroidAudioEngine implements AudioEngine {
         duration: nextTrack?.duration ?? Duration.zero,
       ),
     );
+  }
+
+  void _syncPlaylistStateFromPlayer() {
+    final player = _player;
+    if (player == null) return;
+
+    if (shouldExitSingleTrackMode(
+      loadedSingleTrackOnly: _loadedSingleTrackOnly,
+      playerSequenceLength: player.sequence.length,
+    )) {
+      _loadedSingleTrackOnly = false;
+      _playlistSignature = _playlistProvider()
+          .map((song) => song.id)
+          .toList(growable: false);
+    } else if (player.sequence.isEmpty) {
+      _playlistSignature = const <String>[];
+    }
   }
 
   Song? _resolveTrack(int? index) {

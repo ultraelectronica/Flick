@@ -127,4 +127,40 @@ void main() {
       );
     });
   });
+
+  group('shouldExitSingleTrackMode', () {
+    test('exits single-track mode once a real playlist is loaded', () {
+      expect(
+        shouldExitSingleTrackMode(
+          loadedSingleTrackOnly: true,
+          playerSequenceLength: 2,
+        ),
+        isTrue,
+      );
+    });
+
+    test('stays in single-track mode for empty or single-item sequences', () {
+      expect(
+        shouldExitSingleTrackMode(
+          loadedSingleTrackOnly: true,
+          playerSequenceLength: 0,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldExitSingleTrackMode(
+          loadedSingleTrackOnly: true,
+          playerSequenceLength: 1,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldExitSingleTrackMode(
+          loadedSingleTrackOnly: false,
+          playerSequenceLength: 3,
+        ),
+        isFalse,
+      );
+    });
+  });
 }
