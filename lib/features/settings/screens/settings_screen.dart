@@ -23,6 +23,7 @@ import 'package:flick/features/settings/screens/equalizer_screen.dart';
 import 'package:flick/features/settings/screens/uac2_settings_screen.dart';
 import 'package:flick/features/settings/screens/duplicate_cleaner_screen.dart';
 import 'package:flick/features/settings/widgets/lastfm_settings_tile.dart';
+import 'package:flick/services/android_audio_device_service.dart';
 
 /// Settings screen matching the design language.
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -44,6 +45,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   int _songCount = 0;
   bool _isScanning = false;
   ScanProgress? _scanProgress;
+  bool _showBatteryOptimizationNotice = false;
+  bool _isXiaomiDevice = false;
 
   // ValueNotifier for bottom sheet progress updates
   final ValueNotifier<ScanProgress?> _scanProgressNotifier = ValueNotifier(
@@ -55,6 +58,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.initState();
     _loadLibraryData();
     _syncFoldersToDatabase();
+    _loadAndroidDeviceNotices();
   }
 
   @override
@@ -86,6 +90,70 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _folders = folders;
         _songCount = count;
       });
+    }
+  }
+
+  Future<void> _loadAndroidDeviceNotices() async {
+    final permissionService = PermissionService();
+
+    try {
+      final isAndroid = Theme.of(context).platform == TargetPlatform.android;
+      if (!isAndroid) {
+        return;
+      }
+
+      final results = await Future.wait<dynamic>([
+        AndroidAudioDeviceService.instance.refresh(),
+        permissionService.isIgnoringBatteryOptimizations(),
+      ]);
+      final deviceInfo = results[0] as AndroidPlaybackDeviceInfo;
+      final isIgnoringBatteryOptimizations = results[1] as bool;
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isXiaomiDevice = deviceInfo.isXiaomiDevice;
+        _showBatteryOptimizationNotice = !isIgnoringBatteryOptimizations;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _showBatteryOptimizationNotice = false;
+      });
+    }
+  }
+
+  Future<void> _openBatteryOptimizationSettings() async {
+    final permissionService = PermissionService();
+
+    try {
+      final opened = await permissionService.openBatteryOptimizationSettings();
+      if (!mounted) {
+        return;
+      }
+
+      if (!opened) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to open battery optimization settings'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to open battery optimization settings: $e'),
+        ),
+      );
     }
   }
 
@@ -762,6 +830,20 @@ SOFTWARE.
         children: [
           // Song count info
           _buildLibraryInfo(context),
+          if (_showBatteryOptimizationNotice) ...[
+            _buildDivider(),
+            _buildActionButton(
+              context,
+              icon: LucideIcons.batteryWarning,
+              title: _isXiaomiDevice
+                  ? 'Disable Battery Optimization (Recommended)'
+                  : 'Disable Battery Optimization',
+              subtitle: _isXiaomiDevice
+                  ? 'Required on many Xiaomi, Redmi, and POCO devices so rescans and background features keep working'
+                  : 'Allow Flick to run without aggressive background limits so rescans and background features keep working',
+              onTap: _openBatteryOptimizationSettings,
+            ),
+          ],
           _buildDivider(),
 
           // Scanning indicator (progress shown in bottom sheet)

@@ -106,6 +106,40 @@ class PermissionService {
       throw StorageException('Failed to get persisted URIs: ${e.message}');
     }
   }
+
+  Future<bool> isIgnoringBatteryOptimizations() async {
+    if (!Platform.isAndroid) {
+      return true;
+    }
+
+    try {
+      return await _channel.invokeMethod<bool>(
+            'isIgnoringBatteryOptimizations',
+          ) ??
+          false;
+    } on PlatformException catch (e) {
+      throw StorageException(
+        'Failed to read battery optimization status: ${e.message}',
+      );
+    }
+  }
+
+  Future<bool> openBatteryOptimizationSettings() async {
+    if (!Platform.isAndroid) {
+      return false;
+    }
+
+    try {
+      return await _channel.invokeMethod<bool>(
+            'openBatteryOptimizationSettings',
+          ) ??
+          false;
+    } on PlatformException catch (e) {
+      throw StorageException(
+        'Failed to open battery optimization settings: ${e.message}',
+      );
+    }
+  }
 }
 
 /// Exception for storage-related errors.

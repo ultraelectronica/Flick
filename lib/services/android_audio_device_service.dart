@@ -49,6 +49,14 @@ class AndroidPlaybackDeviceInfo {
     return dapKeywords.any(haystack.contains);
   }
 
+  bool get isXiaomiDevice {
+    final haystack = '${manufacturer.toLowerCase()} ${model.toLowerCase()}';
+    return haystack.contains('xiaomi') ||
+        haystack.contains('redmi') ||
+        haystack.contains('poco') ||
+        haystack.contains('miui');
+  }
+
   String get routeSummary => routeLabel ?? routeType ?? 'unknown';
 
   factory AndroidPlaybackDeviceInfo.fromMap(Map<Object?, Object?> raw) {
