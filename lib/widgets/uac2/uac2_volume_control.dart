@@ -82,6 +82,8 @@ class _Uac2VolumeControlState extends ConsumerState<Uac2VolumeControl> {
 
     final effectiveVolume = _draggingVolume ?? (deviceStatus.volume ?? 1.0);
     final effectiveMuted = deviceStatus.muted ?? false;
+    final volumeControlWritable =
+        deviceStatus.volumeControlWritable && !_muteUpdateInFlight;
 
     return Container(
       padding: const EdgeInsets.all(AppConstants.spacingMd),
@@ -131,7 +133,7 @@ class _Uac2VolumeControlState extends ConsumerState<Uac2VolumeControl> {
                   effectiveMuted ? LucideIcons.volumeX : LucideIcons.volume2,
                   size: 20,
                 ),
-                onPressed: _muteUpdateInFlight ? null : _toggleMute,
+                onPressed: volumeControlWritable ? _toggleMute : null,
                 color: effectiveMuted
                     ? Colors.red.shade400
                     : context.adaptiveTextSecondary,
@@ -154,8 +156,10 @@ class _Uac2VolumeControlState extends ConsumerState<Uac2VolumeControl> {
                   max: 1.0,
                   divisions: 100,
                   label: '${(effectiveVolume * 100).round()}%',
-                  onChanged: _onSliderChanged,
-                  onChangeEnd: _onSliderChangeEnd,
+                  onChanged: volumeControlWritable ? _onSliderChanged : null,
+                  onChangeEnd: volumeControlWritable
+                      ? _onSliderChangeEnd
+                      : null,
                   activeColor: AppColors.accent,
                   inactiveColor: AppColors.textTertiary.withValues(alpha: 0.3),
                 ),
@@ -179,6 +183,15 @@ class _Uac2VolumeControlState extends ConsumerState<Uac2VolumeControl> {
               ),
             ],
           ),
+          if (!deviceStatus.volumeControlWritable) ...[
+            const SizedBox(height: AppConstants.spacingXs),
+            Text(
+              'Hardware volume is detected, but writes stay blocked while live direct USB playback is active.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: context.adaptiveTextTertiary,
+              ),
+            ),
+          ],
         ],
       ),
     );
