@@ -70,6 +70,7 @@ class Uac2DeviceStatus {
   final bool isExternalRoute;
   final Uac2VolumeMode volumeMode;
   final bool hasVolumeControl;
+  final bool volumeControlWritable;
   final double? volume;
   final bool? muted;
 
@@ -84,6 +85,7 @@ class Uac2DeviceStatus {
     this.isExternalRoute = false,
     this.volumeMode = Uac2VolumeMode.unavailable,
     this.hasVolumeControl = false,
+    this.volumeControlWritable = true,
     this.volume,
     this.muted,
   });
@@ -99,6 +101,7 @@ class Uac2DeviceStatus {
     bool? isExternalRoute,
     Uac2VolumeMode? volumeMode,
     bool? hasVolumeControl,
+    bool? volumeControlWritable,
     Object? volume = _unset,
     Object? muted = _unset,
   }) {
@@ -121,6 +124,8 @@ class Uac2DeviceStatus {
       isExternalRoute: isExternalRoute ?? this.isExternalRoute,
       volumeMode: volumeMode ?? this.volumeMode,
       hasVolumeControl: hasVolumeControl ?? this.hasVolumeControl,
+      volumeControlWritable:
+          volumeControlWritable ?? this.volumeControlWritable,
       volume: identical(volume, _unset) ? this.volume : volume as double?,
       muted: identical(muted, _unset) ? this.muted : muted as bool?,
     );
@@ -143,11 +148,15 @@ class Uac2Service {
   Uac2AudioFormat? _lastKnownFormat;
   bool _lastKnownIsPlaying = false;
   bool _lastKnownHasSong = false;
+  bool? _lastDirectUsbPlaybackActive;
+  int _playbackStatusSyncGeneration = 0;
   Timer? _androidRouteRefreshDebounceTimer;
 
   Uac2DeviceStatus? get currentDeviceStatus => _currentDeviceStatus;
   Uac2AudioFormat? get lastKnownFormat => _lastKnownFormat;
   bool get isBitPerfectEnabledSync => bitPerfectEnabledNotifier.value;
+  bool get shouldFreezeAndroidDirectUsbSessionQueries =>
+      _hasFrozenAndroidDirectUsbSession();
 
   bool get isAvailable {
     if (Platform.isAndroid) return true;
@@ -273,7 +282,19 @@ class Uac2Service {
   }
 
   Future<List<Uac2DeviceInfo>> listDevices() async {
-    if (Platform.isAndroid) return _listDevicesAndroid();
+    if (Platform.isAndroid) {
+      final currentPlaybackDevice = _currentAndroidPlaybackDeviceIfReusable(
+        requireActivatableDeviceName: false,
+      );
+      if (currentPlaybackDevice != null) {
+        debugPrint(
+          'Uac2Service.listDevices (Android): reusing frozen direct USB device '
+          '${_describeAndroidDevice(currentPlaybackDevice)}',
+        );
+        return [currentPlaybackDevice];
+      }
+      return _listDevicesAndroid();
+    }
     if (!rust_uac2.uac2IsAvailable()) return [];
     try {
       return rust_uac2.uac2ListDevices();
@@ -764,13 +785,7 @@ class Uac2Service {
     }
 
     final preferredDevice = await _resolvePreferredAndroidDevice(null);
-    try {
-      await _channel.invokeMethod<bool>('setDirectUsbPlaybackActive', {
-        'active': false,
-      });
-    } catch (e) {
-      debugPrint('Uac2Service.setDirectUsbPlaybackActive(false) failed: $e');
-    }
+    await _setAndroidDirectUsbPlaybackActive(false);
     try {
       await _channel.invokeMethod<bool>('clearDirectUsbPlaybackFormat');
     } catch (e) {
@@ -889,15 +904,7 @@ class Uac2Service {
       debugPrint('Uac2Service.disconnect failed: $e');
     } finally {
       if (Platform.isAndroid) {
-        try {
-          await _channel.invokeMethod<bool>('setDirectUsbPlaybackActive', {
-            'active': false,
-          });
-        } catch (e) {
-          debugPrint(
-            'Uac2Service.setDirectUsbPlaybackActive(false) failed: $e',
-          );
-        }
+        await _setAndroidDirectUsbPlaybackActive(false);
         try {
           await _channel.invokeMethod<bool>('deactivateDirectUsb');
         } catch (e) {
@@ -918,6 +925,11 @@ class Uac2Service {
   Future<bool> setVolume(double volume) async {
     if (_currentDeviceStatus == null) return false;
     if (volume < 0.0 || volume > 1.0) return false;
+    if (Platform.isAndroid &&
+        _currentDeviceStatus!.hasVolumeControl &&
+        !_currentDeviceStatus!.volumeControlWritable) {
+      return false;
+    }
 
     try {
       if (Platform.isAndroid) {
@@ -960,6 +972,11 @@ class Uac2Service {
 
   Future<bool> setMute(bool muted) async {
     if (_currentDeviceStatus == null) return false;
+    if (Platform.isAndroid &&
+        _currentDeviceStatus!.hasVolumeControl &&
+        !_currentDeviceStatus!.volumeControlWritable) {
+      return false;
+    }
 
     try {
       if (Platform.isAndroid) {
@@ -1172,41 +1189,78 @@ class Uac2Service {
     Uac2AudioFormat? formatOverride,
     AudioEngineType? playbackMode,
   }) async {
+    final syncGeneration = ++_playbackStatusSyncGeneration;
+    final hasActiveSong = song != null;
     _lastKnownFormat = formatOverride;
     _lastKnownIsPlaying = isPlaying;
-    _lastKnownHasSong = song != null;
+    _lastKnownHasSong = hasActiveSong;
 
     if (Platform.isAndroid) {
       final usingExperimentalUsb =
           playbackMode == AudioEngineType.usbDacExperimental;
+      final shouldMarkDirectPlaybackActive =
+          _shouldKeepAndroidDirectUsbPlaybackActive(
+            usingExperimentalUsb: usingExperimentalUsb,
+            isPlaying: isPlaying,
+            hasActiveSong: hasActiveSong,
+          );
       Uac2DeviceInfo? resolvedPreferredDevice;
       if (usingExperimentalUsb) {
         resolvedPreferredDevice =
+            _currentAndroidPlaybackDeviceIfReusable(
+              requireActivatableDeviceName: true,
+            ) ??
             await _resolvePreferredAndroidActivationDevice(null);
+        if (!_isCurrentPlaybackStatusSync(syncGeneration)) {
+          return;
+        }
         if (resolvedPreferredDevice != null &&
             (resolvedPreferredDevice.deviceName?.isNotEmpty ?? false) &&
             _shouldActivateAndroidDirectUsb(resolvedPreferredDevice)) {
           await selectDevice(resolvedPreferredDevice);
+          if (!_isCurrentPlaybackStatusSync(syncGeneration)) {
+            return;
+          }
         }
       } else {
         resolvedPreferredDevice = await _resolvePreferredAndroidDevice(null);
+        if (!_isCurrentPlaybackStatusSync(syncGeneration)) {
+          return;
+        }
       }
 
-      final shouldMarkDirectPlaybackActive =
-          usingExperimentalUsb && isPlaying && song != null;
-      try {
-        await _channel.invokeMethod<bool>('setDirectUsbPlaybackActive', {
-          'active': shouldMarkDirectPlaybackActive,
-        });
-      } catch (e) {
-        debugPrint('Uac2Service.setDirectUsbPlaybackActive failed: $e');
+      // Caller should pass isPlaying=true while Rust holds the live USB stream
+      // (including buffering), and a non-null [song] whenever a track is loaded
+      // so we do not abandon direct USB audio focus mid-stream.
+      await _setAndroidDirectUsbPlaybackActive(shouldMarkDirectPlaybackActive);
+      if (!_isCurrentPlaybackStatusSync(syncGeneration)) {
+        return;
+      }
+
+      if (_canReuseActiveAndroidDirectPlaybackStatus(
+        preferredDevice: resolvedPreferredDevice,
+        directPlaybackActive: shouldMarkDirectPlaybackActive,
+        hasActiveSong: hasActiveSong,
+      )) {
+        _updateStatus(
+          _currentDeviceStatus!.copyWith(
+            device: resolvedPreferredDevice ?? _currentDeviceStatus!.device,
+            state: isPlaying
+                ? Uac2State.streaming
+                : _currentDeviceStatus!.state,
+            errorMessage: null,
+            currentFormat: formatOverride ?? _lastKnownFormat,
+          ),
+        );
+        return;
       }
 
       await _refreshAndroidRouteStatus(
         preferredDevice: resolvedPreferredDevice,
         formatOverride: formatOverride,
         isPlaying: isPlaying,
-        hasActiveSong: song != null,
+        hasActiveSong: hasActiveSong,
+        syncGeneration: syncGeneration,
       );
       return;
     }
@@ -1226,13 +1280,22 @@ class Uac2Service {
     Uac2AudioFormat? formatOverride,
     bool? isPlaying,
     bool? hasActiveSong,
+    int? syncGeneration,
   }) async {
     final resolvedPreferredDevice = await _resolvePreferredAndroidDevice(
       preferredDevice,
     );
+    if (syncGeneration != null &&
+        !_isCurrentPlaybackStatusSync(syncGeneration)) {
+      return;
+    }
     final routeStatus = await _getAndroidRouteStatus(
       preferredDevice: resolvedPreferredDevice,
     );
+    if (syncGeneration != null &&
+        !_isCurrentPlaybackStatusSync(syncGeneration)) {
+      return;
+    }
     final effectiveFormat = formatOverride ?? _lastKnownFormat;
     final effectiveIsPlaying = isPlaying ?? _lastKnownIsPlaying;
     final effectiveHasSong = hasActiveSong ?? _lastKnownHasSong;
@@ -1277,6 +1340,8 @@ class Uac2Service {
       routeStatus['volumeMode'] as String?,
     );
     final hasVolumeControl = routeStatus['hasVolumeControl'] == true;
+    final volumeControlWritable =
+        hasVolumeControl && routeStatus['volumeControlWritable'] != false;
     final volume = (routeStatus['volume'] as num?)?.toDouble();
     final muted = routeStatus['muted'] as bool?;
 
@@ -1308,6 +1373,7 @@ class Uac2Service {
           isExternalRoute: false,
           volumeMode: volumeMode,
           hasVolumeControl: hasVolumeControl,
+          volumeControlWritable: volumeControlWritable,
           volume: volume,
           muted: muted,
         ),
@@ -1349,6 +1415,7 @@ class Uac2Service {
             isExternal || preferredUsbDetected || directUsbRegistered,
         volumeMode: volumeMode,
         hasVolumeControl: hasVolumeControl,
+        volumeControlWritable: volumeControlWritable,
         volume: volume,
         muted: muted,
       ),
@@ -1363,6 +1430,11 @@ class Uac2Service {
         routeLabel: null,
         maxSampleRate: null,
       );
+    }
+
+    final frozenCapabilityInfo = _frozenAndroidAudioCapabilityInfo();
+    if (frozenCapabilityInfo != null) {
+      return frozenCapabilityInfo;
     }
 
     final resolvedPreferredDevice = await _resolvePreferredAndroidDevice(null);
@@ -1412,6 +1484,23 @@ class Uac2Service {
         maxSampleRate: null,
       );
     }
+  }
+
+  rust_audio.AudioCapabilityInfo? _frozenAndroidAudioCapabilityInfo() {
+    if (!_hasFrozenAndroidDirectUsbSession()) {
+      return null;
+    }
+
+    final currentStatus = _currentDeviceStatus!;
+
+    return rust_audio.AudioCapabilityInfo(
+      capabilities: const [rust_audio.AudioCapabilityType.usbDac],
+      routeType: 'usb',
+      routeLabel: currentStatus.routeLabel ?? currentStatus.device.productName,
+      maxSampleRate:
+          currentStatus.currentFormat?.sampleRate ??
+          _lastKnownFormat?.sampleRate,
+    );
   }
 
   Future<Map<String, dynamic>?> getAndroidPlaybackDebugState() async {
@@ -1474,6 +1563,15 @@ class Uac2Service {
     Uac2DeviceInfo? preferredDevice, {
     required bool requireActivatableDeviceName,
   }) async {
+    final currentPlaybackDevice = _currentAndroidPlaybackDeviceIfReusable(
+      requireActivatableDeviceName: requireActivatableDeviceName,
+    );
+    if (currentPlaybackDevice != null &&
+        (preferredDevice == null ||
+            _isSameAndroidDevice(currentPlaybackDevice, preferredDevice))) {
+      return currentPlaybackDevice;
+    }
+
     final preferredRouteLabelHint =
         _currentDeviceStatus?.routeLabel ?? preferredDevice?.productName;
 
@@ -1551,6 +1649,20 @@ class Uac2Service {
   ) async {
     if (!Platform.isAndroid || preferredDevice == null) {
       return preferredDevice;
+    }
+
+    final currentPlaybackDevice = _currentAndroidPlaybackDeviceIfReusable(
+      requireActivatableDeviceName: false,
+    );
+    if (currentPlaybackDevice != null &&
+        (_isSameAndroidDevice(currentPlaybackDevice, preferredDevice) ||
+            currentPlaybackDevice.deviceName == preferredDevice.deviceName ||
+            _matchesAndroidIdentifierAlias(
+              preferredDevice.serial,
+              currentPlaybackDevice.deviceName,
+            ) ||
+            preferredDevice.serial == currentPlaybackDevice.serial)) {
+      return currentPlaybackDevice;
     }
 
     final devices = await _listDevicesAndroid();
@@ -1688,8 +1800,108 @@ class Uac2Service {
       return true;
     }
 
-    return currentStatus.state == Uac2State.error ||
-        !currentStatus.isExternalRoute;
+    // Retry activation only after an explicit error. Do not use
+    // !isExternalRoute: Android route labels flicker (e.g. internal codename vs
+    // "USB-Audio - …") while the DAC is stable; syncPlaybackStatus would then
+    // call selectDevice/activateDirectUsb again during libusb streaming and can
+    // trigger libusb_handle_events I/O failures.
+    return currentStatus.state == Uac2State.error;
+  }
+
+  Uac2DeviceInfo? _currentAndroidPlaybackDeviceIfReusable({
+    required bool requireActivatableDeviceName,
+  }) {
+    final currentStatus = _currentDeviceStatus;
+    if (currentStatus == null ||
+        currentStatus.state == Uac2State.error ||
+        !_hasFrozenAndroidDirectUsbSession()) {
+      return null;
+    }
+
+    final device = currentStatus.device;
+    if (requireActivatableDeviceName &&
+        !(device.deviceName?.isNotEmpty ?? false)) {
+      return null;
+    }
+    return device;
+  }
+
+  bool _canReuseActiveAndroidDirectPlaybackStatus({
+    required Uac2DeviceInfo? preferredDevice,
+    required bool directPlaybackActive,
+    required bool hasActiveSong,
+  }) {
+    if (!directPlaybackActive || !hasActiveSong) {
+      return false;
+    }
+
+    final currentStatus = _currentDeviceStatus;
+    if (currentStatus == null ||
+        currentStatus.state == Uac2State.error ||
+        currentStatus.routeType != Uac2RouteType.externalUsb) {
+      return false;
+    }
+
+    if (preferredDevice == null) {
+      return true;
+    }
+    return _isSameAndroidDevice(currentStatus.device, preferredDevice);
+  }
+
+  bool _shouldKeepAndroidDirectUsbPlaybackActive({
+    required bool usingExperimentalUsb,
+    required bool isPlaying,
+    required bool hasActiveSong,
+  }) {
+    if (!usingExperimentalUsb || !hasActiveSong) {
+      return false;
+    }
+    if (isPlaying) {
+      return true;
+    }
+
+    return _hasFrozenAndroidDirectUsbSession();
+  }
+
+  bool _hasFrozenAndroidDirectUsbSession() {
+    if (!Platform.isAndroid) {
+      return false;
+    }
+
+    final currentStatus = _currentDeviceStatus;
+    if (currentStatus == null || currentStatus.state == Uac2State.error) {
+      return false;
+    }
+
+    final looksLikeActiveUsbRoute =
+        currentStatus.routeType == Uac2RouteType.externalUsb ||
+        (currentStatus.isExternalRoute &&
+            _hasUsbLookupIdentity(currentStatus.device));
+    if (!looksLikeActiveUsbRoute) {
+      return false;
+    }
+
+    return _lastDirectUsbPlaybackActive == true ||
+        currentStatus.state == Uac2State.streaming;
+  }
+
+  bool _isCurrentPlaybackStatusSync(int generation) {
+    return generation == _playbackStatusSyncGeneration;
+  }
+
+  Future<void> _setAndroidDirectUsbPlaybackActive(bool active) async {
+    if (_lastDirectUsbPlaybackActive == active) {
+      return;
+    }
+
+    try {
+      await _channel.invokeMethod<bool>('setDirectUsbPlaybackActive', {
+        'active': active,
+      });
+      _lastDirectUsbPlaybackActive = active;
+    } catch (e) {
+      debugPrint('Uac2Service.setDirectUsbPlaybackActive failed: $e');
+    }
   }
 
   bool _isSameAndroidDevice(Uac2DeviceInfo a, Uac2DeviceInfo b) {
