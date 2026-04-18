@@ -129,15 +129,26 @@ pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeRegist
     let serial = read_string(&mut env, serial);
     let device_name = read_string(&mut env, device_name);
 
-    match crate::uac2::register_android_usb_device(crate::uac2::AndroidDirectUsbDevice {
+    let device = match crate::uac2::AndroidDirectUsbDevice::try_new(
         fd,
-        vendor_id: vendor_id as u16,
-        product_id: product_id as u16,
+        vendor_id as u16,
+        product_id as u16,
         product_name,
         manufacturer,
         serial,
         device_name,
-    }) {
+    ) {
+        Ok(device) => device,
+        Err(error) => {
+            eprintln!(
+                "Failed to prepare Android direct USB DAC registration: {}",
+                error
+            );
+            return 0;
+        }
+    };
+
+    match crate::uac2::register_android_usb_device(device) {
         Ok(()) => 1,
         Err(error) => {
             eprintln!("Failed to register Android direct USB DAC: {}", error);
@@ -400,6 +411,27 @@ pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeClearR
 
 #[cfg(all(target_os = "android", feature = "uac2"))]
 #[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeWaitRustDirectUsbSessionStopped(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    timeout_ms: jint,
+) -> jboolean {
+    crate::uac2::wait_for_android_usb_session_stop(std::time::Duration::from_millis(
+        timeout_ms.max(0) as u64,
+    )) as jboolean
+}
+
+#[cfg(all(target_os = "android", feature = "uac2"))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeIsRustDirectUsbSessionActive(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+) -> jboolean {
+    crate::uac2::is_usb_session_active() as jboolean
+}
+
+#[cfg(all(target_os = "android", feature = "uac2"))]
+#[no_mangle]
 pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeMarkRustDirectUsbFallback(
     mut env: JNIEnv<'_>,
     _activity: JObject<'_>,
@@ -432,6 +464,25 @@ pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeMarkRu
 #[cfg(all(target_os = "android", not(feature = "uac2")))]
 #[no_mangle]
 pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeClearRustDirectUsbPlayback(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+) -> jboolean {
+    0
+}
+
+#[cfg(all(target_os = "android", not(feature = "uac2")))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeWaitRustDirectUsbSessionStopped(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    _timeout_ms: jint,
+) -> jboolean {
+    1
+}
+
+#[cfg(all(target_os = "android", not(feature = "uac2")))]
+#[no_mangle]
+pub extern "system" fn Java_com_ultraelectronica_flick_MainActivity_nativeIsRustDirectUsbSessionActive(
     _env: JNIEnv<'_>,
     _activity: JObject<'_>,
 ) -> jboolean {

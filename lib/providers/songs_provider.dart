@@ -11,7 +11,22 @@ final songRepositoryProvider = Provider<SongRepository>((ref) {
 });
 
 /// Sort options for the song list.
-enum SongSortOption { albumArtist, title, artist, dateAdded, fileType }
+enum SongSortOption { albumArtist, title, artist, dateAdded, fileType, folder }
+
+/// A group of songs within the same folder.
+class FolderGroup {
+  final String name;
+  final String key;
+  final String? folderUri;
+  final List<Song> songs;
+
+  const FolderGroup({
+    required this.name,
+    required this.key,
+    this.folderUri,
+    required this.songs,
+  });
+}
 
 /// Filter options for file types.
 enum SongFileTypeFilter { all, flac, mp3, wav, aac, ogg, alac }
@@ -155,8 +170,130 @@ class SongsState {
         });
       case SongSortOption.fileType:
         result.sort((a, b) => a.fileType.compareTo(b.fileType));
+      case SongSortOption.folder:
+        result.sort((a, b) {
+          final folderA = _extractRelativeSubfolder(a.folderUri, a.filePath);
+          final folderB = _extractRelativeSubfolder(b.folderUri, b.filePath);
+          final folderCompare = folderA.compareTo(folderB);
+          if (folderCompare != 0) return folderCompare;
+          return a.title.compareTo(b.title);
+        });
     }
     return result;
+  }
+
+  static String _extractRelativeSubfolder(String? folderUri, String? filePath) {
+    if (filePath == null || filePath.isEmpty) return '';
+
+    String rootId = '';
+    if (folderUri != null && folderUri.isNotEmpty) {
+      final uri = Uri.tryParse(folderUri);
+      if (uri != null && uri.scheme == 'content') {
+        final segments = uri.pathSegments;
+        final treeIndex = segments.indexOf('tree');
+        if (treeIndex >= 0 && treeIndex + 1 < segments.length) {
+          rootId = Uri.decodeComponent(segments[treeIndex + 1])
+              .replaceAll('\\', '/')
+              .replaceAll(RegExp(r'/+$'), '');
+        }
+      } else {
+        rootId = folderUri.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '');
+      }
+    }
+
+    String fileDocPath = '';
+    final fileUri = Uri.tryParse(filePath);
+    if (fileUri != null && fileUri.scheme == 'content') {
+      final segments = fileUri.pathSegments;
+      final docIndex = segments.indexOf('document');
+      if (docIndex >= 0 && docIndex + 1 < segments.length) {
+        fileDocPath = Uri.decodeComponent(segments[docIndex + 1])
+            .replaceAll('\\', '/')
+            .replaceAll(RegExp(r'/+$'), '');
+      }
+    } else {
+      fileDocPath = filePath.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '');
+    }
+
+    if (fileDocPath.isEmpty) return '';
+
+    if (rootId.isNotEmpty && fileDocPath.startsWith(rootId)) {
+      var relative = fileDocPath.substring(rootId.length);
+      if (relative.startsWith('/')) relative = relative.substring(1);
+      final lastSlash = relative.lastIndexOf('/');
+      if (lastSlash > 0) {
+        return relative.substring(0, lastSlash);
+      }
+      return '';
+    }
+
+    final lastSlash = fileDocPath.lastIndexOf('/');
+    if (lastSlash > 0) {
+      return fileDocPath.substring(0, lastSlash);
+    }
+    return '';
+  }
+
+  static String folderDisplayName(String? folderUri, String? filePath) {
+    final subfolder = _extractRelativeSubfolder(folderUri, filePath);
+    if (subfolder.isNotEmpty) {
+      final parts = subfolder.split('/').where((p) => p.isNotEmpty).toList();
+      return parts.isNotEmpty ? parts.last : subfolder;
+    }
+    if (folderUri != null && folderUri.isNotEmpty) {
+      final uri = Uri.tryParse(folderUri);
+      if (uri != null && uri.scheme == 'content') {
+        final segments = uri.pathSegments;
+        final treeIndex = segments.indexOf('tree');
+        if (treeIndex >= 0 && treeIndex + 1 < segments.length) {
+          final decoded = Uri.decodeComponent(segments[treeIndex + 1]);
+          final normalized = decoded.replaceAll('\\', '/').replaceAll(RegExp(r'/+'), '/');
+          final parts = normalized.split('/');
+          final nonEmpty = parts.where((p) => p.isNotEmpty).toList();
+          if (nonEmpty.isNotEmpty) return nonEmpty.last;
+        }
+      }
+      final normalized = folderUri.replaceAll('\\', '/').replaceAll(RegExp(r'/+'), '/');
+      final parts = normalized.split('/');
+      final nonEmpty = parts.where((p) => p.isNotEmpty).toList();
+      return nonEmpty.isNotEmpty ? nonEmpty.last : normalized;
+    }
+    return 'Unknown';
+  }
+
+  List<FolderGroup> get folderGroups {
+    if (sortOption != SongSortOption.folder) return [];
+
+    var result = List<Song>.from(songs);
+
+    if (fileTypeFilter != SongFileTypeFilter.all) {
+      result = result
+          .where((song) => fileTypeFilter.matches(song.fileType))
+          .toList();
+    }
+
+    final groups = <String, FolderGroup>{};
+    for (final song in result) {
+      final subfolder = _extractRelativeSubfolder(song.folderUri, song.filePath);
+      final key = subfolder.isEmpty ? (song.folderUri ?? '__root__') : subfolder;
+      final displayName = subfolder.isEmpty
+          ? folderDisplayName(song.folderUri, song.filePath)
+          : subfolder.split('/').where((p) => p.isNotEmpty).last;
+      groups.putIfAbsent(
+        key,
+        () => FolderGroup(
+          name: displayName,
+          key: key,
+          folderUri: song.folderUri,
+          songs: [],
+        ),
+      );
+      groups[key]!.songs.add(song);
+    }
+
+    final sorted = groups.values.toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    return sorted;
   }
 }
 

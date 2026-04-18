@@ -1382,6 +1382,7 @@ dependencies = [
  "flutter_rust_bridge",
  "jni",
  "jwalk",
+ "libc",
  "libusb1-sys",
  "lofty",
  "log",

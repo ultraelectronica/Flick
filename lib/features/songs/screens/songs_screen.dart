@@ -42,6 +42,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   String _selectedFastToken = 'A';
   late final ProviderSubscription<Song?> _currentSongSubscription;
   bool _alignedCurrentSongAfterLoad = false;
+  final Set<String> _expandedFolders = {};
 
   @override
   void initState() {
@@ -137,9 +138,10 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                     loading: () => _buildLoadingState(),
                     error: (error, stack) => _buildErrorState(error),
                     data: (songsState) {
+                      final isFolderMode = songsState.sortOption == SongSortOption.folder;
                       final allSongs = songsState.sortedSongs;
                       var songs = allSongs;
-                      _cachedSongs = allSongs;
+                      _cachedSongs = songsState.songs;
 
                       if (_searchQuery.isNotEmpty) {
                         songs = songs.where((song) {
@@ -158,9 +160,37 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                         return _buildNoSearchResultsState();
                       }
 
+                      if (isFolderMode) {
+                        final folderGroups = songsState.folderGroups;
+                        if (_searchQuery.isNotEmpty) {
+                          final filteredGroups = <FolderGroup>[];
+                          for (final group in folderGroups) {
+                            final filtered = group.songs.where((song) {
+                              return song.title.toLowerCase().contains(_searchQuery) ||
+                                  song.artist.toLowerCase().contains(_searchQuery);
+                            }).toList();
+                            if (filtered.isNotEmpty) {
+                              filteredGroups.add(FolderGroup(
+                                name: group.name,
+                                key: group.key,
+                                folderUri: group.folderUri,
+                                songs: filtered,
+                              ));
+                            }
+                          }
+                          if (filteredGroups.isEmpty) {
+                            return _buildNoSearchResultsState();
+                          }
+                          return _buildFolderListView(filteredGroups);
+                        }
+                        if (folderGroups.isEmpty) {
+                          return _buildEmptyState();
+                        }
+                        return _buildFolderListView(folderGroups);
+                      }
+
                       _alignCurrentSongAfterSongsLoad(songs);
 
-                      // Ensure selected index is valid
                       if (_selectedIndex >= songs.length) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (mounted) {
@@ -341,6 +371,84 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     );
   }
 
+  Widget _buildFolderListView(List<FolderGroup> folders) {
+    return ListView.builder(
+      controller: _listScrollController,
+      addAutomaticKeepAlives: false,
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spacingLg,
+        0,
+        AppConstants.spacingXl + 30,
+        AppConstants.navBarHeight + 120,
+      ),
+      itemCount: folders.length,
+      itemBuilder: (context, index) {
+        final folder = folders[index];
+        final isExpanded = _expandedFolders.contains(folder.key);
+
+        return Column(
+          key: ValueKey('folder_${folder.key}'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _FolderHeader(
+              name: folder.name,
+              songCount: folder.songs.length,
+              isExpanded: isExpanded,
+              onTap: () {
+                setState(() {
+                  if (isExpanded) {
+                    _expandedFolders.remove(folder.key);
+                  } else {
+                    _expandedFolders.add(folder.key);
+                  }
+                });
+              },
+              onPlayAll: () async {
+                await _playSongAndOpenPlayer(
+                  songs: folder.songs,
+                  index: 0,
+                );
+              },
+            ),
+            if (isExpanded) ...[
+              for (final song in folder.songs) ...[
+                Padding(
+                  key: ValueKey(song.id),
+                  padding: const EdgeInsets.only(
+                    left: AppConstants.spacingLg,
+                    bottom: AppConstants.spacingSm,
+                  ),
+                  child: _QueueSwipeListItem(
+                    onQueued: () async {
+                      await _queueSong(song);
+                    },
+                    onFavorited: () async {
+                      await _favoriteSong(song);
+                    },
+                    child: _SongListTile(
+                      song: song,
+                      isSelected: false,
+                      onTap: () async {
+                        await _playSongAndOpenPlayer(
+                          songs: folder.songs,
+                          index: folder.songs.indexOf(song),
+                        );
+                      },
+                      onLongPress: () {
+                        SongActionsBottomSheet.show(context, song);
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ],
+            const SizedBox(height: AppConstants.spacingXxs),
+          ],
+        );
+      },
+    );
+  }
+
   Map<String, int> _buildFastIndexMap(List<Song> songs) {
     final songsAsync = ref.read(songsProvider);
     final sortOption =
@@ -370,8 +478,9 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
         if (year == null) return '#';
         return year.toString();
       case SongSortOption.fileType:
-        // For file type sorting, use the file type itself
         return song.fileType.toUpperCase();
+      case SongSortOption.folder:
+        text = SongsState.folderDisplayName(song.folderUri, song.filePath);
     }
 
     return _extractToken(text);
@@ -903,6 +1012,23 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                         ],
                       ),
                     ),
+                    PopupMenuItem<SongSortOption>(
+                      value: SongSortOption.folder,
+                      child: Row(
+                        children: [
+                          if (currentSort == SongSortOption.folder)
+                            const Icon(Icons.check, size: 18),
+                          if (currentSort == SongSortOption.folder)
+                            const SizedBox(width: 8),
+                          Text(
+                            'Folder',
+                            style: TextStyle(
+                              color: context.adaptiveTextPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     const PopupMenuDivider(),
                     PopupMenuItem<void>(
                       enabled: false,
@@ -1418,6 +1544,137 @@ class _QueueSwipeListItemState extends State<_QueueSwipeListItem> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _FolderHeader extends StatelessWidget {
+  final String name;
+  final int songCount;
+  final bool isExpanded;
+  final VoidCallback onTap;
+  final VoidCallback onPlayAll;
+
+  const _FolderHeader({
+    required this.name,
+    required this.songCount,
+    required this.isExpanded,
+    required this.onTap,
+    required this.onPlayAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppConstants.spacingXxs),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.surfaceLight.withValues(alpha: 0.85),
+            AppColors.surface.withValues(alpha: 0.95),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        border: Border.all(
+          color: isExpanded
+              ? AppColors.accent.withValues(alpha: 0.35)
+              : AppColors.glassBorder,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppConstants.spacingMd,
+              vertical: AppConstants.spacingSm + 2,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isExpanded
+                      ? LucideIcons.chevronDown
+                      : LucideIcons.chevronRight,
+                  size: 18,
+                  color: context.adaptiveTextSecondary,
+                ),
+                const SizedBox(width: AppConstants.spacingSm),
+                Icon(
+                  LucideIcons.folder,
+                  size: 20,
+                  color: AppColors.accent.withValues(alpha: 0.8),
+                ),
+                const SizedBox(width: AppConstants.spacingSm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: context.adaptiveTextPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        '$songCount ${songCount == 1 ? 'song' : 'songs'}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: context.adaptiveTextTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isExpanded) ...[
+                  const SizedBox(width: AppConstants.spacingSm),
+                  GestureDetector(
+                    onTap: onPlayAll,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppConstants.spacingSm,
+                        vertical: AppConstants.spacingXxs + 1,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusMd,
+                        ),
+                        border: Border.all(
+                          color: AppColors.accent.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            LucideIcons.play,
+                            size: 14,
+                            color: AppColors.accent,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Play all',
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

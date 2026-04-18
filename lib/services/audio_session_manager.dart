@@ -225,7 +225,9 @@ class AudioSessionManager {
   }
 
   Future<AudioEngineType> _resolvePreferredMode({bool refresh = false}) async {
-    final info = refresh
+    final freezeDirectUsbSessionQueries =
+        _uac2Service.shouldFreezeAndroidDirectUsbSessionQueries;
+    final info = refresh && !freezeDirectUsbSessionQueries
         ? await _deviceService.refresh()
         : _deviceService.deviceInfoNotifier.value;
     final hiFiModeEnabled = await _preferencesService.getHiFiModeEnabled();

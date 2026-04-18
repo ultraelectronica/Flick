@@ -263,6 +263,7 @@ class SongRepository {
       trackNumber: entity.trackNumber,
       discNumber: entity.discNumber,
       filePath: entity.filePath,
+      folderUri: entity.folderUri,
       dateAdded: entity.dateAdded,
     );
   }

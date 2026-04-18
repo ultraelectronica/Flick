@@ -224,6 +224,10 @@ class PlayerService {
   RustAudioEngine? _rustEngine;
   StreamSubscription<PlaybackState>? _playbackStateSubscription;
   PlaybackState? _lastPlaybackState;
+  Timer? _playbackDiagnosticsDebounceTimer;
+  static const Duration _playbackDiagnosticsDebounce = Duration(
+    milliseconds: 300,
+  );
   final RecentlyPlayedRepository _recentlyPlayedRepository =
       RecentlyPlayedRepository();
   final ReplayPlayTracker _replayPlayTracker = ReplayPlayTracker();
@@ -348,7 +352,24 @@ class PlayerService {
     _uac2Service.bitPerfectEnabledNotifier.addListener(() {
       unawaited(_handleBitPerfectPreferenceChanged());
     });
+    _uac2Service.addStatusListener(_mirrorUsbHardwareVolumeFromUac2Status);
     _notifyQueueChanged();
+  }
+
+  /// When the DAC/route reports a new hardware level (e.g. device keys), keep
+  /// [_currentVolume] aligned so bit-perfect sync does not fight the DAC.
+  void _mirrorUsbHardwareVolumeFromUac2Status(Uac2DeviceStatus? status) {
+    if (status == null || !Platform.isAndroid) return;
+    if (currentEngineType != AudioEngineType.usbDacExperimental) return;
+    if (!isBitPerfectModeEnabled) return;
+    if (!status.hasVolumeControl ||
+        status.volumeMode != Uac2VolumeMode.hardware) {
+      return;
+    }
+    final v = status.volume;
+    if (v == null) return;
+    if ((v - _currentVolume).abs() <= 0.01) return;
+    _currentVolume = v.clamp(0.0, 1.0);
   }
 
   Future<void> _handleBitPerfectPreferenceChanged() async {
@@ -779,33 +800,34 @@ class PlayerService {
         routeStatus?.volumeMode == Uac2VolumeMode.hardware;
   }
 
-  Future<void> _syncBitPerfectUsbHardwareVolumeIfNeeded() async {
-    if (!_hasBitPerfectUsbHardwareVolumeControl()) {
-      return;
-    }
-
-    final routeVolume = _uac2Service.currentDeviceStatus?.volume;
-    if (routeVolume != null && (routeVolume - _currentVolume).abs() <= 0.01) {
-      return;
-    }
-
-    await _uac2Service.setVolume(_currentVolume);
-  }
+  /// Prefer [primary], then the current-song notifier, then the last engine
+  /// playback snapshot so USB focus stays latched when Rust is ahead of or
+  /// behind the notifier during gapless / crossfade / buffering.
+  Song? _songForUac2Sync(Song? primary) =>
+      primary ??
+      currentSongNotifier.value ??
+      _playbackManager.latestState?.currentTrack;
 
   Future<void> _syncUac2PlaybackStatus(
     Song? song, {
     required bool isPlaying,
   }) async {
+    final resolved = _songForUac2Sync(song);
+    // Rust state can flicker (idle between gapless segments, short internal
+    // restarts) while the UI session is still "playing". Releasing direct USB
+    // audio focus in that window races libusb teardown and surfaces as EIO.
+    final directUsb = currentEngineType == AudioEngineType.usbDacExperimental;
+    final effectiveIsPlaying =
+        isPlaying || (directUsb && isPlayingNotifier.value && resolved != null);
     await _uac2Service.syncPlaybackStatus(
-      song: song,
-      isPlaying: isPlaying,
-      formatOverride: _deriveUac2FormatFromSong(song),
+      song: resolved,
+      isPlaying: effectiveIsPlaying,
+      formatOverride: _deriveUac2FormatFromSong(resolved),
       playbackMode: currentEngineType,
     );
-    await _syncBitPerfectUsbHardwareVolumeIfNeeded();
     await _refreshAudioOutputDiagnostics(
       reason: 'UAC2 status sync',
-      activeSong: song,
+      activeSong: resolved,
     );
   }
 
@@ -1269,14 +1291,18 @@ class PlayerService {
       if (!_usingRustBackend) return;
 
       final rustState = _rustAudioService.stateNotifier.value;
-      final isPlaying =
+      // Treat buffering like playback for Android direct USB: releasing audio
+      // focus while the Rust isochronous pump is still starting starves the
+      // stream and surfaces as libusb I/O errors.
+      final pipelineActive =
           rustState == RustPlaybackState.playing ||
-          rustState == RustPlaybackState.crossfading;
+          rustState == RustPlaybackState.crossfading ||
+          rustState == RustPlaybackState.buffering;
 
       unawaited(
         _syncUac2PlaybackStatus(
           currentSongNotifier.value,
-          isPlaying: isPlaying,
+          isPlaying: pipelineActive,
         ),
       );
     };
@@ -1314,6 +1340,8 @@ class PlayerService {
   }
 
   void _bindPlaybackState() {
+    _playbackDiagnosticsDebounceTimer?.cancel();
+    _playbackDiagnosticsDebounceTimer = null;
     _playbackStateSubscription?.cancel();
     _playbackStateSubscription = _playbackManager.playbackState.listen((state) {
       final previous = _lastPlaybackState;
@@ -1413,12 +1441,36 @@ class PlayerService {
 
       _lastPosition = state.position;
 
-      unawaited(
-        _refreshAudioOutputDiagnostics(
-          reason: 'playback state changed',
-          activeSong: state.currentTrack,
-        ),
-      );
+      final criticalDiagnosticsChange =
+          previous == null ||
+          previous.engine != state.engine ||
+          previous.currentTrack?.id != state.currentTrack?.id ||
+          previous.isPlaying != state.isPlaying;
+      if (criticalDiagnosticsChange) {
+        _playbackDiagnosticsDebounceTimer?.cancel();
+        _playbackDiagnosticsDebounceTimer = null;
+        unawaited(
+          _refreshAudioOutputDiagnostics(
+            reason: 'playback state changed',
+            activeSong: state.currentTrack,
+          ),
+        );
+      } else {
+        _playbackDiagnosticsDebounceTimer?.cancel();
+        _playbackDiagnosticsDebounceTimer = Timer(
+          _playbackDiagnosticsDebounce,
+          () {
+            _playbackDiagnosticsDebounceTimer = null;
+            final snap = _lastPlaybackState;
+            unawaited(
+              _refreshAudioOutputDiagnostics(
+                reason: 'playback state changed',
+                activeSong: snap?.currentTrack,
+              ),
+            );
+          },
+        );
+      }
     });
   }
 
@@ -1968,11 +2020,6 @@ class PlayerService {
       final routeStatus = _uac2Service.currentDeviceStatus;
       if (playbackMode == AudioEngineType.usbDacExperimental &&
           routeStatus != null &&
-          routeStatus.hasVolumeControl &&
-          routeStatus.volumeMode == Uac2VolumeMode.hardware) {
-        await _uac2Service.setVolume(_currentVolume);
-      } else if (playbackMode == AudioEngineType.usbDacExperimental &&
-          routeStatus != null &&
           !routeStatus.hasVolumeControl) {
         debugPrint(
           '[Engine] Direct USB bit-perfect is active without Android route volume control; output level is full-scale unless the DAC itself provides hardware attenuation',
@@ -2310,24 +2357,34 @@ class PlayerService {
             _sessionManager.initializedMode ==
                 AudioEngineType.usbDacExperimental &&
             _rustEngine != null;
+        final requestedUsbOutputFormat = alreadyInUsbMode
+            ? await _uac2Service.suggestAndroidExperimentalUsbOutputFormat(
+                requested: trackFormat,
+              )
+            : trackFormat;
         final currentUsbFormat =
             _uac2Service.lastKnownFormat ??
             _uac2Service.currentDeviceStatus?.currentFormat;
+        final targetUsbOutputFormat = requestedUsbOutputFormat ?? trackFormat;
         final formatMatches =
-            alreadyInUsbMode && _sameUac2Format(currentUsbFormat, trackFormat);
+            alreadyInUsbMode &&
+            _sameUac2Format(currentUsbFormat, targetUsbOutputFormat);
 
         if (formatMatches) {
           debugPrint(
             '[Engine] USB engine already active with matching format '
-            '(${trackFormat.sampleRate}Hz/${trackFormat.bitDepth}-bit/'
-            '${trackFormat.channels}ch), skipping re-preparation',
+            '(${targetUsbOutputFormat.sampleRate}Hz/'
+            '${targetUsbOutputFormat.bitDepth}-bit/'
+            '${targetUsbOutputFormat.channels}ch), skipping re-preparation',
           );
           _sessionManager.clearFallbackReason();
           return normalizedEngine;
         }
 
         final prepared = await _uac2Service
-            .prepareAndroidExperimentalUsbPlayback(format: trackFormat);
+            .prepareAndroidExperimentalUsbPlayback(
+              format: targetUsbOutputFormat,
+            );
         if (!prepared) {
           await _uac2Service.markAndroidDirectUsbFallback(
             'experimental direct USB path could not be prepared',
@@ -3198,6 +3255,8 @@ class PlayerService {
   }
 
   void dispose() {
+    _playbackDiagnosticsDebounceTimer?.cancel();
+    _playbackDiagnosticsDebounceTimer = null;
     _positionSaveTimer?.cancel();
     unawaited(_audioFocusSubscription?.cancel());
     cancelSleepTimer();

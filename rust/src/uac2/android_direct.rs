@@ -141,9 +141,23 @@ fn transport_container_preference_rank(
     }
 }
 
+#[derive(Debug)]
+struct AndroidDirectUsbOwnedFd(RawFd);
+
+impl Drop for AndroidDirectUsbOwnedFd {
+    fn drop(&mut self) {
+        if self.0 >= 0 {
+            unsafe {
+                libc::close(self.0);
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AndroidDirectUsbDevice {
     pub fd: RawFd,
+    _fd_owner: Arc<AndroidDirectUsbOwnedFd>,
     pub vendor_id: u16,
     pub product_id: u16,
     pub product_name: String,
@@ -152,7 +166,38 @@ pub struct AndroidDirectUsbDevice {
     pub device_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl AndroidDirectUsbDevice {
+    pub fn try_new(
+        fd: RawFd,
+        vendor_id: u16,
+        product_id: u16,
+        product_name: String,
+        manufacturer: String,
+        serial: Option<String>,
+        device_name: Option<String>,
+    ) -> Result<Self, String> {
+        let duplicated_fd = unsafe { libc::dup(fd) };
+        if duplicated_fd < 0 {
+            return Err(format!(
+                "Failed to duplicate Android USB file descriptor: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+
+        Ok(Self {
+            fd: duplicated_fd,
+            _fd_owner: Arc::new(AndroidDirectUsbOwnedFd(duplicated_fd)),
+            vendor_id,
+            product_id,
+            product_name,
+            manufacturer,
+            serial,
+            device_name,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AndroidDirectUsbPlaybackFormat {
     pub sample_rate: u32,
     pub bit_depth: u8,
@@ -776,8 +821,14 @@ static DIRECT_USB_STATE: Lazy<Mutex<Option<AndroidDirectUsbState>>> =
 static DIRECT_USB_LOCK: Lazy<Mutex<Option<AndroidDirectUsbLock>>> = Lazy::new(|| Mutex::new(None));
 static DIRECT_USB_LIFECYCLE_STATE: Lazy<Mutex<AndroidDirectUsbLifecycleState>> =
     Lazy::new(|| Mutex::new(AndroidDirectUsbLifecycleState::default()));
+/// Serializes JNI hardware volume/mute control transfers. Reusing the idle
+/// `DIRECT_USB_LOCK` handle for feature-unit writes would require partial
+/// interface release; a second transient open remains necessary, but we avoid
+/// overlapping transient claims from concurrent UI/sync calls.
+static ANDROID_DIRECT_HARDWARE_VOLUME_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 static DIRECT_USB_DISCOVERY_DISABLED: Once = Once::new();
 static ANDROID_DIRECT_USB_ENABLED: AtomicBool = AtomicBool::new(true);
+static USB_SESSION_CLEAR_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// Global guard: only one USB streaming session may be active at a time.
 /// Prevents "Resource busy" from concurrent or overlapping claim attempts.
@@ -795,27 +846,77 @@ pub fn is_usb_session_active() -> bool {
     USB_SESSION_ACTIVE.load(Ordering::SeqCst)
 }
 
+fn is_same_android_usb_device(a: &AndroidDirectUsbDevice, b: &AndroidDirectUsbDevice) -> bool {
+    if a.device_name.is_some() && b.device_name.is_some() && a.device_name == b.device_name {
+        return true;
+    }
+
+    if a.vendor_id != b.vendor_id || a.product_id != b.product_id {
+        return false;
+    }
+
+    if a.serial.is_some() && b.serial.is_some() {
+        return a.serial == b.serial;
+    }
+
+    a.product_name == b.product_name && a.manufacturer == b.manufacturer
+}
+
+fn clear_android_usb_device_state() {
+    release_idle_lock();
+    if DIRECT_USB_LIFECYCLE_STATE.lock().engine_state != AndroidDirectUsbEngineState::Fallback {
+        set_android_usb_engine_state(AndroidDirectUsbEngineState::Idle, None);
+    }
+    *DIRECT_USB_STATE.lock() = None;
+}
+
+fn clear_android_usb_device_now() {
+    USB_SESSION_ACTIVE.store(false, Ordering::SeqCst);
+    USB_SESSION_CLEAR_PENDING.store(false, Ordering::SeqCst);
+    clear_android_usb_device_state();
+}
+
+fn complete_pending_android_usb_clear_if_idle() {
+    if USB_SESSION_ACTIVE.load(Ordering::SeqCst) {
+        return;
+    }
+    if !USB_SESSION_CLEAR_PENDING.swap(false, Ordering::SeqCst) {
+        return;
+    }
+
+    eprintln!("Android USB direct: applying deferred clear after session stop");
+    clear_android_usb_device_state();
+}
+
 /// Force-release the USB session guard. Called before re-initialization or on
 /// unrecoverable errors to ensure the next attempt can proceed.
 pub fn force_release_usb_session() {
     if USB_SESSION_ACTIVE.swap(false, Ordering::SeqCst) {
         eprintln!("Android USB direct: force-released USB session guard");
     }
+    complete_pending_android_usb_clear_if_idle();
 }
 
 pub fn register_android_usb_device(device: AndroidDirectUsbDevice) -> Result<(), String> {
+    let mut guard = DIRECT_USB_STATE.lock();
     if USB_SESSION_ACTIVE.load(Ordering::SeqCst) {
-        eprintln!(
-            "Android USB direct: USB session active while registering '{}'; \
-             new idle lock will be created after the session ends",
+        if let Some(current_state) = guard.as_ref() {
+            if is_same_android_usb_device(&current_state.device, &device) {
+                eprintln!(
+                    "Android USB direct: ignoring duplicate registration for '{}' while the session is active",
+                    device.product_name
+                );
+                return Ok(());
+            }
+        }
+        return Err(format!(
+            "Android direct USB session is still active; refusing to replace registration for '{}'",
             device.product_name
-        );
+        ));
     }
 
-    let existing_format = DIRECT_USB_STATE
-        .lock()
-        .as_ref()
-        .and_then(|state| state.playback_format);
+    USB_SESSION_CLEAR_PENDING.store(false, Ordering::SeqCst);
+    let existing_format = guard.as_ref().and_then(|state| state.playback_format);
 
     let capability_model = inspect_android_usb_capabilities(&device).ok();
     let dac_clock_policy =
@@ -832,7 +933,7 @@ pub fn register_android_usb_device(device: AndroidDirectUsbDevice) -> Result<(),
 
     release_idle_lock();
     set_android_usb_engine_state(AndroidDirectUsbEngineState::Idle, None);
-    *DIRECT_USB_STATE.lock() = Some(AndroidDirectUsbState {
+    *guard = Some(AndroidDirectUsbState {
         device,
         requested_playback_format: existing_format,
         playback_format: existing_format,
@@ -874,13 +975,23 @@ pub fn set_android_usb_playback_format(
     };
 
     let sanitized = playback_format.map(|format| {
-        let mut format = sanitize_android_usb_playback_format(format);
+        let format = sanitize_android_usb_playback_format(format);
         match state.dac_clock_policy {
             DacClockPolicy::Force48kHzOnly => {}
             DacClockPolicy::RequireVerifiedRate | DacClockPolicy::AllowUnverified => {}
         }
         format
     });
+
+    if USB_SESSION_ACTIVE.load(Ordering::SeqCst)
+        && state.playback_format == sanitized
+        && state.requested_playback_format == sanitized
+    {
+        eprintln!(
+            "[USB] Keeping active direct USB verification state for unchanged playback format"
+        );
+        return Ok(());
+    }
 
     state.playback_format = sanitized;
     state.requested_playback_format = sanitized;
@@ -921,12 +1032,26 @@ pub fn set_android_usb_lock_enabled(enabled: bool) -> Result<(), String> {
 }
 
 pub fn clear_android_usb_device() {
-    release_idle_lock();
-    USB_SESSION_ACTIVE.store(false, Ordering::SeqCst);
-    if DIRECT_USB_LIFECYCLE_STATE.lock().engine_state != AndroidDirectUsbEngineState::Fallback {
-        set_android_usb_engine_state(AndroidDirectUsbEngineState::Idle, None);
+    USB_SESSION_CLEAR_PENDING.store(true, Ordering::SeqCst);
+    if USB_SESSION_ACTIVE.load(Ordering::SeqCst) {
+        eprintln!("Android USB direct: deferring clear until the active session stops");
+        return;
     }
-    *DIRECT_USB_STATE.lock() = None;
+
+    clear_android_usb_device_now();
+}
+
+pub fn wait_for_android_usb_session_stop(timeout: Duration) -> bool {
+    let started_at = Instant::now();
+    while USB_SESSION_ACTIVE.load(Ordering::SeqCst) {
+        if started_at.elapsed() >= timeout {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    complete_pending_android_usb_clear_if_idle();
+    true
 }
 
 pub fn android_direct_output_signature(preferred_sample_rate: Option<u32>) -> Option<String> {
@@ -2372,6 +2497,7 @@ pub fn android_direct_cached_hardware_mute() -> Option<bool> {
 }
 
 pub fn android_direct_set_hardware_volume(volume: f64) -> Result<(), String> {
+    let _hold = ANDROID_DIRECT_HARDWARE_VOLUME_MUTEX.lock();
     let state = DIRECT_USB_STATE
         .lock()
         .as_ref()
@@ -2414,6 +2540,7 @@ pub fn android_direct_set_hardware_volume(volume: f64) -> Result<(), String> {
 }
 
 pub fn android_direct_set_hardware_mute(muted: bool) -> Result<(), String> {
+    let _hold = ANDROID_DIRECT_HARDWARE_VOLUME_MUTEX.lock();
     let state = DIRECT_USB_STATE
         .lock()
         .as_ref()
@@ -2626,6 +2753,14 @@ pub fn create_android_usb_backend(
     event_tx: Sender<AudioEvent>,
     preferred_sample_rate: u32,
 ) -> Result<Option<AndroidDirectUsbBackend>, String> {
+    if USB_SESSION_CLEAR_PENDING.load(Ordering::SeqCst) {
+        eprintln!(
+            "Android USB direct backend skipped: clear requested before startup for preferred {} Hz",
+            preferred_sample_rate
+        );
+        return Ok(None);
+    }
+
     // Wait for any previous USB session to finish cleanup (up to 1.5s).
     // This prevents "Resource busy" when the engine is recreated for a
     // new track before the old backend's threads have fully stopped.
@@ -3464,6 +3599,7 @@ impl AndroidDirectUsbBackend {
                 .map_err(|_| "Android USB direct output thread panicked".to_string())?;
         }
         USB_SESSION_ACTIVE.store(false, Ordering::SeqCst);
+        complete_pending_android_usb_clear_if_idle();
         Ok(())
     }
 }
@@ -3472,6 +3608,7 @@ impl Drop for AndroidDirectUsbBackend {
     fn drop(&mut self) {
         let _ = self.stop();
         USB_SESSION_ACTIVE.store(false, Ordering::SeqCst);
+        complete_pending_android_usb_clear_if_idle();
     }
 }
 
@@ -3946,6 +4083,15 @@ fn run_usb_output_loop(
         candidate.service_interval_us,
     );
     let transfer_slot_count = ANDROID_USB_TRANSFER_QUEUE_DEPTH.max(1);
+    let feedback_endpoint = candidate
+        .feedback_endpoint
+        .filter(|feedback| feedback.transfer_type == TransferType::Interrupt);
+    if candidate.feedback_endpoint.is_some() && feedback_endpoint.is_none() {
+        log_info!(
+            "[USB] Skipping live isochronous feedback polling on endpoint 0x{:02x} to keep the libusb event loop single-threaded",
+            candidate.feedback_endpoint.unwrap().address,
+        );
+    }
     runtime_stats
         .transfer_queue_depth
         .store(transfer_slot_count, Ordering::Relaxed);
@@ -4087,7 +4233,7 @@ fn run_usb_output_loop(
                 .consumer_frames
                 .fetch_add(queued_frame_count, Ordering::Relaxed);
 
-            if let Some(feedback_endpoint) = candidate.feedback_endpoint {
+            if let Some(feedback_endpoint) = feedback_endpoint {
                 match read_feedback_report(&context, &handle, feedback_endpoint, device_fd) {
                     Ok(Some(feedback_report)) => {
                         scheduler
@@ -4193,7 +4339,7 @@ fn run_usb_output_loop(
                 if !completed_underrun {
                     set_usb_stream_stable(true);
                     if !logged_usb_stabilized {
-                        if candidate.feedback_endpoint.is_none() {
+                        if feedback_endpoint.is_none() {
                             scheduler.lock_to_nominal_packet_timing();
                             log_info!(
                                 "[USB] USB stream stabilized after {} isochronous transfers (nominal packet timing locked)",
@@ -4242,6 +4388,7 @@ fn run_usb_output_loop(
     set_runtime_stats(None);
     set_usb_stream_stable(false);
     USB_SESSION_ACTIVE.store(false, Ordering::SeqCst);
+    complete_pending_android_usb_clear_if_idle();
     if stop.load(Ordering::Acquire) {
         set_android_usb_engine_state(AndroidDirectUsbEngineState::Idle, None);
     }
@@ -4262,7 +4409,10 @@ fn read_feedback_report(
 ) -> Result<Option<AndroidUsbFeedbackReport>, String> {
     let raw_bytes = match feedback_endpoint.transfer_type {
         TransferType::Interrupt => read_interrupt_feedback_packet(handle, feedback_endpoint)?,
-        TransferType::Isochronous => read_iso_feedback_packet(context, handle, feedback_endpoint)?,
+        TransferType::Isochronous => {
+            let _ = context;
+            return Ok(None);
+        }
         other => {
             return Err(format!(
                 "Unsupported feedback transfer type {}",
@@ -4287,6 +4437,7 @@ fn read_feedback_report(
     }))
 }
 
+#[allow(dead_code)]
 fn read_interrupt_feedback_packet(
     handle: &DeviceHandle<Context>,
     feedback_endpoint: AndroidUsbFeedbackEndpoint,
@@ -5688,6 +5839,7 @@ extern "system" fn iso_transfer_callback(transfer: *mut libusb_transfer) {
     completion.condvar.notify_all();
 }
 
+#[allow(dead_code)]
 fn submit_iso_transfer(
     context: &Context,
     handle: &DeviceHandle<Context>,
@@ -5777,6 +5929,7 @@ fn submit_iso_transfer(
     }
 }
 
+#[allow(dead_code)]
 fn read_iso_feedback_packet(
     context: &Context,
     handle: &DeviceHandle<Context>,

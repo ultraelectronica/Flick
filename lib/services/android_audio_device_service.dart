@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flick/services/uac2_service.dart';
 
 class AndroidPlaybackDeviceInfo {
   const AndroidPlaybackDeviceInfo({
@@ -119,6 +120,10 @@ class AndroidAudioDeviceService {
       return AndroidPlaybackDeviceInfo.unknown;
     }
 
+    if (Uac2Service.instance.shouldFreezeAndroidDirectUsbSessionQueries) {
+      return deviceInfoNotifier.value;
+    }
+
     final inFlight = _refreshInFlight;
     if (inFlight != null) {
       return inFlight;
@@ -141,6 +146,9 @@ class AndroidAudioDeviceService {
       _channel.setMethodCallHandler((call) async {
         if (call.method == 'onPlaybackDevicesChanged') {
           debugPrint('[Engine] Audio device change detected');
+          if (Uac2Service.instance.shouldFreezeAndroidDirectUsbSessionQueries) {
+            return;
+          }
           await refresh();
         }
       });

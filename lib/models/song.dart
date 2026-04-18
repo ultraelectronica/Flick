@@ -42,6 +42,9 @@ class Song {
   /// File path on device
   final String? filePath;
 
+  /// URI of the folder containing this song
+  final String? folderUri;
+
   /// Date the song was added to the library
   final DateTime? dateAdded;
 
@@ -60,6 +63,7 @@ class Song {
     this.trackNumber,
     this.discNumber,
     this.filePath,
+    this.folderUri,
     this.dateAdded,
   });
 
@@ -91,6 +95,7 @@ class Song {
     int? trackNumber,
     int? discNumber,
     String? filePath,
+    String? folderUri,
     DateTime? dateAdded,
   }) {
     return Song(
@@ -108,6 +113,7 @@ class Song {
       trackNumber: trackNumber ?? this.trackNumber,
       discNumber: discNumber ?? this.discNumber,
       filePath: filePath ?? this.filePath,
+      folderUri: folderUri ?? this.folderUri,
       dateAdded: dateAdded ?? this.dateAdded,
     );
   }

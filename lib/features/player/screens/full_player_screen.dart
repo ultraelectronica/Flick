@@ -1643,17 +1643,7 @@ class _AnimatedSongScene extends StatelessWidget {
                                 letterSpacing: 0.8,
                               ),
                             ),
-                            if (playerScreenMode !=
-                                PlayerScreenMode.immersive) ...[
-                              SizedBox(
-                                width: context.responsive(6.0, 7.0, 8.0),
-                              ),
-                              _buildQueueSummaryBadge(
-                                context,
-                                count: queue.length,
-                                highlighted: hasQueue,
-                              ),
-                            ],
+                          
                           ],
                         ),
                       ],
@@ -1884,24 +1874,26 @@ class _AnimatedSongScene extends StatelessWidget {
             ],
           ),
         ),
-        SizedBox(width: context.responsive(12.0, 14.0, 16.0)),
-        if (playerScreenMode != PlayerScreenMode.immersive)
-          GestureDetector(
-            onTap: onOpenQueue,
-            child: Container(
-              padding: EdgeInsets.all(context.responsive(8.0, 9.0, 10.0)),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                LucideIcons.listMusic,
-                color: Colors.white.withValues(alpha: 0.92),
-                size: context.responsive(18.0, 20.0, 22.0),
-              ),
-            ),
-          ),
+        _buildQueueButton(context),
       ],
+    );
+  }
+
+  Widget _buildQueueButton(BuildContext context) {
+    return GestureDetector(
+      onTap: onOpenQueue,
+      child: Container(
+        padding: EdgeInsets.all(context.responsive(8.0, 9.0, 10.0)),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(
+          LucideIcons.listMusic,
+          color: Colors.white.withValues(alpha: 0.92),
+          size: context.responsive(18.0, 20.0, 22.0),
+        ),
+      ),
     );
   }
 

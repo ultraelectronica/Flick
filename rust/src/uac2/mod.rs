@@ -69,8 +69,9 @@ pub use android_direct::{
     create_android_usb_backend, force_release_usb_session, is_usb_session_active,
     mark_android_usb_fallback, negotiate_android_direct_output_sample_rate,
     register_android_usb_device, set_android_direct_usb_enabled, set_android_usb_lock_enabled,
-    set_android_usb_playback_format, validate_android_direct_request, AndroidDirectUsbBackend,
-    AndroidDirectUsbDebugState, AndroidDirectUsbDevice, AndroidDirectUsbPlaybackFormat,
+    set_android_usb_playback_format, validate_android_direct_request,
+    wait_for_android_usb_session_stop, AndroidDirectUsbBackend, AndroidDirectUsbDebugState,
+    AndroidDirectUsbDevice, AndroidDirectUsbPlaybackFormat,
 };
 #[cfg(feature = "uac2")]
 pub use audio_format::{
