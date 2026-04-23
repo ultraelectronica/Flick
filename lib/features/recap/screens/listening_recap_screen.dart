@@ -35,6 +35,8 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
   Map<ListeningRecapPeriod, ListeningRecap> _recaps = {};
   bool _isLoading = true;
   bool _isSaving = false;
+  _RecapRankingPosterType? _savingPosterType;
+  _RecapRankingPosterType? _savedPosterType;
   StreamSubscription<void>? _historySubscription;
 
   @override
@@ -134,10 +136,14 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
   Future<void> _saveRankingPoster(_RecapRankingPosterType type) async {
     if (_isSaving) return;
 
-    final recap = _currentRecap();
-    setState(() => _isSaving = true);
+    setState(() {
+      _isSaving = true;
+      _savingPosterType = type;
+      _savedPosterType = null;
+    });
 
     try {
+      final recap = _currentRecap();
       final bytes = await _captureRecapPng(_rankingPosterBoundaryKey(type));
       if (bytes == null) {
         throw const GallerySaveException(
@@ -151,9 +157,19 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
       );
 
       if (!mounted) return;
+      setState(() {
+        _savingPosterType = null;
+        _savedPosterType = type;
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${type.title} saved to your gallery')),
       );
+
+      await Future.delayed(const Duration(milliseconds: 1500));
+      if (mounted && _savedPosterType == type) {
+        setState(() => _savedPosterType = null);
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -161,7 +177,10 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
       ).showSnackBar(SnackBar(content: Text(_saveErrorMessage(error))));
     } finally {
       if (mounted) {
-        setState(() => _isSaving = false);
+        setState(() {
+          _isSaving = false;
+          _savingPosterType = null;
+        });
       }
     }
   }
@@ -248,6 +267,10 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
                                                 _RecapRankingPosterType
                                                     .topSongs,
                                               ),
+                                        isSaving: _savingPosterType ==
+                                            _RecapRankingPosterType.topSongs,
+                                        isSuccess: _savedPosterType ==
+                                            _RecapRankingPosterType.topSongs,
                                         children: [
                                           for (
                                             var index = 0;
@@ -275,6 +298,10 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
                                                 _RecapRankingPosterType
                                                     .topArtists,
                                               ),
+                                        isSaving: _savingPosterType ==
+                                            _RecapRankingPosterType.topArtists,
+                                        isSuccess: _savedPosterType ==
+                                            _RecapRankingPosterType.topArtists,
                                         children: [
                                           for (
                                             var index = 0;
@@ -482,6 +509,8 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
     required List<Widget> children,
     String? actionLabel,
     VoidCallback? onActionTap,
+    bool isSaving = false,
+    bool isSuccess = false,
   }) {
     return Container(
       width: double.infinity,
@@ -520,7 +549,12 @@ class _ListeningRecapScreenState extends State<ListeningRecapScreen> {
               ),
               if (actionLabel != null && onActionTap != null) ...[
                 const SizedBox(width: AppConstants.spacingSm),
-                _SectionPosterButton(label: actionLabel, onTap: onActionTap),
+                _SectionPosterButton(
+                  label: actionLabel,
+                  onTap: onActionTap,
+                  isSaving: isSaving,
+                  isSuccess: isSuccess,
+                ),
               ],
             ],
           ),
@@ -1673,15 +1707,22 @@ class _RankingTile extends StatelessWidget {
 class _SectionPosterButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
+  final bool isSaving;
+  final bool isSuccess;
 
-  const _SectionPosterButton({required this.label, required this.onTap});
+  const _SectionPosterButton({
+    required this.label,
+    required this.onTap,
+    this.isSaving = false,
+    this.isSuccess = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: isSaving ? null : onTap,
         borderRadius: BorderRadius.circular(AppConstants.radiusRound),
         child: Ink(
           padding: const EdgeInsets.symmetric(
@@ -1696,10 +1737,12 @@ class _SectionPosterButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.crop_portrait_rounded,
-                size: 16,
-                color: context.adaptiveTextSecondary,
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (child, animation) {
+                  return ScaleTransition(scale: animation, child: child);
+                },
+                child: _buildIcon(),
               ),
               const SizedBox(width: 6),
               Text(
@@ -1713,6 +1756,34 @@ class _SectionPosterButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildIcon() {
+    if (isSaving) {
+      return SizedBox(
+        key: const ValueKey('loading'),
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.white.withValues(alpha: 0.7)),
+        ),
+      );
+    }
+    if (isSuccess) {
+      return Icon(
+        key: const ValueKey('success'),
+        Icons.check_rounded,
+        size: 16,
+        color: Colors.greenAccent,
+      );
+    }
+    return Icon(
+      key: const ValueKey('default'),
+      Icons.crop_portrait_rounded,
+      size: 16,
+      color: Colors.white.withValues(alpha: 0.7),
     );
   }
 }
