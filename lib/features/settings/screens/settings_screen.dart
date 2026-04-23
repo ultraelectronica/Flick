@@ -43,7 +43,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   );
   static const String _releaseNotesUrl =
       'https://github.com/ultraelectronica/flick_player/releases/latest';
-  static const bool _updatesComingSoon = true;
+  static const bool _updatesComingSoon = false;
 
   // Sample settings state
   bool _gaplessPlayback = true;
@@ -196,16 +196,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return;
     }
 
-    if (!_updater.isAvailable) {
-      setState(() {
-        _hasScannedForUpdates = true;
-        _lastScannedUpdateStatus = UpdateStatus.unavailable;
-        _updateCheckErrorMessage = null;
-      });
-      _showToast('Updates are unavailable in this build.');
-      return;
-    }
-
     setState(() {
       _isCheckingForUpdates = true;
       _updateCheckErrorMessage = null;
@@ -260,11 +250,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _installUpdate() async {
     if (_isInstallingUpdate) {
-      return;
-    }
-
-    if (!_updater.isAvailable) {
-      _showToast('Updates are unavailable in this build.');
       return;
     }
 
