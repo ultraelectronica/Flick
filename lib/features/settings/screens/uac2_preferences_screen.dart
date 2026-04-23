@@ -21,16 +21,14 @@ class Uac2PreferencesScreen extends ConsumerStatefulWidget {
 class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
   @override
   Widget build(BuildContext context) {
-    final preferencesService = ref.watch(uac2PreferencesServiceProvider);
-    final autoConnectAsync = ref.watch(uac2AutoConnectProvider);
-    final autoSelectAsync = ref.watch(uac2AutoSelectDeviceProvider);
-    final formatPrefAsync = ref.watch(uac2FormatPreferenceProvider);
-    final preferredFormatAsync = ref.watch(uac2PreferredFormatProvider);
-    final hiFiModeAsync = ref.watch(uac2HiFiModeProvider);
-    final bitPerfectAsync = ref.watch(uac2BitPerfectEnabledProvider);
-    final audioEngineAsync = ref.watch(audioEnginePreferenceProvider);
-    final developerModeAsync = ref.watch(developerModeEnabledProvider);
-    final diagnostics = ref.watch(audioOutputDiagnosticsProvider);
+                    final preferencesService = ref.watch(uac2PreferencesServiceProvider);
+                    final formatPrefAsync = ref.watch(uac2FormatPreferenceProvider);
+                    final preferredFormatAsync = ref.watch(uac2PreferredFormatProvider);
+                    final hiFiModeAsync = ref.watch(uac2HiFiModeProvider);
+                    final bitPerfectAsync = ref.watch(uac2BitPerfectEnabledProvider);
+                    final audioEngineAsync = ref.watch(audioEnginePreferenceProvider);
+                    final developerModeAsync = ref.watch(developerModeEnabledProvider);
+                    final diagnostics = ref.watch(audioOutputDiagnosticsProvider);
 
     return DisplayModeWrapper(
       child: Scaffold(
@@ -47,17 +45,9 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppConstants.spacingMd,
                   ),
-                  child: Column(
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildSectionHeader(context, 'Connection'),
-                      _buildConnectionPreferences(
-                        context,
-                        preferencesService,
-                        autoConnectAsync,
-                        autoSelectAsync,
-                      ),
-                      const SizedBox(height: AppConstants.spacingLg),
                       _buildSectionHeader(context, 'Audio Format'),
                       _buildFormatPreferences(
                         context,
@@ -127,56 +117,6 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
           letterSpacing: 1.2,
           fontWeight: FontWeight.w600,
         ),
-      ),
-    );
-  }
-
-  Widget _buildConnectionPreferences(
-    BuildContext context,
-    Uac2PreferencesService service,
-    AsyncValue<bool> autoConnectAsync,
-    AsyncValue<bool> autoSelectAsync,
-  ) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-        border: Border.all(color: AppColors.glassBorder),
-      ),
-      child: Column(
-        children: [
-          autoConnectAsync.when(
-            data: (autoConnect) => _buildSwitchTile(
-              context,
-              icon: LucideIcons.power,
-              title: 'Auto-Connect',
-              subtitle: 'Automatically connect to last used device on startup',
-              value: autoConnect,
-              onChanged: (value) async {
-                await service.setAutoConnect(value);
-                ref.invalidate(uac2AutoConnectProvider);
-              },
-            ),
-            loading: () => _buildLoadingTile(context),
-            error: (_, _) => _buildErrorTile(context),
-          ),
-          _buildDivider(),
-          autoSelectAsync.when(
-            data: (autoSelect) => _buildSwitchTile(
-              context,
-              icon: LucideIcons.zap,
-              title: 'Auto-Select Device',
-              subtitle: 'Automatically select first available USB audio device',
-              value: autoSelect,
-              onChanged: (value) async {
-                await service.setAutoSelectDevice(value);
-                ref.invalidate(uac2AutoSelectDeviceProvider);
-              },
-            ),
-            loading: () => _buildLoadingTile(context),
-            error: (_, _) => _buildErrorTile(context),
-          ),
-        ],
       ),
     );
   }
@@ -1162,8 +1102,6 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               await ref
                   .read(uac2ServiceProvider)
                   .setBitPerfectEnabled(false, persist: false);
-              ref.invalidate(uac2AutoConnectProvider);
-              ref.invalidate(uac2AutoSelectDeviceProvider);
               ref.invalidate(uac2FormatPreferenceProvider);
               ref.invalidate(uac2PreferredFormatProvider);
               ref.invalidate(uac2HiFiModeProvider);
