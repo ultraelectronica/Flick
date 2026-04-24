@@ -686,12 +686,11 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     required List<Song> songs,
     required int index,
   }) async {
-    // Always use the full unfiltered library (_cachedSongs) as the playlist
-    // so shuffle works on all songs, not just search results
+    // Use the sorted songs list so next/previous follows the current sort order
     final songToPlay = songs[index];
     await ref
         .read(playerProvider.notifier)
-        .play(songToPlay, playlist: _cachedSongs);
+        .play(songToPlay, playlist: songs);
 
     if (!mounted) return;
 
