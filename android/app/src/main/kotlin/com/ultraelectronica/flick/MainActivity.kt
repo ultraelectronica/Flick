@@ -3,6 +3,7 @@ package com.ultraelectronica.flick
 import android.Manifest
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -54,9 +55,12 @@ import kotlin.math.roundToInt
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.ultraelectronica.flick/storage"
     private val PLAYER_CHANNEL = "com.ultraelectronica.flick/player"
+    private val INTEGRATION_CHANNEL = "com.ultraelectronica.flick/integration"
     private val UAC2_CHANNEL = "com.ultraelectronica.flick/uac2"
     private val AUDIO_DEVICE_CHANNEL = "com.ultraelectronica.flick/audio_device"
     private val EQUALIZER_CHANNEL = "com.ultraelectronica.flick/equalizer"
+    private val LOCKER_PACKAGE = "com.ultraelectronica.locker"
+    private val LOCKER_RETURN_URI = "locker://return?source=flick"
     // private val CONVERTER_CHANNEL = "com.ultraelectronica.flick/converter"
     private val REQUEST_OPEN_DOCUMENT_TREE = 1001
     private val REQUEST_OPEN_DOCUMENT = 1003
@@ -86,6 +90,8 @@ class MainActivity: FlutterActivity() {
         }
     private var cachedMusicVolumeBeforeMute: Int? = null
     private val justAudioProcessingController = JustAudioProcessingController()
+    private var integrationChannel: MethodChannel? = null
+    private var pendingExternalPlaybackPayload: Map<String, Any?>? = null
     private var volumeContentObserver: ContentObserver? = null
     private val volumeObserverHandler = Handler(Looper.getMainLooper())
     private var volumeObserverDebounceRunnable: Runnable? = null
@@ -115,6 +121,7 @@ class MainActivity: FlutterActivity() {
             Log.i("Flick", "Rust Android audio context initialized")
         }
 
+        handleExternalPlaybackIntent(intent)
         handleUsbAttachIntent(intent)
         maybeRequestPermissionForConnectedUsbAudioDevices(reason = "activity create")
     }
@@ -122,6 +129,7 @@ class MainActivity: FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleExternalPlaybackIntent(intent)
         handleUsbAttachIntent(intent)
         maybeRequestPermissionForConnectedUsbAudioDevices(reason = "new intent")
     }
@@ -506,6 +514,24 @@ class MainActivity: FlutterActivity() {
             }
         }
 
+        integrationChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            INTEGRATION_CHANNEL,
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "consumePendingExternalPlayback" -> {
+                        result.success(pendingExternalPlaybackPayload)
+                        pendingExternalPlaybackPayload = null
+                    }
+                    "returnToLocker" -> {
+                        result.success(returnToLocker())
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+
         // UAC 2.0 USB Host API (Android): list devices and request permission
         uac2Channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UAC2_CHANNEL)
         uac2Channel?.setMethodCallHandler { call, result ->
@@ -856,6 +882,87 @@ class MainActivity: FlutterActivity() {
         } catch (e: Exception) {
             resolver.delete(itemUri, null, null)
             throw e
+        }
+    }
+
+    private fun handleExternalPlaybackIntent(intent: Intent?) {
+        val payload = buildExternalPlaybackPayload(intent) ?: return
+        pendingExternalPlaybackPayload = payload
+        integrationChannel?.invokeMethod("externalPlaybackIntent", payload)
+    }
+
+    private fun buildExternalPlaybackPayload(intent: Intent?): Map<String, Any?>? {
+        if (intent?.action != Intent.ACTION_VIEW) {
+            return null
+        }
+
+        val dataUri = intent.data ?: return null
+        if (dataUri.scheme != ContentResolver.SCHEME_CONTENT) {
+            return null
+        }
+
+        if (!isReadableContentUri(dataUri)) {
+            Log.w("Flick", "Ignoring unreadable external playback URI: $dataUri")
+            return null
+        }
+
+        val sourcePackage = resolveSourcePackage(intent)
+        return mapOf(
+            "uri" to dataUri.toString(),
+            "mimeType" to (intent.type ?: contentResolver.getType(dataUri)),
+            "displayName" to getDocumentDisplayName(dataUri.toString()),
+            "sourcePackage" to sourcePackage,
+            "fromLocker" to (sourcePackage == LOCKER_PACKAGE),
+        )
+    }
+
+    private fun isReadableContentUri(uri: Uri): Boolean {
+        return try {
+            contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+        } catch (e: Exception) {
+            Log.w("Flick", "Failed to open external playback URI: $uri", e)
+            false
+        }
+    }
+
+    private fun resolveSourcePackage(intent: Intent): String? {
+        val referrerUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_REFERRER, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(Intent.EXTRA_REFERRER)
+        }
+
+        packageNameFromReferrer(referrerUri)?.let { return it }
+
+        val referrerName = intent.getStringExtra(Intent.EXTRA_REFERRER_NAME)
+        packageNameFromReferrer(referrerName?.let(Uri::parse))?.let { return it }
+
+        packageNameFromReferrer(referrer)?.let { return it }
+
+        return null
+    }
+
+    private fun packageNameFromReferrer(uri: Uri?): String? {
+        if (uri == null) return null
+        if (uri.scheme == "android-app") {
+            return uri.host?.takeIf { it.isNotBlank() }
+        }
+        return uri.host?.takeIf { it.isNotBlank() }
+    }
+
+    private fun returnToLocker(): Boolean {
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(LOCKER_RETURN_URI)).apply {
+                `package` = LOCKER_PACKAGE
+                addCategory(Intent.CATEGORY_BROWSABLE)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            Log.w("Flick", "Failed to return to Locker", e)
+            false
         }
     }
 

@@ -1337,6 +1337,14 @@ class PlayerService {
     _replayPlayTracker.startTrack(song.id, initialPosition: initialPosition);
   }
 
+  bool _shouldPersistSong(Song? song) {
+    return song != null && !song.isExternal;
+  }
+
+  bool _allowsFavoriteActions(Song? song) {
+    return song != null && !song.isExternal;
+  }
+
   void _clearReplayTracking() {
     _replayPlayTracker.clear();
   }
@@ -1357,7 +1365,7 @@ class PlayerService {
       songId: song.id,
       position: position,
     );
-    if (counted) {
+    if (counted && _shouldPersistSong(song)) {
       unawaited(_recentlyPlayedRepository.recordPlay(song.id));
     }
   }
@@ -1555,8 +1563,8 @@ class PlayerService {
 
   Future<void> _toggleFavoriteFromNotification() async {
     final song = currentSongNotifier.value;
-    if (song != null) {
-      await _favoritesService.toggleFavorite(song.id);
+    if (_allowsFavoriteActions(song)) {
+      await _favoritesService.toggleFavorite(song!.id);
       _updateNotificationState();
     }
   }
@@ -1566,10 +1574,12 @@ class PlayerService {
     if (song == null) return;
 
     var isFav = false;
-    try {
-      isFav = await _favoritesService.isFavorite(song.id);
-    } catch (e) {
-      debugPrint('Failed to load favorite state: $e');
+    if (_allowsFavoriteActions(song)) {
+      try {
+        isFav = await _favoritesService.isFavorite(song.id);
+      } catch (e) {
+        debugPrint('Failed to load favorite state: $e');
+      }
     }
 
     await _notificationService.updateNotification(
@@ -1679,7 +1689,7 @@ class PlayerService {
 
     // SAF-backed URIs for ALAC/AIFF/M4A can fail format detection in some
     // decoder paths. Stage them to a local temp file with a stable extension.
-    if (isAndroidContentUri && _shouldStageForPlayback(song)) {
+    if (isAndroidContentUri && _shouldStageContentUriForPlayback(song)) {
       final stagedPath = await _stageContentUriForPlayback(
         filePath,
         extensionHint: _preferredExtension(song),
@@ -1705,6 +1715,10 @@ class PlayerService {
   bool _shouldStageForPlayback(Song song) {
     final normalized = _playbackFileType(song);
     return normalized == 'm4a' || normalized == 'aiff';
+  }
+
+  bool _shouldStageContentUriForPlayback(Song song) {
+    return song.isExternal || _shouldStageForPlayback(song);
   }
 
   Future<String?> _stageContentUriForPlayback(
@@ -1837,7 +1851,8 @@ class PlayerService {
   }
 
   Future<void> _prepareImmediatePlaybackAsset(Song song) async {
-    if (!_shouldStageForPlayback(song) && !_shouldConvertToWav(song)) {
+    if (!_shouldStageContentUriForPlayback(song) &&
+        !_shouldConvertToWav(song)) {
       return;
     }
 
@@ -2620,11 +2635,12 @@ class PlayerService {
 
   Future<void> _savePosition({Song? song, Duration? position}) async {
     final resolvedSong = song ?? currentSongNotifier.value;
-    if (resolvedSong == null) return;
+    if (!_shouldPersistSong(resolvedSong)) return;
+    final persistedSong = resolvedSong!;
 
     try {
       await _lastPlayedService.saveLastPlayed(
-        resolvedSong.id,
+        persistedSong.id,
         position ?? positionNotifier.value,
         playlistSongIds: _playlist.map((s) => s.id).toList(),
         currentIndex: _currentIndex,
@@ -3362,6 +3378,9 @@ class PlayerService {
     playbackSpeedNotifier.dispose();
     sleepTimerRemainingNotifier.dispose();
 
+    for (final stagedPath in _stagedPlaybackPathCache.values) {
+      unawaited(_deleteTemporaryPlaybackFile(stagedPath));
+    }
     for (final convertedPath in _convertedPlaybackPathCache.values) {
       unawaited(_deleteTemporaryPlaybackFile(convertedPath));
     }

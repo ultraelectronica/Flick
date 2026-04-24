@@ -197,7 +197,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
         final positionAdvanced =
             latestPositionSeconds > _lastTrackedPositionSeconds;
-        if (positionAdvanced) {
+        if (positionAdvanced && !latestSong.isExternal) {
           unawaited(
             ref
                 .read(lastFmScrobbleProvider.notifier)
@@ -257,6 +257,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
   }
 
   void _handleTrackStarted(Song song) {
+    if (song.isExternal) {
+      return;
+    }
     unawaited(
       ref
           .read(lastFmScrobbleProvider.notifier)
@@ -276,6 +279,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     required int listenedSeconds,
     required int trackDurationSeconds,
   }) {
+    if (endedSong.isExternal) {
+      return;
+    }
     unawaited(
       ref
           .read(lastFmScrobbleProvider.notifier)

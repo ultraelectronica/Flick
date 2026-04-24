@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flick/src/rust/frb_generated.dart';
 import 'package:flick/app/app.dart';
 import 'package:flick/data/database.dart';
+import 'package:flick/services/external_playback_service.dart';
 import 'package:flick/services/permission_service.dart';
 import 'package:flick/services/player_service.dart';
 
@@ -16,7 +17,10 @@ Future<void> main() async {
 
   await Database.init();
 
-  await _restoreLastPlayedSong();
+  final externalPlaybackHandled = await ExternalPlaybackService().initialize();
+  if (!externalPlaybackHandled) {
+    await _restoreLastPlayedSong();
+  }
 
   runApp(const ProviderScope(child: FlickPlayerApp()));
 

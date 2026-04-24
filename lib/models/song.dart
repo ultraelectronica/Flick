@@ -48,6 +48,12 @@ class Song {
   /// Date the song was added to the library
   final DateTime? dateAdded;
 
+  /// True when the song came from an external app handoff.
+  final bool isExternal;
+
+  /// Package name of the app that handed this song to Flick.
+  final String? sourcePackage;
+
   const Song({
     required this.id,
     required this.title,
@@ -65,7 +71,11 @@ class Song {
     this.filePath,
     this.folderUri,
     this.dateAdded,
+    this.isExternal = false,
+    this.sourcePackage,
   });
+
+  bool get isFromLocker => sourcePackage == 'com.ultraelectronica.locker';
 
   /// Format duration as mm:ss or hh:mm:ss
   String get formattedDuration {
@@ -97,6 +107,8 @@ class Song {
     String? filePath,
     String? folderUri,
     DateTime? dateAdded,
+    bool? isExternal,
+    String? sourcePackage,
   }) {
     return Song(
       id: id ?? this.id,
@@ -115,6 +127,8 @@ class Song {
       filePath: filePath ?? this.filePath,
       folderUri: folderUri ?? this.folderUri,
       dateAdded: dateAdded ?? this.dateAdded,
+      isExternal: isExternal ?? this.isExternal,
+      sourcePackage: sourcePackage ?? this.sourcePackage,
     );
   }
 
