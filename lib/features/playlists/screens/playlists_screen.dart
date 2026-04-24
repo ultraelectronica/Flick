@@ -6,7 +6,10 @@ import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/utils/responsive.dart';
 import 'package:flick/models/playlist.dart';
+import 'package:flick/models/song.dart';
 import 'package:flick/providers/playlist_provider.dart';
+import 'package:flick/providers/songs_provider.dart';
+import 'package:flick/widgets/common/cached_image_widget.dart';
 import 'package:flick/features/playlists/screens/playlist_detail_screen.dart';
 
 class PlaylistsScreen extends ConsumerWidget {
@@ -511,20 +514,7 @@ class _PlaylistCard extends StatelessWidget {
             padding: const EdgeInsets.all(AppConstants.spacingMd),
             child: Row(
               children: [
-                Container(
-                  width: context.scaleSize(56),
-                  height: context.scaleSize(56),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceLight,
-                    borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-                    border: Border.all(color: AppColors.surfaceDark),
-                  ),
-                  child: Icon(
-                    LucideIcons.music,
-                    color: context.adaptiveTextSecondary,
-                    size: context.responsiveIcon(AppConstants.iconSizeLg),
-                  ),
-                ),
+                _PlaylistCover(playlist: playlist),
                 const SizedBox(width: AppConstants.spacingMd),
                 Expanded(
                   child: Column(
@@ -608,6 +598,116 @@ class _PlaylistCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PlaylistCover extends ConsumerWidget {
+  final Playlist playlist;
+
+  const _PlaylistCover({required this.playlist});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final songsAsync = ref.watch(songsProvider);
+
+    return songsAsync.when(
+      loading: () => _buildCoverPlaceholder(context),
+      error: (_, __) => _buildCoverPlaceholder(context),
+      data: (songsState) {
+        final playlistSongs = songsState.songs
+            .where((song) => playlist.songIds.contains(song.id))
+            .toList();
+
+        if (playlistSongs.isEmpty) {
+          return _buildCoverPlaceholder(context);
+        }
+
+        final artworkPaths = playlistSongs
+            .map((s) => s.albumArt)
+            .where((art) => art != null && art.isNotEmpty)
+            .cast<String>()
+            .take(4)
+            .toList();
+
+        return _buildCoverGrid(context, artworkPaths);
+      },
+    );
+  }
+
+  Widget _buildCoverPlaceholder(BuildContext context) {
+    return Container(
+      width: context.scaleSize(56),
+      height: context.scaleSize(56),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        border: Border.all(color: AppColors.surfaceDark),
+      ),
+      child: Icon(
+        LucideIcons.music,
+        color: context.adaptiveTextSecondary,
+        size: context.responsiveIcon(AppConstants.iconSizeLg),
+      ),
+    );
+  }
+
+  Widget _buildCoverGrid(BuildContext context, List<String> artworkPaths) {
+    final size = context.scaleSize(56);
+
+    if (artworkPaths.isEmpty) {
+      return _buildCoverPlaceholder(context);
+    }
+
+    if (artworkPaths.length == 1) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: CachedImageWidget(
+            imagePath: artworkPaths[0],
+            fit: BoxFit.cover,
+            placeholder: _buildPlaceholderIcon(context),
+            errorWidget: _buildPlaceholderIcon(context),
+          ),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: _buildGridArt(context, artworkPaths, size),
+      ),
+    );
+  }
+
+  Widget _buildGridArt(BuildContext context, List<String> artworkPaths, double size) {
+    return GridView.count(
+      crossAxisCount: 2,
+      physics: const NeverScrollableScrollPhysics(),
+      children: artworkPaths.take(4).map((path) {
+        return CachedImageWidget(
+          imagePath: path,
+          fit: BoxFit.cover,
+          placeholder: Container(color: AppColors.surfaceLight),
+          errorWidget: Container(color: AppColors.surfaceLight),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildPlaceholderIcon(BuildContext context) {
+    return Container(
+      color: AppColors.surfaceLight,
+      child: Icon(
+        LucideIcons.music,
+        color: context.adaptiveTextSecondary,
+        size: context.responsiveIcon(AppConstants.iconSizeLg),
       ),
     );
   }
