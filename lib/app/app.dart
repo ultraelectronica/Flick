@@ -113,8 +113,12 @@ class _MainShellState extends ConsumerState<MainShell>
       // player screen on every app launch.
       final songChanged =
           nextSong != null &&
-          _previousSong != null &&          // must have had a song before
-          _previousSong!.id != nextSong.id; // and it must have changed
+          _previousSong != null &&
+          _previousSong!.id != nextSong.id;
+
+      if (!songChanged && nextSong?.isExternal == true) {
+        _maybeOpenExternalPlayer(nextSong);
+      }
 
       if (songChanged && context.mounted) {
         final isPlaying = ref.read(isPlayingProvider);
@@ -177,6 +181,13 @@ class _MainShellState extends ConsumerState<MainShell>
         }
       },
     );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _maybeOpenExternalPlayer(ref.read(currentSongProvider));
+    });
   }
 
   @override
@@ -203,7 +214,7 @@ class _MainShellState extends ConsumerState<MainShell>
       // in the background, so treat this as a true "end" only when paused.
       final playerState = ref.read(playerProvider);
       final song = playerState.currentSong;
-      if (song != null && !playerState.isPlaying) {
+      if (song != null && !song.isExternal && !playerState.isPlaying) {
         final notifier = ref.read(playerProvider.notifier);
         ref
             .read(lastFmScrobbleProvider.notifier)
@@ -230,6 +241,25 @@ class _MainShellState extends ConsumerState<MainShell>
     } else {
       _navBarAnimationController.forward();
     }
+  }
+
+  void _maybeOpenExternalPlayer(Song? song) {
+    if (song?.isExternal != true) {
+      return;
+    }
+    if (!ref.read(isPlayingProvider) || NavigationHelper.isFullPlayerOpen) {
+      return;
+    }
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted || NavigationHelper.isFullPlayerOpen || song == null) {
+        return;
+      }
+      NavigationHelper.navigateToFullPlayer(
+        context,
+        heroTag: 'external_${song.id}',
+      );
+    });
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
