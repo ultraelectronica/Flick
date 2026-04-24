@@ -125,6 +125,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                         setState(() {
                           _searchQuery = value.toLowerCase();
                           _selectedIndex = 0;
+                          _lastSyncedSong = null;
                         });
                       },
                     ),
@@ -141,7 +142,10 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                       final isFolderMode = songsState.sortOption == SongSortOption.folder;
                       final allSongs = songsState.sortedSongs;
                       var songs = allSongs;
-                      _cachedSongs = songsState.songs;
+                      if (_cachedSongs != songsState.songs) {
+                        _cachedSongs = songsState.songs;
+                        _lastSyncedSong = null;
+                      }
 
                       if (_searchQuery.isNotEmpty) {
                         songs = songs.where((song) {
@@ -614,10 +618,17 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     }).toList();
   }
 
+  Song? _lastSyncedSong;
+
   void _syncInterfaceToCurrentSong(Song? song, {bool animate = true}) {
     if (!mounted || song == null || _cachedSongs.isEmpty) {
       return;
     }
+
+    if (_lastSyncedSong != null && _lastSyncedSong!.id == song.id) {
+      return;
+    }
+    _lastSyncedSong = song;
 
     final visibleSongs = _visibleSongsFromCache();
     final targetIndex = visibleSongs.indexWhere((candidate) {
@@ -904,6 +915,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                       ref.read(songsProvider.notifier).setSortOption(result);
                       setState(() {
                         _selectedIndex = 0;
+                        _lastSyncedSong = null;
                       });
                     } else if (result is SongFileTypeFilter) {
                       ref
@@ -911,6 +923,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                           .setFileTypeFilter(result);
                       setState(() {
                         _selectedIndex = 0;
+                        _lastSyncedSong = null;
                       });
                     }
                   },
