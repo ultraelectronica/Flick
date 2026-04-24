@@ -149,6 +149,31 @@ class SongRepository {
     });
   }
 
+  Future<void> updateAlbumArtPaths(
+    Iterable<String> filePaths,
+    String? albumArtPath,
+  ) async {
+    final uniquePaths = filePaths.where((path) => path.isNotEmpty).toSet();
+    if (uniquePaths.isEmpty) {
+      return;
+    }
+
+    await _isar.writeTxn(() async {
+      for (final filePath in uniquePaths) {
+        final existing = await _isar.songEntitys
+            .filter()
+            .filePathEqualTo(filePath)
+            .findFirst();
+        if (existing == null || existing.albumArtPath == albumArtPath) {
+          continue;
+        }
+
+        existing.albumArtPath = albumArtPath;
+        await _isar.songEntitys.put(existing);
+      }
+    });
+  }
+
   /// Count songs in a folder.
   Future<int> countSongsInFolder(String folderUri) async {
     return await _isar.songEntitys.filter().folderUriEqualTo(folderUri).count();
