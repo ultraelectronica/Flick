@@ -267,7 +267,7 @@ class PlayerService {
   Timer? _positionSaveTimer;
 
   // State Notifiers
-  final ValueNotifier<Song?> currentSongNotifier = ValueNotifier(null);
+  final ValueNotifier<Song?> currentSongNotifier = _MutableValueNotifier(null);
   final ValueNotifier<bool> isPlayingNotifier = ValueNotifier(false);
   final ValueNotifier<Duration> positionNotifier = ValueNotifier(Duration.zero);
   final ValueNotifier<Duration> durationNotifier = ValueNotifier(Duration.zero);
@@ -423,6 +423,85 @@ class PlayerService {
     _playlistQueueEntryIds
       ..clear()
       ..addAll(List<int?>.filled(songs.length, null));
+  }
+
+  void syncAlbumArtPaths({
+    required Iterable<String> filePaths,
+    required String? albumArtPath,
+  }) {
+    final targetPaths = filePaths.where((path) => path.isNotEmpty).toSet();
+    if (targetPaths.isEmpty) {
+      return;
+    }
+
+    Song syncSong(Song song) {
+      final path = song.filePath;
+      if (path == null || !targetPaths.contains(path)) {
+        return song;
+      }
+      if (song.albumArt == albumArtPath) {
+        return song;
+      }
+      return _copySongWithAlbumArt(song, albumArtPath);
+    }
+
+    var queueChanged = false;
+
+    for (var i = 0; i < _playlist.length; i++) {
+      final updated = syncSong(_playlist[i]);
+      if (!identical(updated, _playlist[i])) {
+        _playlist[i] = updated;
+      }
+    }
+
+    for (var i = 0; i < _originalPlaylist.length; i++) {
+      final updated = syncSong(_originalPlaylist[i]);
+      if (!identical(updated, _originalPlaylist[i])) {
+        _originalPlaylist[i] = updated;
+      }
+    }
+
+    for (var i = 0; i < _queuedEntries.length; i++) {
+      final entry = _queuedEntries[i];
+      final updatedSong = syncSong(entry.song);
+      if (!identical(updatedSong, entry.song)) {
+        _queuedEntries[i] = _QueueEntry(id: entry.id, song: updatedSong);
+        queueChanged = true;
+      }
+    }
+
+    final currentSong = currentSongNotifier.value;
+    if (currentSong != null) {
+      final updatedCurrentSong = syncSong(currentSong);
+      if (!identical(updatedCurrentSong, currentSong)) {
+        currentSongNotifier.value = updatedCurrentSong;
+      }
+    }
+
+    if (queueChanged) {
+      _notifyQueueChanged();
+    }
+  }
+
+  Song _copySongWithAlbumArt(Song song, String? albumArtPath) {
+    return Song(
+      id: song.id,
+      title: song.title,
+      artist: song.artist,
+      albumArt: albumArtPath,
+      duration: song.duration,
+      fileType: song.fileType,
+      resolution: song.resolution,
+      sampleRate: song.sampleRate,
+      bitDepth: song.bitDepth,
+      album: song.album,
+      albumArtist: song.albumArtist,
+      trackNumber: song.trackNumber,
+      discNumber: song.discNumber,
+      filePath: song.filePath,
+      folderUri: song.folderUri,
+      dateAdded: song.dateAdded,
+    );
   }
 
   void _insertQueuedEntriesAfterCurrent() {
@@ -3317,4 +3396,22 @@ class _QueueEntry {
   final Song song;
 
   const _QueueEntry({required this.id, required this.song});
+}
+
+class _MutableValueNotifier<T> extends ValueNotifier<T> {
+  _MutableValueNotifier(super.value) : _currentValue = value;
+
+  T _currentValue;
+
+  @override
+  T get value => _currentValue;
+
+  @override
+  set value(T newValue) {
+    if (identical(_currentValue, newValue)) {
+      return;
+    }
+    _currentValue = newValue;
+    notifyListeners();
+  }
 }
