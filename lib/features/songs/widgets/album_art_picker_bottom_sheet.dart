@@ -344,7 +344,7 @@ class _AlbumArtPickerBottomSheetState extends State<AlbumArtPickerBottomSheet> {
                     label: const Text('Pick Image'),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.accent,
-                      foregroundColor: Colors.white,
+                      foregroundColor: Colors.black,
                     ),
                   ),
                   if (selectedCandidate != null)
