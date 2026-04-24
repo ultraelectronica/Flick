@@ -14,6 +14,7 @@ import 'package:flick/features/songs/widgets/album_art_picker_bottom_sheet.dart'
 import 'package:flick/models/player_screen_mode.dart';
 import 'package:flick/models/song.dart';
 import 'package:flick/services/player_service.dart';
+import 'package:flick/services/external_playback_service.dart';
 import 'package:flick/services/favorites_service.dart';
 import 'package:flick/services/lyrics_service.dart';
 import 'package:flick/services/player_screen_mode_preference_service.dart';
@@ -35,6 +36,8 @@ class FullPlayerScreen extends StatefulWidget {
 class _FullPlayerScreenState extends State<FullPlayerScreen>
     with TickerProviderStateMixin {
   final PlayerService _playerService = PlayerService();
+  final ExternalPlaybackService _externalPlaybackService =
+      ExternalPlaybackService();
   final FavoritesService _favoritesService = FavoritesService();
   final LyricsService _lyricsService = LyricsService();
   final PlayerScreenModePreferenceService _playerScreenModePreferenceService =
@@ -1188,48 +1191,54 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
             ],
           ],
         ),
-        FutureBuilder<bool>(
-          future: _favoritesService.isFavorite(song.id),
-          builder: (context, snapshot) {
-            final isFavorite = snapshot.data ?? false;
-            return GestureDetector(
-              onTap: () async {
-                final newState = await _favoritesService.toggleFavorite(
-                  song.id,
-                );
-                setState(() {});
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        newState
-                            ? 'Added to favorites'
-                            : 'Removed from favorites',
-                      ),
-                      duration: const Duration(seconds: 1),
-                    ),
+        if (song.isExternal)
+          SizedBox(
+            width: favoriteIconSize + actionPadding.horizontal,
+            height: favoriteIconSize + actionPadding.vertical,
+          )
+        else
+          FutureBuilder<bool>(
+            future: _favoritesService.isFavorite(song.id),
+            builder: (context, snapshot) {
+              final isFavorite = snapshot.data ?? false;
+              return GestureDetector(
+                onTap: () async {
+                  final newState = await _favoritesService.toggleFavorite(
+                    song.id,
                   );
-                }
-              },
-              child: Container(
-                padding: actionPadding,
-                decoration: BoxDecoration(
-                  color: isFavorite
-                      ? Colors.red.withValues(alpha: 0.25)
-                      : Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(actionRadius),
+                  setState(() {});
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          newState
+                              ? 'Added to favorites'
+                              : 'Removed from favorites',
+                        ),
+                        duration: const Duration(seconds: 1),
+                      ),
+                    );
+                  }
+                },
+                child: Container(
+                  padding: actionPadding,
+                  decoration: BoxDecoration(
+                    color: isFavorite
+                        ? Colors.red.withValues(alpha: 0.25)
+                        : Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(actionRadius),
+                  ),
+                  child: Icon(
+                    isFavorite ? Icons.favorite : Icons.favorite_border,
+                    color: isFavorite
+                        ? Colors.red
+                        : Colors.white.withValues(alpha: 0.9),
+                    size: favoriteIconSize,
+                  ),
                 ),
-                child: Icon(
-                  isFavorite ? Icons.favorite : Icons.favorite_border,
-                  color: isFavorite
-                      ? Colors.red
-                      : Colors.white.withValues(alpha: 0.9),
-                  size: favoriteIconSize,
-                ),
-              ),
-            );
-          },
-        ),
+              );
+            },
+          ),
       ],
     );
   }
@@ -1240,6 +1249,36 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
     required bool compact,
   }) {
     if (song.filePath == null) return const SizedBox.shrink();
+    if (song.isFromLocker) {
+      return Padding(
+        padding: EdgeInsets.only(
+          left: context.responsive(12.0, 16.0, 20.0),
+          right: context.responsive(12.0, 16.0, 20.0),
+          top: compact ? context.responsive(8.0, 10.0, 12.0) : 0,
+          bottom: compact ? 0 : context.responsive(16.0, 20.0, 24.0),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              LucideIcons.lock,
+              size: context.responsive(11.0, 12.0, 13.0),
+              color: Colors.white.withValues(alpha: 0.7),
+            ),
+            SizedBox(width: context.responsive(4.0, 5.0, 6.0)),
+            Text(
+              'Opened from Locker',
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                fontSize: context.responsive(10.0, 11.0, 12.0),
+                color: Colors.white.withValues(alpha: 0.74),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (song.isExternal) return const SizedBox.shrink();
 
     String dirText = '';
     final filePath = song.filePath!;
@@ -1378,6 +1417,13 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                     });
                   },
                   onQueueSwipe: () => _queueSong(context, song),
+                  onReturnToLocker: () async {
+                    final returned = await _externalPlaybackService
+                        .returnToLocker();
+                    if (!returned && context.mounted) {
+                      Navigator.of(context).pop();
+                    }
+                  },
                   onShowSongActions: () =>
                       _showSongActionsBottomSheet(context, song),
                   onPrevious: _animateToPreviousSong,
@@ -1417,6 +1463,7 @@ class _AnimatedSongScene extends StatelessWidget {
   final VoidCallback onOpenQueue;
   final VoidCallback onToggleLyrics;
   final Future<void> Function() onQueueSwipe;
+  final Future<void> Function() onReturnToLocker;
   final VoidCallback onShowSongActions;
   final Future<void> Function() onPrevious;
   final Future<void> Function() onNext;
@@ -1441,6 +1488,7 @@ class _AnimatedSongScene extends StatelessWidget {
     required this.onOpenQueue,
     required this.onToggleLyrics,
     required this.onQueueSwipe,
+    required this.onReturnToLocker,
     required this.onShowSongActions,
     required this.onPrevious,
     required this.onNext,
@@ -1627,6 +1675,7 @@ class _AnimatedSongScene extends StatelessWidget {
                 valueListenable: playerService.queueNotifier,
                 builder: (context, queue, _) {
                   final hasQueue = queue.isNotEmpty;
+                  final fromLocker = song.isFromLocker;
                   final chip = AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     padding: EdgeInsets.symmetric(
@@ -1645,21 +1694,27 @@ class _AnimatedSongScene extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Now Playing',
-                              style: TextStyle(
-                                fontFamily: 'ProductSans',
-                                fontSize: context.responsive(12.0, 13.0, 14.0),
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white.withValues(alpha: 0.9),
-                                letterSpacing: 0.8,
-                              ),
-                            ),
-                          ],
+                        Text(
+                          'Now Playing',
+                          style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontSize: context.responsive(12.0, 13.0, 14.0),
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white.withValues(alpha: 0.9),
+                            letterSpacing: 0.8,
+                          ),
                         ),
+                        if (fromLocker) ...[
+                          SizedBox(height: context.responsive(2.0, 3.0, 4.0)),
+                          Text(
+                            'Opened from Locker',
+                            style: TextStyle(
+                              fontFamily: 'ProductSans',
+                              fontSize: context.responsive(10.0, 10.5, 11.0),
+                              color: Colors.white.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   );
@@ -1678,12 +1733,60 @@ class _AnimatedSongScene extends StatelessWidget {
             ),
           ),
           SizedBox(width: context.responsive(8.0, 10.0, 12.0)),
-          _buildChromeButton(
-            context,
-            icon: Icons.more_vert,
-            onTap: onShowSongActions,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (song.isFromLocker) ...[
+                _buildReturnToLockerButton(context),
+                SizedBox(width: context.responsive(8.0, 10.0, 12.0)),
+              ],
+              _buildChromeButton(
+                context,
+                icon: Icons.more_vert,
+                onTap: onShowSongActions,
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildReturnToLockerButton(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        unawaited(onReturnToLocker());
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: context.responsive(12.0, 14.0, 16.0),
+          vertical: context.responsive(10.0, 11.0, 12.0),
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xFF121212).withValues(alpha: 0.76),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              LucideIcons.undo2,
+              size: context.responsive(14.0, 15.0, 16.0),
+              color: Colors.white.withValues(alpha: 0.9),
+            ),
+            SizedBox(width: context.responsive(6.0, 7.0, 8.0)),
+            Text(
+              'Back to Locker',
+              style: TextStyle(
+                fontFamily: 'ProductSans',
+                fontSize: context.responsive(11.0, 12.0, 13.0),
+                fontWeight: FontWeight.w600,
+                color: Colors.white.withValues(alpha: 0.92),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
