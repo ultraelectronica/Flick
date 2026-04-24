@@ -369,6 +369,10 @@ class MusicFolderService {
     }
   }
 
+  Future<String?> getDocumentDisplayName(String uri) {
+    return _getDisplayName(uri);
+  }
+
   Future<String?> resolveFilesystemPath(String uri) async {
     try {
       if (!uri.startsWith('content://')) {
