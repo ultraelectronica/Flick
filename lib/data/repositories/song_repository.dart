@@ -209,7 +209,7 @@ class SongRepository {
     for (final song in songs) {
       final albumName = _albumNameForSong(song);
       final albumArtist = _albumArtistForSong(song);
-      final key = _albumGroupKey(albumName, albumArtist);
+      final key = _albumGroupKey(albumName);
 
       groupedSongs.putIfAbsent(key, () => []).add(song);
       albumNames[key] = albumName;
@@ -238,7 +238,6 @@ class SongRepository {
   Future<AlbumGroup?> getAlbumGroupForSong(Song song) async {
     final targetKey = _albumGroupKey(
       _albumNameForSong(song),
-      _albumArtistForSong(song),
     );
     final groups = await getAlbumGroups();
 
@@ -343,8 +342,8 @@ class SongRepository {
     return 'Unknown Artist';
   }
 
-  String _albumGroupKey(String albumName, String albumArtist) {
-    return '$albumArtist\u0000$albumName';
+  String _albumGroupKey(String albumName) {
+    return albumName;
   }
 
   /// Build a resolution string from entity properties.
