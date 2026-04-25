@@ -1106,6 +1106,68 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
     return null;
   }
 
+  String _getSongQuality(Song song) {
+    final fileType = song.fileType.toUpperCase();
+    const lossless = {'FLAC', 'WAV', 'ALAC', 'AIFF', 'DSD', 'APE', 'WV'};
+    if (lossless.contains(fileType)) return 'HQ';
+    if ((song.bitDepth ?? 0) >= 24) return 'HQ';
+    if ((song.sampleRate ?? 0) >= 88200) return 'HQ';
+    final res = song.resolution?.toLowerCase() ?? '';
+    final m = RegExp(r'(\d+)\s*kbps').firstMatch(res);
+    if (m != null && (int.tryParse(m.group(1)!) ?? 0) >= 320) return 'HQ';
+    return 'SD';
+  }
+
+  Widget _buildPlayerBadge(BuildContext context, String label) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.responsive(4.0, 5.0, 6.0),
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: 'ProductSans',
+          fontSize: context.responsive(9.0, 10.0, 11.0),
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQualityBadge(BuildContext context, Song song) {
+    final isHQ = _getSongQuality(song) == 'HQ';
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.responsive(4.0, 5.0, 6.0),
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: isHQ
+            ? Colors.green.withValues(alpha: 0.22)
+            : Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(3),
+        border: isHQ
+            ? Border.all(color: Colors.green.withValues(alpha: 0.4))
+            : null,
+      ),
+      child: Text(
+        isHQ ? 'HQ' : 'SD',
+        style: TextStyle(
+          fontFamily: 'ProductSans',
+          fontSize: context.responsive(9.0, 10.0, 11.0),
+          fontWeight: FontWeight.w600,
+          color: isHQ ? Colors.green.shade400 : Colors.white,
+        ),
+      ),
+    );
+  }
+
   Widget _buildFileInfoRow(
     BuildContext context,
     Song song, {
@@ -1159,36 +1221,13 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: context.responsive(4.0, 5.0, 6.0),
-                vertical: 2,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Text(
-                song.fileType,
-                style: TextStyle(
-                  fontFamily: 'ProductSans',
-                  fontSize: context.responsive(9.0, 10.0, 11.0),
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-            ),
+            _buildPlayerBadge(context, song.fileType.toUpperCase()),
             if (song.resolution != null) ...[
               SizedBox(width: context.responsive(5.0, 6.0, 7.0)),
-              Text(
-                song.resolution!,
-                style: TextStyle(
-                  fontFamily: 'ProductSans',
-                  fontSize: context.responsive(9.0, 10.0, 11.0),
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
-              ),
+              _buildPlayerBadge(context, song.resolution!),
             ],
+            SizedBox(width: context.responsive(5.0, 6.0, 7.0)),
+            _buildQualityBadge(context, song),
           ],
         ),
         if (song.isExternal)
