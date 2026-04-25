@@ -68,13 +68,14 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   Widget build(BuildContext context) {
     final songsAsync = ref.watch(songsProvider);
     final viewMode = ref.watch(songsViewModeProvider);
-    final navBarAlwaysVisible = ref.watch(navBarAlwaysVisibleProvider);
+    final navBarVisible = ref.watch(navBarVisibleProvider);
 
-    final shouldReserveBottomSpace =
-        viewMode != SongViewMode.list || navBarAlwaysVisible;
+    final shouldReserveOrbitBottomSpace =
+        viewMode != SongViewMode.list && navBarVisible;
 
     return DisplayModeWrapper(
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
           // Background ambient effects
           _buildAmbientBackground(),
@@ -140,7 +141,8 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                     loading: () => _buildLoadingState(),
                     error: (error, stack) => _buildErrorState(error),
                     data: (songsState) {
-                      final isFolderMode = songsState.sortOption == SongSortOption.folder;
+                      final isFolderMode =
+                          songsState.sortOption == SongSortOption.folder;
                       final allSongs = songsState.sortedSongs;
                       var songs = allSongs;
                       if (_cachedSongs != songsState.songs) {
@@ -172,16 +174,22 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                           final filteredGroups = <FolderGroup>[];
                           for (final group in folderGroups) {
                             final filtered = group.songs.where((song) {
-                              return song.title.toLowerCase().contains(_searchQuery) ||
-                                  song.artist.toLowerCase().contains(_searchQuery);
+                              return song.title.toLowerCase().contains(
+                                    _searchQuery,
+                                  ) ||
+                                  song.artist.toLowerCase().contains(
+                                    _searchQuery,
+                                  );
                             }).toList();
                             if (filtered.isNotEmpty) {
-                              filteredGroups.add(FolderGroup(
-                                name: group.name,
-                                key: group.key,
-                                folderUri: group.folderUri,
-                                songs: filtered,
-                              ));
+                              filteredGroups.add(
+                                FolderGroup(
+                                  name: group.name,
+                                  key: group.key,
+                                  folderUri: group.folderUri,
+                                  songs: filtered,
+                                ),
+                              );
                             }
                           }
                           if (filteredGroups.isEmpty) {
@@ -213,7 +221,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                         songs,
                         viewMode,
                         tokenToIndexMap,
-                        shouldReserveBottomSpace,
+                        navBarVisible,
                       );
                     },
                   ),
@@ -221,9 +229,10 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
 
                 // Reserve space only when needed for orbit view.
                 // List view handles its own bottom padding.
-                SizedBox(
-                  height:
-                      shouldReserveBottomSpace && viewMode != SongViewMode.list
+                AnimatedContainer(
+                  duration: AppConstants.animationNormal,
+                  curve: Curves.easeOutCubic,
+                  height: shouldReserveOrbitBottomSpace
                       ? AppConstants.navBarHeight + 90
                       : 0,
                 ),
@@ -239,7 +248,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
     List<Song> songs,
     SongViewMode viewMode,
     Map<String, int> tokenToIndexMap,
-    bool shouldReserveBottomSpace,
+    bool isBottomBarVisible,
   ) {
     final content = viewMode == SongViewMode.list
         ? _buildListView(songs)
@@ -268,18 +277,22 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
       tokens = tokenToIndexMap.keys.toList()..sort();
     }
 
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final railTopInset = AppConstants.spacingSm;
-    final railBottomInset = shouldReserveBottomSpace
-        ? AppConstants.spacingSm
-        : AppConstants.navBarHeight + 90 + AppConstants.spacingSm;
+    final railBottomInset = viewMode == SongViewMode.list && isBottomBarVisible
+        ? AppConstants.navBarHeight + 90 + AppConstants.spacingSm
+        : AppConstants.spacingSm;
 
     return Stack(
+      clipBehavior: Clip.none,
       children: [
         content,
-        Positioned(
+        AnimatedPositioned(
+          duration: AppConstants.animationNormal,
+          curve: Curves.easeOutCubic,
           right: AppConstants.spacingSm,
           top: railTopInset,
-          bottom: railBottomInset,
+          bottom: railBottomInset - keyboardInset,
           child: SongFastIndexOverlay(
             tokenToIndex: tokenToIndexMap,
             selectedToken: _selectedFastToken,
@@ -410,10 +423,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
                 });
               },
               onPlayAll: () async {
-                await _playSongAndOpenPlayer(
-                  songs: folder.songs,
-                  index: 0,
-                );
+                await _playSongAndOpenPlayer(songs: folder.songs, index: 0);
               },
             ),
             if (isExpanded) ...[
@@ -688,9 +698,7 @@ class _SongsScreenState extends ConsumerState<SongsScreen> {
   }) async {
     // Use the sorted songs list so next/previous follows the current sort order
     final songToPlay = songs[index];
-    await ref
-        .read(playerProvider.notifier)
-        .play(songToPlay, playlist: songs);
+    await ref.read(playerProvider.notifier).play(songToPlay, playlist: songs);
 
     if (!mounted) return;
 
@@ -1667,10 +1675,11 @@ class _FolderHeader extends StatelessWidget {
                           const SizedBox(width: 4),
                           Text(
                             'Play all',
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: AppColors.accent,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: AppColors.accent,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ],
                       ),
