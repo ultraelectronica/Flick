@@ -24,7 +24,6 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                     final preferencesService = ref.watch(uac2PreferencesServiceProvider);
                     final formatPrefAsync = ref.watch(uac2FormatPreferenceProvider);
                     final preferredFormatAsync = ref.watch(uac2PreferredFormatProvider);
-                    final hiFiModeAsync = ref.watch(uac2HiFiModeProvider);
                     final bitPerfectAsync = ref.watch(uac2BitPerfectEnabledProvider);
                     final audioEngineAsync = ref.watch(audioEnginePreferenceProvider);
                     final developerModeAsync = ref.watch(developerModeEnabledProvider);
@@ -63,7 +62,6 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                         audioEngineAsync,
                         developerModeAsync,
                         bitPerfectAsync,
-                        hiFiModeAsync,
                         diagnostics,
                       ),
                       const SizedBox(height: AppConstants.navBarHeight + 120),
@@ -196,12 +194,8 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     AsyncValue<AudioEnginePreference> audioEngineAsync,
     AsyncValue<bool> developerModeAsync,
     AsyncValue<bool> bitPerfectAsync,
-    AsyncValue<bool> hiFiModeAsync,
     AudioOutputDiagnostics? diagnostics,
   ) {
-    final detectedDap = diagnostics?.detectedDap == true;
-    final detectedDapBrand = diagnostics?.detectedDapBrand;
-
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.6),
@@ -270,36 +264,6 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                   return;
                 }
                 if (changed) {
-                  _showRestartRequiredToast(context);
-                }
-              },
-            ),
-            loading: () => _buildLoadingTile(context),
-            error: (_, _) => _buildErrorTile(context),
-          ),
-          _buildDivider(),
-          hiFiModeAsync.when(
-            data: (enabled) => _buildSwitchTile(
-              context,
-              icon: LucideIcons.zap,
-              title: detectedDap ? 'DAP Bit-Perfect' : 'HiFi Mode',
-              subtitle: detectedDap
-                  ? 'Open ${detectedDapBrand ?? 'the DAP'} native output at each track\'s sample rate and disable software DSP controls that would break bit-perfect playback.'
-                  : 'Experimental override for DAP/internal routes. Android internal playback still commonly stops at 48kHz.',
-              value: enabled,
-              onChanged: (value) async {
-                final changed = value != enabled;
-                if (detectedDap) {
-                  await ref
-                      .read(playerServiceProvider)
-                      .setDapBitPerfectEnabled(value);
-                } else {
-                  await ref
-                      .read(playerServiceProvider)
-                      .setHiFiModeEnabled(value);
-                }
-                ref.invalidate(uac2HiFiModeProvider);
-                if (changed && context.mounted) {
                   _showRestartRequiredToast(context);
                 }
               },
@@ -1104,7 +1068,6 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                   .setBitPerfectEnabled(false, persist: false);
               ref.invalidate(uac2FormatPreferenceProvider);
               ref.invalidate(uac2PreferredFormatProvider);
-              ref.invalidate(uac2HiFiModeProvider);
               ref.invalidate(uac2BitPerfectEnabledProvider);
               ref.invalidate(uac2ExclusiveDacModeProvider);
               if (context.mounted) {

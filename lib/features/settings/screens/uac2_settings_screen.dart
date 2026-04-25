@@ -11,12 +11,9 @@ import 'package:flick/services/uac2_service.dart';
 import 'package:flick/widgets/common/display_mode_wrapper.dart';
 import 'package:flick/features/settings/screens/uac2_preferences_screen.dart';
 import 'package:flick/widgets/uac2/uac2_volume_control.dart';
-import 'package:flick/widgets/uac2/uac2_stream_config.dart';
 import 'package:flick/widgets/uac2/uac2_hotplug_monitor.dart';
 import 'package:flick/widgets/uac2/uac2_transfer_stats_widget.dart';
 import 'package:flick/widgets/uac2/uac2_pipeline_info_widget.dart';
-import 'package:flick/widgets/uac2/uac2_connection_manager.dart';
-import 'package:flick/widgets/uac2/uac2_fallback_manager.dart';
 
 class Uac2SettingsScreen extends ConsumerStatefulWidget {
   const Uac2SettingsScreen({super.key});
@@ -72,15 +69,6 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
                           const SizedBox(height: AppConstants.spacingLg),
                           _buildSectionHeader(context, 'Capabilities'),
                           _buildCapabilitiesCard(context, selectedDevice),
-                          const SizedBox(height: AppConstants.spacingLg),
-                          _buildSectionHeader(context, 'Stream Configuration'),
-                          Uac2StreamConfig(device: selectedDevice),
-                          const SizedBox(height: AppConstants.spacingLg),
-                          _buildSectionHeader(context, 'Connection Management'),
-                          const Uac2ConnectionManager(),
-                          const SizedBox(height: AppConstants.spacingLg),
-                          _buildSectionHeader(context, 'Fallback Audio'),
-                          const Uac2FallbackManager(),
                         ],
                         if (deviceStatus != null) ...[
                           const SizedBox(height: AppConstants.spacingLg),
