@@ -234,6 +234,7 @@ Flick Player is purely open-source and free. There are no premium features, ads,
 ## Contributors
 
 - [@Harleythetech](https://github.com/Harleythetech) (The first ever contributor of Flick)
+- [@MagosVox](https://github.com/MagosVox) (Special contributor - bit-perfect USB DAC expertise)
 
 ## Contributing
 
