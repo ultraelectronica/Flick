@@ -2334,6 +2334,19 @@ fn quantize_hardware_volume(
     stepped.clamp(min_raw as f64, max_raw as f64) as i16
 }
 
+fn quantize_then_normalize(
+    normalized: f64,
+    control: &AndroidDirectUsbHardwareVolumeControl,
+) -> f64 {
+    let raw = quantize_hardware_volume(
+        normalized,
+        control.min_volume_raw,
+        control.max_volume_raw,
+        control.resolution_raw,
+    );
+    normalize_hardware_volume(raw, control.min_volume_raw, control.max_volume_raw)
+}
+
 fn build_hardware_volume_control_from_feature_unit(
     handle: &DeviceHandle<Context>,
     interface_number: u8,
@@ -2507,14 +2520,8 @@ pub fn android_direct_set_hardware_volume(volume: f64) -> Result<(), String> {
         .hardware_volume_control
         .clone()
         .ok_or_else(|| "Android direct USB hardware volume is unavailable".to_string())?;
-    let mut claimed_handle = open_transient_usb_handle(&state.device)
+    let claimed_handle = open_transient_usb_handle(&state.device)
         .inspect_err(|e| eprintln!("[VolFlow] open_transient_usb_handle failed: {e}"))?;
-    if let Err(error) = claimed_handle.ensure_interface_claimed(control.interface_number) {
-        eprintln!(
-            "[VolFlow] interface {} claim failed: {error}",
-            control.interface_number
-        );
-    }
 
     let target_raw = quantize_hardware_volume(
         volume,
@@ -2532,12 +2539,28 @@ pub fn android_direct_set_hardware_volume(volume: f64) -> Result<(), String> {
         UAC2_FEATURE_UNIT_VOLUME_CONTROL,
         target_raw,
     );
-    let snapshot_result =
-        refresh_android_usb_hardware_volume_snapshot_with_handle(&claimed_handle.handle, &control);
-    release_claimed_interfaces(&claimed_handle.handle, &claimed_handle.claimed_interfaces);
     write_result.inspect_err(|e| eprintln!("[VolFlow] write_feature_unit failed: {e}"))?;
-    let (normalized, muted) = snapshot_result
-        .inspect_err(|e| eprintln!("[VolFlow] refresh_snapshot failed: {e}"))?;
+
+    let (normalized, muted) =
+        refresh_android_usb_hardware_volume_snapshot_with_handle(&claimed_handle.handle, &control)
+            .inspect_err(|e| eprintln!("[VolFlow] refresh_snapshot failed: {e}"))?;
+
+    let expected = quantize_then_normalize(volume, &control);
+    let step = if control.resolution_raw > 0 {
+        control.resolution_raw as f64
+    } else {
+        1.0f64
+    };
+    let span = ((control.max_volume_raw - control.min_volume_raw) as f64).max(1.0);
+    let tolerance = (step / span * 0.6).max(1e-6);
+    if (normalized - expected).abs() > tolerance {
+        eprintln!("[VolFlow] post-SET_CUR volume mismatch: expected={expected:.3} got={normalized:.3}");
+        return Err(format!(
+            "volume verification failed: expected {:.3}, got {:.3}",
+            expected, normalized
+        ));
+    }
+
     set_hardware_volume_snapshot(Some(normalized), muted);
     eprintln!("[VolFlow] SET_CUR OK: normalized={normalized:.3}");
     Ok(())
@@ -2557,14 +2580,7 @@ pub fn android_direct_set_hardware_mute(muted: bool) -> Result<(), String> {
     let mute_channel = control
         .mute_channel
         .ok_or_else(|| "Android direct USB hardware mute is unavailable".to_string())?;
-    let mut claimed_handle = open_transient_usb_handle(&state.device)?;
-    if let Err(error) = claimed_handle.ensure_interface_claimed(control.interface_number) {
-        log_error!(
-            "[USB] Failed to claim AudioControl interface {} for hardware mute: {}",
-            control.interface_number,
-            error
-        );
-    }
+    let claimed_handle = open_transient_usb_handle(&state.device)?;
 
     let write_result = write_feature_unit_bool_control(
         &claimed_handle.handle,
@@ -2574,12 +2590,11 @@ pub fn android_direct_set_hardware_mute(muted: bool) -> Result<(), String> {
         UAC2_FEATURE_UNIT_MUTE_CONTROL,
         muted,
     );
+    write_result?;
     let snapshot_result =
         refresh_android_usb_hardware_volume_snapshot_with_handle(&claimed_handle.handle, &control);
-    release_claimed_interfaces(&claimed_handle.handle, &claimed_handle.claimed_interfaces);
-    write_result?;
-    let (normalized, muted) = snapshot_result?;
-    set_hardware_volume_snapshot(Some(normalized), muted);
+    let (normalized, snapshot_muted) = snapshot_result?;
+    set_hardware_volume_snapshot(Some(normalized), snapshot_muted);
     Ok(())
 }
 
