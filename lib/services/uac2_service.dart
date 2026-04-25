@@ -17,7 +17,7 @@ enum Uac2State { idle, connecting, connected, streaming, error }
 
 enum Uac2RouteType { internalDac, externalUsb, wired, bluetooth, dock, unknown }
 
-enum Uac2VolumeMode { system, hardware, unavailable }
+enum Uac2VolumeMode { system, hardware, software, unavailable }
 
 class Uac2AudioFormat {
   final int sampleRate;
@@ -1331,12 +1331,16 @@ class Uac2Service {
     final preferredUsbDetected =
         routeStatus['preferredUsbDeviceDetected'] == true;
     final directUsbRegistered = routeStatus['directUsbRegistered'] == true;
-    final volumeMode = _volumeModeFromString(
-      routeStatus['volumeMode'] as String?,
-    );
-    final hasVolumeControl = routeStatus['hasVolumeControl'] == true;
-    final volumeControlWritable =
-        hasVolumeControl && routeStatus['volumeControlWritable'] != false;
+    final volumeMode = directUsbRegistered &&
+            _volumeModeFromString(routeStatus['volumeMode'] as String?) ==
+                Uac2VolumeMode.unavailable
+        ? Uac2VolumeMode.software
+        : _volumeModeFromString(routeStatus['volumeMode'] as String?);
+    final isSwVolumeOverride = volumeMode == Uac2VolumeMode.software;
+    final hasVolumeControl = isSwVolumeOverride ||
+        routeStatus['hasVolumeControl'] == true;
+    final volumeControlWritable = isSwVolumeOverride ||
+        (hasVolumeControl && routeStatus['volumeControlWritable'] != false);
     final volume = (routeStatus['volume'] as num?)?.toDouble();
     final muted = routeStatus['muted'] as bool?;
 
@@ -2149,6 +2153,8 @@ Uac2VolumeMode _volumeModeFromString(String? value) {
       return Uac2VolumeMode.system;
     case 'hardware':
       return Uac2VolumeMode.hardware;
+    case 'software':
+      return Uac2VolumeMode.software;
     default:
       return Uac2VolumeMode.unavailable;
   }

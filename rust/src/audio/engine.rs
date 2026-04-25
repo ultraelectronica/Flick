@@ -1344,8 +1344,11 @@ pub(crate) fn audio_callback(
     }
 
     // Bit-perfect path: raw samples from decoder straight to output.
-    // No volume scaling, no EQ, no dynamics, no speed, no crossfade.
+    // No EQ, no dynamics, no speed, no crossfade.
+    // Volume IS applied: when DAC has hardware volume control it stays at 1.0
+    // (no-op), when the DAC lacks it this provides the fallback volume control.
     if data.is_bit_perfect() {
+        let volume = data.get_volume();
         let mut sources = match data.sources.try_lock() {
             Some(s) => s,
             None => {
@@ -1360,6 +1363,9 @@ pub(crate) fn audio_callback(
         }
         if read < output.len() {
             output[read..].fill(0.0);
+        }
+        for sample in output[..read].iter_mut() {
+            *sample *= volume;
         }
         return;
     }
@@ -1988,7 +1994,7 @@ mod tests {
     }
 
     #[test]
-    fn callback_bit_perfect_bypasses_volume_scaling() {
+    fn callback_bit_perfect_applies_volume() {
         let data = build_callback_data(48_000, 2);
         let input = vec![0.0, 0.25, -0.5, 0.5, -0.25, 0.0, 1.0, -1.0];
 
@@ -2000,7 +2006,8 @@ mod tests {
 
         let output = run_callback(&data, input.len());
 
-        assert_eq!(output, input);
+        let expected: Vec<f32> = input.iter().map(|s| s * 0.25).collect();
+        assert_eq!(output, expected);
     }
 
     #[test]
@@ -2026,6 +2033,22 @@ mod tests {
         let output = run_callback(&data, 8);
 
         assert_eq!(output, vec![0.0; 8]);
+    }
+
+    #[test]
+    fn callback_bit_perfect_passthrough_at_volume_1() {
+        let data = build_callback_data(48_000, 2);
+        let input = vec![0.0, 0.25, -0.5, 0.5, -0.25, 0.0, 1.0, -1.0];
+
+        data.set_volume(1.0);
+        data.set_bit_perfect(true);
+        data.sources
+            .lock()
+            .set_current(build_source(&input, 48_000, 2));
+
+        let output = run_callback(&data, input.len());
+
+        assert_eq!(output, input);
     }
 
     #[test]

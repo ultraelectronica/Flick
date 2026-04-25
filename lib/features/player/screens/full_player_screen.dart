@@ -666,7 +666,12 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             border: Border.all(color: AppColors.glassBorder),
           ),
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          padding: EdgeInsets.fromLTRB(
+            context.responsive(16.0, 18.0, 20.0),
+            context.responsive(10.0, 11.0, 12.0),
+            context.responsive(16.0, 18.0, 20.0),
+            context.responsive(20.0, 22.0, 24.0),
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -683,10 +688,12 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(
+                      context.responsive(10.0, 11.0, 12.0),
+                    ),
                     child: SizedBox(
-                      width: 68,
-                      height: 68,
+                      width: context.responsive(56.0, 62.0, 68.0),
+                      height: context.responsive(56.0, 62.0, 68.0),
                       child: CachedImageWidget(
                         imagePath: song.albumArt,
                         audioSourcePath: song.filePath,
@@ -724,7 +731,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontFamily: 'ProductSans',
-                            fontSize: 18,
+                            fontSize: context.responsive(16.0, 17.0, 18.0),
                             fontWeight: FontWeight.w600,
                             color: sheetContext.adaptiveTextPrimary,
                           ),
@@ -736,7 +743,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontFamily: 'ProductSans',
-                            fontSize: 14,
+                            fontSize: context.responsive(12.0, 13.0, 14.0),
                             color: sheetContext.adaptiveTextSecondary,
                           ),
                         ),
@@ -869,17 +876,20 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
 
   Widget _buildSongInfoChip(BuildContext context, String value) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: context.responsive(8.0, 9.0, 10.0),
+        vertical: context.responsive(3.0, 3.5, 4.0),
+      ),
       decoration: BoxDecoration(
         color: AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(context.responsive(6.0, 7.0, 8.0)),
         border: Border.all(color: AppColors.glassBorder),
       ),
       child: Text(
         value,
         style: TextStyle(
           fontFamily: 'ProductSans',
-          fontSize: 12,
+          fontSize: context.responsive(10.0, 11.0, 12.0),
           fontWeight: FontWeight.w600,
           color: context.adaptiveTextSecondary,
         ),
@@ -893,25 +903,30 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
     required String label,
     required VoidCallback onTap,
   }) {
+    final iconSize = context.responsive(16.0, 17.0, 18.0);
+    final containerSize = context.responsive(30.0, 32.0, 34.0);
+    final borderRadius = context.responsive(8.0, 9.0, 10.0);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(
+          context.responsive(10.0, 11.0, 12.0),
+        ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: EdgeInsets.symmetric(vertical: context.responsive(10.0, 11.0, 12.0)),
           child: Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: containerSize,
+                height: containerSize,
                 decoration: BoxDecoration(
                   color: AppColors.surfaceLight,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(borderRadius),
                 ),
                 child: Icon(
                   icon,
-                  size: 18,
+                  size: iconSize,
                   color: context.adaptiveTextSecondary,
                 ),
               ),
@@ -921,7 +936,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                   label,
                   style: TextStyle(
                     fontFamily: 'ProductSans',
-                    fontSize: 15,
+                    fontSize: context.responsive(13.0, 14.0, 15.0),
                     fontWeight: FontWeight.w500,
                     color: context.adaptiveTextPrimary,
                   ),
@@ -929,7 +944,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
               ),
               Icon(
                 LucideIcons.chevronRight,
-                size: 16,
+                size: context.responsive(14.0, 15.0, 16.0),
                 color: context.adaptiveTextTertiary,
               ),
             ],
@@ -1106,6 +1121,68 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
     return null;
   }
 
+  String _getSongQuality(Song song) {
+    final fileType = song.fileType.toUpperCase();
+    const lossless = {'FLAC', 'WAV', 'ALAC', 'AIFF', 'DSD', 'APE', 'WV'};
+    if (lossless.contains(fileType)) return 'HQ';
+    if ((song.bitDepth ?? 0) >= 24) return 'HQ';
+    if ((song.sampleRate ?? 0) >= 88200) return 'HQ';
+    final res = song.resolution?.toLowerCase() ?? '';
+    final m = RegExp(r'(\d+)\s*kbps').firstMatch(res);
+    if (m != null && (int.tryParse(m.group(1)!) ?? 0) >= 320) return 'HQ';
+    return 'SD';
+  }
+
+  Widget _buildPlayerBadge(BuildContext context, String label) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.responsive(4.0, 5.0, 6.0),
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: 'ProductSans',
+          fontSize: context.responsive(9.0, 10.0, 11.0),
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQualityBadge(BuildContext context, Song song) {
+    final isHQ = _getSongQuality(song) == 'HQ';
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.responsive(4.0, 5.0, 6.0),
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: isHQ
+            ? Colors.green.withValues(alpha: 0.22)
+            : Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(3),
+        border: isHQ
+            ? Border.all(color: Colors.green.withValues(alpha: 0.4))
+            : null,
+      ),
+      child: Text(
+        isHQ ? 'HQ' : 'SD',
+        style: TextStyle(
+          fontFamily: 'ProductSans',
+          fontSize: context.responsive(9.0, 10.0, 11.0),
+          fontWeight: FontWeight.w600,
+          color: isHQ ? Colors.green.shade400 : Colors.white,
+        ),
+      ),
+    );
+  }
+
   Widget _buildFileInfoRow(
     BuildContext context,
     Song song, {
@@ -1159,25 +1236,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: context.responsive(4.0, 5.0, 6.0),
-                vertical: 2,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Text(
-                song.fileType,
-                style: TextStyle(
-                  fontFamily: 'ProductSans',
-                  fontSize: context.responsive(9.0, 10.0, 11.0),
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-            ),
+            _buildPlayerBadge(context, song.fileType.toUpperCase()),
             if (song.resolution != null) ...[
               SizedBox(width: context.responsive(5.0, 6.0, 7.0)),
               Text(
@@ -1189,6 +1248,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                 ),
               ),
             ],
+            SizedBox(width: context.responsive(5.0, 6.0, 7.0)),
+            _buildQualityBadge(context, song),
           ],
         ),
         if (song.isExternal)

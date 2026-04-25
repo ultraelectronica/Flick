@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Service for handling Android storage permissions and folder selection.
 ///
@@ -9,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 /// and falls back to READ_EXTERNAL_STORAGE for Android 9-.
 class PermissionService {
   static const _channel = MethodChannel('com.ultraelectronica.flick/storage');
+  static const _batteryNoticeDismissedKey = 'battery_optimization_notice_dismissed';
 
   /// Request storage permission based on Android version.
   /// Returns true if permission is granted.
@@ -107,6 +109,23 @@ class PermissionService {
     }
   }
 
+  Future<bool> requestIgnoreBatteryOptimizations() async {
+    if (!Platform.isAndroid) {
+      return false;
+    }
+
+    try {
+      return await _channel.invokeMethod<bool>(
+            'requestIgnoreBatteryOptimizations',
+          ) ??
+          false;
+    } on PlatformException catch (e) {
+      throw StorageException(
+        'Failed to request battery optimization bypass: ${e.message}',
+      );
+    }
+  }
+
   Future<bool> isIgnoringBatteryOptimizations() async {
     if (!Platform.isAndroid) {
       return true;
@@ -124,21 +143,14 @@ class PermissionService {
     }
   }
 
-  Future<bool> openBatteryOptimizationSettings() async {
-    if (!Platform.isAndroid) {
-      return false;
-    }
+  Future<bool> isBatteryNoticeDismissed() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_batteryNoticeDismissedKey) ?? false;
+  }
 
-    try {
-      return await _channel.invokeMethod<bool>(
-            'openBatteryOptimizationSettings',
-          ) ??
-          false;
-    } on PlatformException catch (e) {
-      throw StorageException(
-        'Failed to open battery optimization settings: ${e.message}',
-      );
-    }
+  Future<void> dismissBatteryNotice() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_batteryNoticeDismissedKey, true);
   }
 }
 

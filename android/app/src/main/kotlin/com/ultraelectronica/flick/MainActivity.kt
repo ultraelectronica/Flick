@@ -379,8 +379,8 @@ class MainActivity: FlutterActivity() {
                 "isIgnoringBatteryOptimizations" -> {
                     result.success(isIgnoringBatteryOptimizations())
                 }
-                "openBatteryOptimizationSettings" -> {
-                    result.success(openBatteryOptimizationSettings())
+                "requestIgnoreBatteryOptimizations" -> {
+                    result.success(requestIgnoreBatteryOptimizations())
                 }
                 "readTextDocument" -> {
                     val uri = call.argument<String>("uri")
@@ -1058,22 +1058,20 @@ class MainActivity: FlutterActivity() {
         return powerManager?.isIgnoringBatteryOptimizations(packageName) ?: false
     }
 
-    private fun openBatteryOptimizationSettings(): Boolean {
-        return try {
-            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-            } else {
-                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-            }.apply {
+    private fun requestIgnoreBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true
+        }
+
+        try {
+            val settingsIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            startActivity(intent)
-            true
+            startActivity(settingsIntent)
+            return true
         } catch (e: Exception) {
             Log.w("MainActivity", "Failed to open battery optimization settings", e)
-            false
+            return false
         }
     }
 
@@ -2616,7 +2614,7 @@ class MainActivity: FlutterActivity() {
             hasDirectUsbHardwareVolume || hasSystemVolumeControl
         }
         val volumeControlWritable = when {
-            hasDirectUsbHardwareVolume -> !isLiveDirectUsbHardwareVolumeBlocked()
+            hasDirectUsbHardwareVolume -> true
             hasVolumeControl -> true
             else -> false
         }
@@ -2654,14 +2652,6 @@ class MainActivity: FlutterActivity() {
 
     private fun hasDirectUsbHardwareVolume(): Boolean {
         return activeDirectUsbDeviceName != null && nativeHasRustDirectUsbHardwareVolume()
-    }
-
-    private fun canUseDirectUsbHardwareVolume(): Boolean {
-        return hasDirectUsbHardwareVolume() && !isLiveDirectUsbHardwareVolumeBlocked()
-    }
-
-    private fun isLiveDirectUsbHardwareVolumeBlocked(): Boolean {
-        return hasDirectUsbHardwareVolume() && shouldHoldDirectUsbAudioFocus()
     }
 
     private fun isDirectUsbSessionFrozen(): Boolean {
@@ -2999,11 +2989,12 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun setRouteVolume(volume: Double): Boolean {
-        if (canUseDirectUsbHardwareVolume()) {
-            return nativeSetRustDirectUsbHardwareVolume(volume.coerceIn(0.0, 1.0))
-        }
-        if (isLiveDirectUsbHardwareVolumeBlocked()) {
-            return false
+        if (hasDirectUsbHardwareVolume()) {
+            val clamped = volume.coerceIn(0.0, 1.0)
+            Log.d("VolFlow", "setRouteVolume hw: sending SET_CUR $clamped")
+            val ok = nativeSetRustDirectUsbHardwareVolume(clamped)
+            Log.d("VolFlow", "setRouteVolume hw: native returned $ok")
+            return ok
         }
 
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
@@ -3037,11 +3028,8 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun setRouteMuted(muted: Boolean): Boolean {
-        if (canUseDirectUsbHardwareVolume()) {
+        if (hasDirectUsbHardwareVolume()) {
             return nativeSetRustDirectUsbHardwareMute(muted)
-        }
-        if (isLiveDirectUsbHardwareVolumeBlocked()) {
-            return false
         }
 
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false

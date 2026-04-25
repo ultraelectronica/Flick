@@ -38,7 +38,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static final Uri _releaseNotesApiUri = Uri.parse(
     'https://api.github.com/repos/ultraelectronica/flick_player/releases/latest',
   );
@@ -90,13 +90,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     _loadLibraryData();
     _syncFoldersToDatabase();
     _loadAndroidDeviceNotices();
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scanProgressNotifier.dispose();
     _scanSettingsController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadAndroidDeviceNotices();
+    }
   }
 
   Future<void> _syncFoldersToDatabase() async {
@@ -137,9 +146,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       final results = await Future.wait<dynamic>([
         AndroidAudioDeviceService.instance.refresh(),
         permissionService.isIgnoringBatteryOptimizations(),
+        permissionService.isBatteryNoticeDismissed(),
       ]);
       final deviceInfo = results[0] as AndroidPlaybackDeviceInfo;
       final isIgnoringBatteryOptimizations = results[1] as bool;
+      final isNoticeDismissed = results[2] as bool;
 
       if (!mounted) {
         return;
@@ -147,7 +158,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
       setState(() {
         _isXiaomiDevice = deviceInfo.isXiaomiDevice;
-        _showBatteryOptimizationNotice = !isIgnoringBatteryOptimizations;
+        _showBatteryOptimizationNotice =
+            !isIgnoringBatteryOptimizations && !isNoticeDismissed;
       });
     } catch (_) {
       if (!mounted) {
@@ -160,33 +172,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
   }
 
-  Future<void> _openBatteryOptimizationSettings() async {
+  Future<void> _requestBatteryOptimizationDisable() async {
     final permissionService = PermissionService();
 
     try {
-      final opened = await permissionService.openBatteryOptimizationSettings();
+      final launched = await permissionService.requestIgnoreBatteryOptimizations();
       if (!mounted) {
         return;
       }
 
-      if (!opened) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to open battery optimization settings'),
-          ),
-        );
+      if (!launched) {
+        _showToast('Unable to open battery optimization settings');
       }
     } catch (e) {
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to open battery optimization settings: $e'),
-        ),
-      );
+      _showToast('Failed to open battery optimization settings: $e');
     }
+  }
+
+  Future<void> _dismissBatteryNotice() async {
+    final permissionService = PermissionService();
+    await permissionService.dismissBatteryNotice();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _showBatteryOptimizationNotice = false;
+    });
   }
 
   bool get _restartRequiredForUpdate {
@@ -1191,6 +1206,7 @@ SOFTWARE.
     LibraryScanPreferences libraryScanPreferences,
   ) {
     return Container(
+      clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(AppConstants.radiusLg),
@@ -1202,16 +1218,72 @@ SOFTWARE.
           _buildLibraryInfo(context),
           if (_showBatteryOptimizationNotice) ...[
             _buildDivider(),
-            _buildActionButton(
-              context,
-              icon: LucideIcons.batteryWarning,
-              title: _isXiaomiDevice
-                  ? 'Disable Battery Optimization (Recommended)'
-                  : 'Disable Battery Optimization',
-              subtitle: _isXiaomiDevice
-                  ? 'Required on many Xiaomi, Redmi, and POCO devices so rescans and background features keep working'
-                  : 'Allow Flick to run without aggressive background limits so rescans and background features keep working',
-              onTap: _openBatteryOptimizationSettings,
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _requestBatteryOptimizationDisable,
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(AppConstants.radiusLg),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(AppConstants.spacingMd),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: context.scaleSize(AppConstants.containerSizeSm),
+                        height: context.scaleSize(AppConstants.containerSizeSm),
+                        decoration: BoxDecoration(
+                          color: AppColors.glassBackgroundStrong,
+                          borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                        ),
+                        child: Icon(
+                          LucideIcons.batteryWarning,
+                          color: context.adaptiveTextSecondary,
+                          size: context.responsiveIcon(AppConstants.iconSizeMd),
+                        ),
+                      ),
+                      const SizedBox(width: AppConstants.spacingMd),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _isXiaomiDevice
+                                  ? 'Disable Battery Optimization (Recommended)'
+                                  : 'Disable Battery Optimization',
+                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                color: context.adaptiveTextPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _isXiaomiDevice
+                                  ? 'Required on many Xiaomi, Redmi, and POCO devices so rescans and background features keep working'
+                                  : 'Allow Flick to run without aggressive background limits so rescans and background features keep working',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: context.adaptiveTextTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppConstants.spacingSm),
+                      IconButton(
+                        icon: Icon(
+                          LucideIcons.x,
+                          size: context.responsiveIcon(AppConstants.iconSizeSm),
+                          color: context.adaptiveTextTertiary,
+                        ),
+                        tooltip: 'Dismiss',
+                        onPressed: _dismissBatteryNotice,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ],
           _buildDivider(),
@@ -1663,6 +1735,7 @@ SOFTWARE.
     required List<Widget> children,
   }) {
     return Container(
+      clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(AppConstants.radiusLg),

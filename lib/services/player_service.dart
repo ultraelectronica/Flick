@@ -2102,24 +2102,8 @@ class PlayerService {
     }
 
     if (isBitPerfectModeEnabled) {
-      final needsBypassLog =
-          (_currentVolume - 1.0).abs() > 0.0001 ||
-          (playbackSpeedNotifier.value - 1.0).abs() > 0.0001 ||
-          _rustAudioService.crossfadeEnabledNotifier.value;
-      if (needsBypassLog) {
-        debugPrint(
-          '[Engine] Explicit bit-perfect mode: bypassing software volume, playback speed, and crossfade',
-        );
-      }
-      final routeStatus = _uac2Service.currentDeviceStatus;
-      if (playbackMode == AudioEngineType.usbDacExperimental &&
-          routeStatus != null &&
-          !routeStatus.hasVolumeControl) {
-        debugPrint(
-          '[Engine] Direct USB bit-perfect is active without Android route volume control; output level is full-scale unless the DAC itself provides hardware attenuation',
-        );
-      }
-      await _rustAudioService.setVolume(1.0);
+      final hwVol = _hasBitPerfectUsbHardwareVolumeControl();
+      await _rustAudioService.setVolume(hwVol ? 1.0 : _currentVolume);
       await _rustAudioService.setPlaybackSpeed(1.0);
       await _rustAudioService.setCrossfade(
         enabled: false,
@@ -3101,20 +3085,22 @@ class PlayerService {
     final clampedVolume = volume.clamp(0.0, 1.0).toDouble();
     _currentVolume = clampedVolume;
     if (isBitPerfectModeEnabled) {
-      if (_hasBitPerfectUsbHardwareVolumeControl()) {
-        await _uac2Service.setVolume(clampedVolume);
-      } else {
-        debugPrint(
-          '[Playback] Ignoring software volume change while explicit Bit-perfect mode is enabled',
-        );
-      }
-      if (_usingRustBackend) {
-        await _rustAudioService.setVolume(1.0);
-      } else {
-        final player = _justAudioPlayer;
-        if (player != null) {
-          await player.setVolume(1.0);
+      final hwVol = _hasBitPerfectUsbHardwareVolumeControl();
+      if (hwVol) {
+        debugPrint('[VolFlow] HW path: uac2 setVolume($clampedVolume)');
+        final hwOk = await _uac2Service.setVolume(clampedVolume);
+        if (hwOk) {
+          debugPrint('[VolFlow] HW SET_CUR ok → engine=1.0');
+          await _rustAudioService.setVolume(1.0);
+        } else if (_usingRustBackend) {
+          debugPrint('[VolFlow] HW SET_CUR FAILED → sw fallback engine=$clampedVolume');
+          await _rustAudioService.setVolume(clampedVolume);
+        } else {
+          debugPrint('[VolFlow] HW SET_CUR FAILED, no Rust backend → dead end');
         }
+      } else if (_usingRustBackend) {
+        debugPrint('[VolFlow] SW path: engine setVolume($clampedVolume)');
+        await _rustAudioService.setVolume(clampedVolume);
       }
       return;
     }

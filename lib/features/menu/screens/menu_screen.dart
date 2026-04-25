@@ -674,6 +674,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
           );
 
     return Container(
+      clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
         gradient: const LinearGradient(
