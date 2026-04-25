@@ -38,12 +38,44 @@ Flick Player is a high-performance music player application built with Flutter a
 - Sleep timer
 - Waveform seek bar for precise navigation
 
+### Ecosystem Integration
+- **Moss Ecosystem**: Part of the Moss app ecosystem by Ultra Electronica
+- **Locker Integration**: Flick can receive playback handoffs from Locker (another Moss app)
+- **Cross-app Playback**: Songs can be played from external sources via the Locker integration
+- **Shared Infrastructure**: Last.fm scrobbling, adaptive theming, and library scanning are shared across Moss apps
+
 ### User Interface
 - Adaptive theme based on album artwork colors
 - Glassmorphism design elements
 - Mini player and full player screens
 - Support for high refresh rate displays (90Hz/120Hz)
 - Responsive layout for various screen sizes
+
+### In-App Updates
+- **Shorebird Integration**: Seamless in-app updates via Shorebird code push
+- **Automatic Updates**: Background update checks on app launch
+- **Manual Updates**: Settings UI allows forcing update checks and installs
+- **Patch System**: Dart-only changes can be pushed as patches without a full release
+
+## Moss Ecosystem
+
+Flick Player is part of the **Moss ecosystem** by Ultra Electronica, a suite of interconnected apps that share infrastructure and capabilities.
+
+### Apps in the Ecosystem
+- **Flick Player**: High-performance audiophile music player with UAC 2.0 support
+- **Locker**: [Part of the Moss ecosystem]()
+
+### Cross-App Integration
+Flick integrates with other Moss apps through platform channels:
+- **Playback Handoff**: Flick can receive songs from Locker via `ExternalPlaybackService`
+- **Shared Audio Infrastructure**: Audio processing, EQ settings, and library scanning are designed to work consistently across the ecosystem
+- **Last.fm Integration**: Scrobbling works seamlessly regardless of which app initiated the playback
+
+### Using Flick with Locker
+When a song is playing in Locker and you want to switch to Flick's advanced audio engine (for EQ, effects, or UAC 2.0 DAC output):
+1. The playback intent is automatically routed to Flick
+2. Flick handles metadata extraction and playback
+3. Last.fm scrobbling continues uninterrupted
 
 ## Future Features
 
@@ -56,8 +88,7 @@ Flick Player is a high-performance music player application built with Flutter a
 - ~~Resampler enhancements~~
 - Advanced audio tweaks
 - Visualizations
-- Android audio settings
-- Bluetooth audio settings
+- ~~Bluetooth audio settings~~
 - Internal Hi-Res audio settings
 - USB audio tweaks
 - Further performance optimizations
@@ -75,6 +106,7 @@ Flick Player is a high-performance music player application built with Flutter a
 | `fl_chart` | Equalizer visualization |
 | `flutter_cache_manager` | Image caching |
 | `freezed` | Immutable data classes |
+| `shorebird_code_push` | In-app updates |
 
 ### Backend (Rust)
 | Crate | Purpose |
