@@ -2616,7 +2616,7 @@ class MainActivity: FlutterActivity() {
             hasDirectUsbHardwareVolume || hasSystemVolumeControl
         }
         val volumeControlWritable = when {
-            hasDirectUsbHardwareVolume -> !isLiveDirectUsbHardwareVolumeBlocked()
+            hasDirectUsbHardwareVolume -> true
             hasVolumeControl -> true
             else -> false
         }
@@ -2654,14 +2654,6 @@ class MainActivity: FlutterActivity() {
 
     private fun hasDirectUsbHardwareVolume(): Boolean {
         return activeDirectUsbDeviceName != null && nativeHasRustDirectUsbHardwareVolume()
-    }
-
-    private fun canUseDirectUsbHardwareVolume(): Boolean {
-        return hasDirectUsbHardwareVolume() && !isLiveDirectUsbHardwareVolumeBlocked()
-    }
-
-    private fun isLiveDirectUsbHardwareVolumeBlocked(): Boolean {
-        return hasDirectUsbHardwareVolume() && shouldHoldDirectUsbAudioFocus()
     }
 
     private fun isDirectUsbSessionFrozen(): Boolean {
@@ -2999,11 +2991,8 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun setRouteVolume(volume: Double): Boolean {
-        if (canUseDirectUsbHardwareVolume()) {
+        if (hasDirectUsbHardwareVolume()) {
             return nativeSetRustDirectUsbHardwareVolume(volume.coerceIn(0.0, 1.0))
-        }
-        if (isLiveDirectUsbHardwareVolumeBlocked()) {
-            return false
         }
 
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
@@ -3037,11 +3026,8 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun setRouteMuted(muted: Boolean): Boolean {
-        if (canUseDirectUsbHardwareVolume()) {
+        if (hasDirectUsbHardwareVolume()) {
             return nativeSetRustDirectUsbHardwareMute(muted)
-        }
-        if (isLiveDirectUsbHardwareVolumeBlocked()) {
-            return false
         }
 
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
