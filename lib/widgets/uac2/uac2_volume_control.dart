@@ -38,42 +38,58 @@ class _Uac2VolumeControlState extends ConsumerState<Uac2VolumeControl> {
   }
 
   /// Called when the user lifts the finger — commits the value to the platform.
+  /// For software volume mode, also syncs to PlayerService so that
+  /// [_currentVolume] stays in sync with the slider.
   Future<void> _onSliderChangeEnd(double volume) async {
     setState(() => _draggingVolume = null);
 
     final notifier = ref.read(uac2DeviceStatusProvider.notifier);
-    final wasMuted = ref.read(uac2DeviceStatusProvider)?.muted ?? false;
+    final status = ref.read(uac2DeviceStatusProvider);
+    final wasMuted = status?.muted ?? false;
+    final isSoftwareVolume = status?.volumeMode == Uac2VolumeMode.software;
 
-    // Dragging above 0 while muted → auto-unmute
     if (wasMuted && volume > 0.0) {
       await notifier.setMute(false);
     }
-    // Dragging to 0 → auto-mute
     if (!wasMuted && volume == 0.0) {
-      final currentVol = ref.read(uac2DeviceStatusProvider)?.volume ?? 1.0;
+      final currentVol = isSoftwareVolume
+          ? ref.read(playerServiceProvider).currentVolume
+          : (status?.volume ?? 1.0);
       _preMuteVolume = currentVol > 0.0 ? currentVol : 1.0;
       await notifier.setMute(true);
     }
     await notifier.setVolume(volume);
+
+    if (isSoftwareVolume) {
+      await ref.read(playerServiceProvider).setVolume(volume);
+    }
   }
 
   Future<void> _toggleMute() async {
     final notifier = ref.read(uac2DeviceStatusProvider.notifier);
-    final currentMuted = ref.read(uac2DeviceStatusProvider)?.muted ?? false;
+    final status = ref.read(uac2DeviceStatusProvider);
+    final currentMuted = status?.muted ?? false;
     final newMuted = !currentMuted;
+    final isSoftwareVolume = status?.volumeMode == Uac2VolumeMode.software;
 
     setState(() => _muteUpdateInFlight = true);
 
     if (newMuted) {
-      // Muting: save current volume for restore, then mute + set volume to 0
-      _preMuteVolume = (ref.read(uac2DeviceStatusProvider)?.volume ?? 1.0)
+      _preMuteVolume = (isSoftwareVolume
+              ? ref.read(playerServiceProvider).currentVolume
+              : (status?.volume ?? 1.0))
           .clamp(0.01, 1.0);
       final success = await notifier.setMute(true);
       if (success) await notifier.setVolume(0.0);
+      if (isSoftwareVolume) {
+        await ref.read(playerServiceProvider).setVolume(0.0);
+      }
     } else {
-      // Unmuting: restore pre-mute volume, then unmute
       await notifier.setVolume(_preMuteVolume);
       await notifier.setMute(false);
+      if (isSoftwareVolume) {
+        await ref.read(playerServiceProvider).setVolume(_preMuteVolume);
+      }
     }
 
     if (mounted) setState(() => _muteUpdateInFlight = false);
@@ -89,11 +105,14 @@ class _Uac2VolumeControlState extends ConsumerState<Uac2VolumeControl> {
       return const SizedBox.shrink();
     }
 
-    final effectiveVolume = _draggingVolume ?? (deviceStatus.volume ?? 1.0);
+    final isSoftwareVolume = deviceStatus.volumeMode == Uac2VolumeMode.software;
+    final playerVolume = ref.read(playerServiceProvider).currentVolume;
+    final effectiveVolume = _draggingVolume ??
+        (isSoftwareVolume ? playerVolume : (deviceStatus.volume ?? 1.0));
     final effectiveMuted = deviceStatus.muted ?? false;
     final volumeControlWritable =
         deviceStatus.volumeControlWritable && !_muteUpdateInFlight;
-    final showDb = deviceStatus.volumeMode == Uac2VolumeMode.software ||
+    final showDb = isSoftwareVolume ||
         deviceStatus.volumeMode == Uac2VolumeMode.hardware;
 
     return Container(
