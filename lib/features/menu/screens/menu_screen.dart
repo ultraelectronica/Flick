@@ -2256,19 +2256,12 @@ class _SmartMixDetailScreen extends StatelessWidget {
               expandedHeight: 280,
               pinned: true,
               backgroundColor: AppColors.surface,
-              leading: Container(
-                margin: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.glassBackground,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+              leading: IconButton(
+                icon: Icon(
+                  LucideIcons.arrowLeft,
+                  color: context.adaptiveTextPrimary,
                 ),
-                child: IconButton(
-                  icon: Icon(
-                    LucideIcons.arrowLeft,
-                    color: context.adaptiveTextPrimary,
-                  ),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
+                onPressed: () => Navigator.of(context).pop(),
               ),
               flexibleSpace: FlexibleSpaceBar(
                 background: DecoratedBox(
