@@ -605,6 +605,9 @@ class MainActivity: FlutterActivity() {
                 "getRouteMuted" -> {
                     result.success(getRouteMuted())
                 }
+                "verifyHardwareVolumeHealth" -> {
+                    result.success(verifyHardwareVolumeHealth())
+                }
                 "activateDirectUsb" -> {
                     val deviceName = call.argument<String>("deviceName")
                     if (deviceName != null) {
@@ -2988,6 +2991,12 @@ class MainActivity: FlutterActivity() {
         return (currentVolume.toDouble() / maxVolume.toDouble()).coerceIn(0.0, 1.0)
     }
 
+    /// Returns: 1 = healthy, 0 = mismatch (should fall back to Tier 2), -1 = error/no device
+    private fun verifyHardwareVolumeHealth(): Int {
+        if (!hasDirectUsbHardwareVolume()) return -1
+        return nativeVerifyRustDirectUsbHardwareVolumeHealth()
+    }
+
     private fun setRouteVolume(volume: Double): Boolean {
         if (hasDirectUsbHardwareVolume()) {
             val clamped = volume.coerceIn(0.0, 1.0)
@@ -3241,6 +3250,7 @@ class MainActivity: FlutterActivity() {
     private external fun nativeSetRustDirectUsbHardwareVolume(volume: Double): Boolean
     private external fun nativeGetRustDirectUsbHardwareMute(): Int
     private external fun nativeSetRustDirectUsbHardwareMute(muted: Boolean): Boolean
+    private external fun nativeVerifyRustDirectUsbHardwareVolumeHealth(): Int
     private external fun nativeGetRustAudioDebugStateJson(): String?
     private external fun nativeClearRustDirectUsbPlayback(): Boolean
     private external fun nativeWaitRustDirectUsbSessionStopped(timeoutMs: Int): Boolean
