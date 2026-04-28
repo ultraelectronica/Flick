@@ -1,12 +1,14 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'dart:math' as math;
 
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/providers/equalizer_provider.dart';
+import 'package:flick/widgets/equalizer/eq_graph_utils.dart' as equtils;
 
 class ParametricEqGraph extends ConsumerWidget {
   const ParametricEqGraph({super.key});
@@ -43,18 +45,26 @@ class ParametricEqGraph extends ConsumerWidget {
                       context,
                     ).withValues(alpha: 0.70);
 
-              final spots = _buildParametricSpots(
+              final curvePoints = equtils.buildParametricCurvePoints(
                 enabled: enabled,
                 bands: bands,
                 sampleCount: sampleCount,
               );
+              final spots = curvePoints
+                  .map((p) => FlSpot(p.x, p.db))
+                  .toList(growable: false);
 
               final dotSpots = <FlSpot>[
                 for (final b in bands)
                   if (b.enabled)
                     FlSpot(
-                      _hzToX(b.frequencyHz),
-                      enabled ? parametricBandMarkerDb(b) : 0.0,
+                      equtils.hzToX(b.frequencyHz),
+                      enabled
+                          ? parametricResponseDbAtHz(
+                              hz: b.frequencyHz,
+                              bands: bands,
+                            )
+                          : 0.0,
                     ),
               ];
 
@@ -78,10 +88,10 @@ class ParametricEqGraph extends ConsumerWidget {
                       width: contentWidth,
                       child: LineChart(
                         LineChartData(
-                          minX: _logMin,
-                          maxX: _logMax,
-                          minY: _minDb,
-                          maxY: _maxDb,
+                           minX: equtils.eqLogMin,
+                          maxX: equtils.eqLogMax,
+                          minY: equtils.eqMinDb,
+                          maxY: equtils.eqMaxDb,
                           lineTouchData: const LineTouchData(enabled: false),
                           clipData: const FlClipData.all(),
                           borderData: FlBorderData(show: false),
@@ -101,7 +111,7 @@ class ParametricEqGraph extends ConsumerWidget {
                                 showTitles: true,
                                 reservedSize: 20,
                                 getTitlesWidget: (value, meta) {
-                                  const freqs = <double>[
+                                   const freqs = <double>[
                                     20,
                                     50,
                                     100,
@@ -116,7 +126,7 @@ class ParametricEqGraph extends ConsumerWidget {
                                   const tol = 0.03; // in log10 units
                                   double? matched;
                                   for (final hz in freqs) {
-                                    final gx = _hzToX(hz);
+                                    final gx = equtils.hzToX(hz);
                                     if ((value - gx).abs() <= tol) {
                                       matched = hz;
                                       break;
@@ -170,8 +180,8 @@ class ParametricEqGraph extends ConsumerWidget {
                                 strokeWidth: isZero ? 1.2 : 1.0,
                               );
                             },
-                            getDrawingVerticalLine: (value) {
-                              final alpha = _isGuideLogX(value) ? 0.25 : 0.0;
+                             getDrawingVerticalLine: (value) {
+                              final alpha = equtils.isGuideLogX(value) ? 0.25 : 0.0;
                               return FlLine(
                                 color: AppColors.glassBorder.withValues(
                                   alpha: alpha,
@@ -179,7 +189,7 @@ class ParametricEqGraph extends ConsumerWidget {
                                 strokeWidth: 1.0,
                               );
                             },
-                            checkToShowVerticalLine: _isGuideLogX,
+                            checkToShowVerticalLine: equtils.isGuideLogX,
                           ),
                           lineBarsData: [
                             // Glow + fill (Squiglink-ish)
@@ -250,66 +260,4 @@ class ParametricEqGraph extends ConsumerWidget {
   }
 }
 
-// ============================================================================
-// Chart helpers (log-frequency X, dB Y)
-// ============================================================================
-
-const double _minHz = 20.0;
-const double _maxHz = 20000.0;
-const double _minDb = -12.0;
-const double _maxDb = 12.0;
-
-final double _logMin = math.log(_minHz) / math.ln10;
-final double _logMax = math.log(_maxHz) / math.ln10;
-
-double _hzToX(double hz) => (math.log(hz.clamp(_minHz, _maxHz)) / math.ln10);
-
-double _tToHz(double t) {
-  final logMin = math.log(_minHz);
-  final logMax = math.log(_maxHz);
-  final v = logMin + (logMax - logMin) * t.clamp(0.0, 1.0);
-  return math.exp(v);
-}
-
-List<FlSpot> _buildParametricSpots({
-  required bool enabled,
-  required List<ParametricBand> bands,
-  required int sampleCount,
-}) {
-  final spots = <FlSpot>[];
-  for (var i = 0; i <= sampleCount; i++) {
-    final t = i / sampleCount;
-    final hz = _tToHz(t);
-    final db = enabled
-        ? parametricResponseDbAtHz(
-            hz: hz,
-            bands: bands,
-            minDb: _minDb,
-            maxDb: _maxDb,
-          )
-        : 0.0;
-    spots.add(FlSpot(_hzToX(hz), db));
-  }
-  return spots;
-}
-
-bool _isGuideLogX(double x) {
-  const guideFreqs = <double>[
-    20,
-    50,
-    100,
-    200,
-    500,
-    1000,
-    2000,
-    5000,
-    10000,
-    20000,
-  ];
-  const tol = 0.025; // in log10 units
-  for (final hz in guideFreqs) {
-    final gx = _hzToX(hz);
-    if ((x - gx).abs() <= tol) return true;
-  }
-  return false;
-}
+// Chart helpers moved to eq_graph_utils.dart

@@ -1,12 +1,14 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'dart:math' as math;
 
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/core/theme/adaptive_color_provider.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/providers/equalizer_provider.dart';
+import 'package:flick/widgets/equalizer/eq_graph_utils.dart' as equtils;
 
 class GraphicEqGraph extends ConsumerWidget {
   const GraphicEqGraph({super.key});
@@ -44,22 +46,25 @@ class GraphicEqGraph extends ConsumerWidget {
                       context,
                     ).withValues(alpha: 0.70);
 
-              final spots = _buildGraphicSpots(
+              final curvePoints = equtils.buildGraphicCurvePoints(
                 enabled: enabled,
                 freqs: freqs,
                 gains: gains,
                 sampleCount: sampleCount,
               );
+              final spots = curvePoints
+                  .map((p) => FlSpot(p.x, p.db))
+                  .toList(growable: false);
 
               final dotSpots = enabled
                   ? List<FlSpot>.generate(
                       freqs.length,
-                      (i) => FlSpot(_hzToX(freqs[i]), gains[i]),
+                      (i) => FlSpot(equtils.hzToX(freqs[i]), gains[i]),
                       growable: false,
                     )
                   : List<FlSpot>.generate(
                       freqs.length,
-                      (i) => FlSpot(_hzToX(freqs[i]), 0.0),
+                      (i) => FlSpot(equtils.hzToX(freqs[i]), 0.0),
                       growable: false,
                     );
 
@@ -85,10 +90,10 @@ class GraphicEqGraph extends ConsumerWidget {
                       width: contentWidth,
                       child: LineChart(
                         LineChartData(
-                          minX: _logMin,
-                          maxX: _logMax,
-                          minY: _minDb,
-                          maxY: _maxDb,
+                           minX: equtils.eqLogMin,
+                          maxX: equtils.eqLogMax,
+                          minY: equtils.eqMinDb,
+                          maxY: equtils.eqMaxDb,
                           lineTouchData: const LineTouchData(enabled: false),
                           clipData: const FlClipData.all(),
                           borderData: FlBorderData(show: false),
@@ -109,7 +114,7 @@ class GraphicEqGraph extends ConsumerWidget {
                                 reservedSize: 20,
                                 getTitlesWidget: (value, meta) {
                                   // Map log10(x) back to labelled frequencies.
-                                  const freqs = <double>[
+                                   const freqs = <double>[
                                     20,
                                     50,
                                     100,
@@ -124,7 +129,7 @@ class GraphicEqGraph extends ConsumerWidget {
                                   const tol = 0.03; // in log10 units
                                   double? matched;
                                   for (final hz in freqs) {
-                                    final gx = _hzToX(hz);
+                                    final gx = equtils.hzToX(hz);
                                     if ((value - gx).abs() <= tol) {
                                       matched = hz;
                                       break;
@@ -178,11 +183,11 @@ class GraphicEqGraph extends ConsumerWidget {
                                 strokeWidth: isZero ? 1.2 : 1.0,
                               );
                             },
-                            getDrawingVerticalLine: (value) {
+                             getDrawingVerticalLine: (value) {
                               // We draw only a handful of guide lines at key freqs.
                               // fl_chart calls this for each 'value' step, so we
                               // return transparent for non-guide values.
-                              final alpha = _isGuideLogX(value) ? 0.25 : 0.0;
+                              final alpha = equtils.isGuideLogX(value) ? 0.25 : 0.0;
                               return FlLine(
                                 color: AppColors.glassBorder.withValues(
                                   alpha: alpha,
@@ -190,7 +195,7 @@ class GraphicEqGraph extends ConsumerWidget {
                                 strokeWidth: 1.0,
                               );
                             },
-                            checkToShowVerticalLine: _isGuideLogX,
+                            checkToShowVerticalLine: equtils.isGuideLogX,
                           ),
                           lineBarsData: [
                             // Glow (thicker, blurred via shadow)
@@ -261,84 +266,4 @@ class GraphicEqGraph extends ConsumerWidget {
   }
 }
 
-// ============================================================================
-// Chart helpers (log-frequency X, dB Y)
-// ============================================================================
-
-const double _minHz = 20.0;
-const double _maxHz = 20000.0;
-const double _minDb = -12.0;
-const double _maxDb = 12.0;
-
-final double _logMin = math.log(_minHz) / math.ln10;
-final double _logMax = math.log(_maxHz) / math.ln10;
-
-double _hzToX(double hz) => (math.log(hz.clamp(_minHz, _maxHz)) / math.ln10);
-
-double _tToHz(double t) {
-  final logMin = math.log(_minHz);
-  final logMax = math.log(_maxHz);
-  final v = logMin + (logMax - logMin) * t.clamp(0.0, 1.0);
-  return math.exp(v);
-}
-
-List<FlSpot> _buildGraphicSpots({
-  required bool enabled,
-  required List<double> freqs,
-  required List<double> gains,
-  required int sampleCount,
-}) {
-  final spots = <FlSpot>[];
-  for (var i = 0; i <= sampleCount; i++) {
-    final t = i / sampleCount;
-    final hz = _tToHz(t);
-    final db = enabled ? _interpDbAtHz(hz, freqs, gains) : 0.0;
-    spots.add(FlSpot(_hzToX(hz), db));
-  }
-  return spots;
-}
-
-// Linear interpolation in log-frequency space between the nearest bands.
-double _interpDbAtHz(double hz, List<double> freqs, List<double> gains) {
-  final clampedHz = hz.clamp(freqs.first, freqs.last).toDouble();
-  final logHz = math.log(clampedHz);
-
-  // Find the segment [i, i+1] that contains hz.
-  var i = 0;
-  while (i < freqs.length - 2 && clampedHz > freqs[i + 1]) {
-    i++;
-  }
-
-  final f0 = freqs[i];
-  final f1 = freqs[i + 1];
-  final g0 = gains[i];
-  final g1 = gains[i + 1];
-
-  final t = ((logHz - math.log(f0)) / (math.log(f1) - math.log(f0))).clamp(
-    0.0,
-    1.0,
-  );
-  final db = g0 + (g1 - g0) * t;
-  return db.clamp(_minDb, _maxDb).toDouble();
-}
-
-bool _isGuideLogX(double x) {
-  const guideFreqs = <double>[
-    20,
-    50,
-    100,
-    200,
-    500,
-    1000,
-    2000,
-    5000,
-    10000,
-    20000,
-  ];
-  const tol = 0.025; // in log10 units
-  for (final hz in guideFreqs) {
-    final gx = _hzToX(hz);
-    if ((x - gx).abs() <= tol) return true;
-  }
-  return false;
-}
+// Chart helpers moved to eq_graph_utils.dart
