@@ -332,11 +332,27 @@ pub struct Uac2PipelineInfo {
 pub fn uac2_get_pipeline_info() -> Result<Uac2PipelineInfo, String> {
     #[cfg(feature = "uac2")]
     {
-        Ok(Uac2PipelineInfo {
-            is_bit_perfect: true,
-            requires_conversion: false,
-            converter_type: "Passthrough".to_string(),
-        })
+        #[cfg(target_os = "android")]
+        {
+            let debug_state = crate::uac2::android_direct_debug_state();
+            Ok(Uac2PipelineInfo {
+                is_bit_perfect: debug_state.bit_perfect_verified,
+                requires_conversion: !debug_state.bit_perfect_verified,
+                converter_type: if debug_state.bit_perfect_verified {
+                    "Passthrough".to_string()
+                } else {
+                    "Resampling".to_string()
+                },
+            })
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            Ok(Uac2PipelineInfo {
+                is_bit_perfect: true,
+                requires_conversion: false,
+                converter_type: "Passthrough".to_string(),
+            })
+        }
     }
     #[cfg(not(feature = "uac2"))]
     {

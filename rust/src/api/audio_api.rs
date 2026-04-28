@@ -255,6 +255,13 @@ pub fn audio_set_high_res_mode(enabled: bool) {
     crate::uac2::set_android_direct_usb_enabled(!enabled);
 }
 
+/// Sync the DAP bit-perfect preference from Dart so the Rust engine manager
+/// can factor it into engine selection and reuse decisions.
+#[flutter_rust_bridge::frb(sync)]
+pub fn audio_set_dap_bit_perfect_enabled(enabled: bool) {
+    ENGINE_MANAGER.set_dap_bit_perfect_enabled(enabled);
+}
+
 /// Update the current platform capability snapshot used for engine selection.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_set_capability_info(info: AudioCapabilityInfo) {
