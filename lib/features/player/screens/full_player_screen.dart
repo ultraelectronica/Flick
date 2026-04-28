@@ -1737,11 +1737,38 @@ class _AnimatedSongScene extends StatelessWidget {
                 builder: (context, queue, _) {
                   final hasQueue = queue.isNotEmpty;
                   final fromLocker = song.isFromLocker;
+                  final nowPlayingContent = Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Now Playing',
+                        style: TextStyle(
+                          fontFamily: 'ProductSans',
+                          fontSize: context.responsive(12.0, 13.0, 14.0),
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.9),
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      if (fromLocker) ...[
+                        SizedBox(height: context.responsive(2.0, 3.0, 4.0)),
+                        Text(
+                          'Opened from Locker',
+                          style: TextStyle(
+                            fontFamily: 'ProductSans',
+                            fontSize: context.responsive(10.0, 10.5, 11.0),
+                            color: Colors.white.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+
                   final chip = AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     padding: EdgeInsets.symmetric(
-                      horizontal: context.responsive(16.0, 18.0, 20.0),
-                      vertical: context.responsive(8.0, 9.0, 10.0),
+                      horizontal: context.responsive(12.0, 14.0, 16.0),
+                      vertical: context.responsive(6.0, 7.0, 8.0),
                     ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF121212).withValues(alpha: 0.72),
@@ -1752,37 +1779,19 @@ class _AnimatedSongScene extends StatelessWidget {
                             : Colors.white.withValues(alpha: 0.08),
                       ),
                     ),
-                    child: Column(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          'Now Playing',
-                          style: TextStyle(
-                            fontFamily: 'ProductSans',
-                            fontSize: context.responsive(12.0, 13.0, 14.0),
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white.withValues(alpha: 0.9),
-                            letterSpacing: 0.8,
-                          ),
+                        nowPlayingContent,
+                        SizedBox(width: context.responsive(8.0, 10.0, 12.0)),
+                        _buildQueueSummaryBadge(
+                          context,
+                          count: queue.length,
+                          highlighted: hasQueue,
                         ),
-                        if (fromLocker) ...[
-                          SizedBox(height: context.responsive(2.0, 3.0, 4.0)),
-                          Text(
-                            'Opened from Locker',
-                            style: TextStyle(
-                              fontFamily: 'ProductSans',
-                              fontSize: context.responsive(10.0, 10.5, 11.0),
-                              color: Colors.white.withValues(alpha: 0.7),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   );
-
-                  if (playerScreenMode != PlayerScreenMode.immersive) {
-                    return chip;
-                  }
 
                   return Align(
                     alignment: Alignment.center,
