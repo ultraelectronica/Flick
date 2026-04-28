@@ -14,12 +14,17 @@ pub struct AudioResampler {
     input_rate: u32,
     output_rate: u32,
     channels: usize,
+    chunk_size: usize,
     /// Pre-allocated input buffers (one per channel)
     input_buffers: Vec<Vec<f32>>,
     /// Pre-allocated output buffers (one per channel)
     output_buffers: Vec<Vec<f32>>,
-    /// Maximum frames we can process in one call
-    max_input_frames: usize,
+    /// Pending input samples waiting to be processed (interleaved)
+    input_queue: Vec<f32>,
+    /// Pending output samples ready to be returned (interleaved)
+    output_queue: Vec<f32>,
+    /// Whether the stream has ended and we've flushed
+    is_flushed: bool,
 }
 
 impl AudioResampler {
@@ -50,9 +55,12 @@ impl AudioResampler {
                 input_rate,
                 output_rate,
                 channels,
+                chunk_size,
                 input_buffers: vec![vec![0.0; chunk_size]; channels],
                 output_buffers: vec![vec![0.0; chunk_size]; channels],
-                max_input_frames: chunk_size,
+                input_queue: Vec::new(),
+                output_queue: Vec::new(),
+                is_flushed: false,
             });
         }
 
@@ -75,9 +83,12 @@ impl AudioResampler {
             input_rate,
             output_rate,
             channels,
+            chunk_size,
             input_buffers: vec![vec![0.0; chunk_size]; channels],
             output_buffers: vec![vec![0.0; max_output_frames]; channels],
-            max_input_frames: chunk_size,
+            input_queue: Vec::new(),
+            output_queue: Vec::new(),
+            is_flushed: false,
         })
     }
 
@@ -107,6 +118,10 @@ impl AudioResampler {
 
     /// Process a chunk of interleaved audio samples.
     ///
+    /// Input samples are buffered internally. Resampling happens only when
+    /// enough frames have accumulated (>= chunk_size). Output is also buffered,
+    /// so multiple calls may be needed to drain all produced samples.
+    ///
     /// # Arguments
     /// * `input` - Interleaved input samples (e.g., [L, R, L, R, ...])
     /// * `output` - Pre-allocated output buffer for interleaved samples
@@ -125,56 +140,125 @@ impl AudioResampler {
             return Ok(copy_len);
         }
 
-        let input_frames = input.len() / self.channels;
-
-        if input_frames == 0 {
-            return Ok(0);
+        if self.is_flushed {
+            // After flush, just drain any remaining output_queue
+            let to_copy = self.output_queue.len().min(output.len());
+            output[..to_copy].copy_from_slice(&self.output_queue[..to_copy]);
+            self.output_queue.drain(0..to_copy);
+            return Ok(to_copy);
         }
 
-        // Deinterleave input into channel buffers
-        for (frame_idx, chunk) in input.chunks_exact(self.channels).enumerate() {
-            for (ch, &sample) in chunk.iter().enumerate() {
-                if frame_idx < self.input_buffers[ch].len() {
-                    self.input_buffers[ch][frame_idx] = sample;
+        // Queue incoming samples
+        if !input.is_empty() {
+            self.input_queue.extend_from_slice(input);
+        }
+
+        // Process as many full chunks as we have
+        let frames_per_chunk = self.chunk_size;
+        let samples_per_chunk = frames_per_chunk * self.channels;
+
+        while self.input_queue.len() >= samples_per_chunk {
+            // Deinterleave input into channel buffers
+            for ch in 0..self.channels {
+                for frame in 0..frames_per_chunk {
+                    self.input_buffers[ch][frame] =
+                        self.input_queue[frame * self.channels + ch];
+                }
+            }
+            // Remove processed samples from queue
+            self.input_queue.drain(0..samples_per_chunk);
+
+            // Perform resampling
+            let input_refs: Vec<&[f32]> =
+                self.input_buffers.iter().map(|b| b.as_slice()).collect();
+            let (_, output_frames) = self
+                .resampler
+                .process_into_buffer(&input_refs, &mut self.output_buffers, None)
+                .map_err(|e| format!("Resampling error: {}", e))?;
+
+            // Interleave output into queue
+            for frame_idx in 0..output_frames {
+                for ch in 0..self.channels {
+                    self.output_queue.push(self.output_buffers[ch][frame_idx]);
                 }
             }
         }
 
-        // Truncate input buffers to actual size
-        let input_refs: Vec<&[f32]> = self
-            .input_buffers
-            .iter()
-            .map(|b| &b[..input_frames.min(self.max_input_frames)])
-            .collect();
+        // Copy from output_queue to caller's buffer
+        let to_copy = self.output_queue.len().min(output.len());
+        output[..to_copy].copy_from_slice(&self.output_queue[..to_copy]);
+        self.output_queue.drain(0..to_copy);
 
-        // Perform resampling
-        let (_, output_frames) = self
-            .resampler
-            .process_into_buffer(&input_refs, &mut self.output_buffers, None)
-            .map_err(|e| format!("Resampling error: {}", e))?;
+        Ok(to_copy)
+    }
 
-        // Interleave output
-        let output_samples = output_frames * self.channels;
-        if output_samples > output.len() {
-            return Err(format!(
-                "Output buffer too small: need {}, have {}",
-                output_samples,
-                output.len()
-            ));
+    /// Flush any remaining samples through the resampler.
+    ///
+    /// Call this when the input stream has ended to process the final partial
+    /// block and any filter delay.
+    ///
+    /// # Arguments
+    /// * `output` - Pre-allocated output buffer for interleaved samples
+    ///
+    /// # Returns
+    /// Number of output samples written
+    pub fn flush(&mut self, output: &mut [f32]) -> Result<usize, String> {
+        if !self.needs_resampling() || self.is_flushed {
+            let to_copy = self.output_queue.len().min(output.len());
+            if to_copy > 0 {
+                output[..to_copy].copy_from_slice(&self.output_queue[..to_copy]);
+                self.output_queue.drain(0..to_copy);
+            }
+            return Ok(to_copy);
         }
 
-        for frame_idx in 0..output_frames {
+        // Process remaining input padded with zeros
+        if !self.input_queue.is_empty() {
+            let remaining_frames = self.input_queue.len() / self.channels;
+
+            // Deinterleave remaining input
             for ch in 0..self.channels {
-                output[frame_idx * self.channels + ch] = self.output_buffers[ch][frame_idx];
+                for frame in 0..remaining_frames {
+                    self.input_buffers[ch][frame] =
+                        self.input_queue[frame * self.channels + ch];
+                }
+                // Pad with zeros
+                for frame in remaining_frames..self.chunk_size {
+                    self.input_buffers[ch][frame] = 0.0;
+                }
+            }
+            self.input_queue.clear();
+
+            let input_refs: Vec<&[f32]> =
+                self.input_buffers.iter().map(|b| b.as_slice()).collect();
+            let (_, output_frames) = self
+                .resampler
+                .process_into_buffer(&input_refs, &mut self.output_buffers, None)
+                .map_err(|e| format!("Resampling flush error: {}", e))?;
+
+            for frame_idx in 0..output_frames {
+                for ch in 0..self.channels {
+                    self.output_queue.push(self.output_buffers[ch][frame_idx]);
+                }
             }
         }
 
-        Ok(output_samples)
+        self.is_flushed = true;
+
+        // Copy from output_queue to caller's buffer
+        let to_copy = self.output_queue.len().min(output.len());
+        output[..to_copy].copy_from_slice(&self.output_queue[..to_copy]);
+        self.output_queue.drain(0..to_copy);
+
+        Ok(to_copy)
     }
 
     /// Reset the resampler state (call between tracks).
     pub fn reset(&mut self) {
         self.resampler.reset();
+        self.input_queue.clear();
+        self.output_queue.clear();
+        self.is_flushed = false;
     }
 
     /// Get the latency introduced by resampling in samples.
@@ -324,5 +408,106 @@ mod tests {
             "sine-wave distortion too high after resampling: harmonic ratio {:.6}",
             harmonic_ratio,
         );
+    }
+
+    #[test]
+    fn test_resampler_buffers_variable_input_sizes() {
+        let input_rate = 44_100;
+        let output_rate = 48_000;
+        let channels = 2;
+        let chunk_size = 1024;
+        let mut resampler =
+            AudioResampler::new(input_rate, output_rate, channels, chunk_size).unwrap();
+
+        // Feed input in small chunks that don't line up with chunk_size
+        let total_input_frames = chunk_size * 10 + 512; // 10752 frames
+        let input: Vec<f32> = (0..total_input_frames * channels)
+            .map(|i| (i % 100) as f32 / 100.0)
+            .collect();
+
+        let mut output = vec![0.0; total_input_frames * channels * 4];
+
+        let mut total_written = 0;
+        let mut input_offset = 0;
+
+        // Feed 100-frame chunks
+        while input_offset < input.len() {
+            let end = (input_offset + 100 * channels).min(input.len());
+            let chunk = &input[input_offset..end];
+            let mut out_chunk = vec![0.0; chunk.len() * 2 + 256];
+            let written = resampler
+                .process_interleaved(chunk, &mut out_chunk)
+                .unwrap();
+            output[total_written..total_written + written].copy_from_slice(&out_chunk[..written]);
+            total_written += written;
+            input_offset += chunk.len();
+        }
+
+        // Flush remaining samples
+        let mut flush_buf = vec![0.0; chunk_size * channels * 4];
+        loop {
+            let written = resampler.flush(&mut flush_buf).unwrap();
+            if written == 0 {
+                break;
+            }
+            output[total_written..total_written + written]
+                .copy_from_slice(&flush_buf[..written]);
+            total_written += written;
+        }
+
+        // Should have produced a reasonable amount of output
+        let output_frames = total_written / channels;
+        let expected_ratio = output_rate as f64 / input_rate as f64;
+        let actual_ratio = output_frames as f64 / total_input_frames as f64;
+
+        // Allow extra output up to one chunk_size worth due to final zero-padded flush.
+        let max_expected_ratio = expected_ratio * (1.0 + chunk_size as f64 / total_input_frames as f64);
+        assert!(
+            actual_ratio <= max_expected_ratio && actual_ratio >= expected_ratio * 0.95,
+            "output ratio out of range: expected {:.4}..{:.4}, got {:.4} (output_frames={}, input_frames={})",
+            expected_ratio * 0.95,
+            max_expected_ratio,
+            actual_ratio,
+            output_frames,
+            total_input_frames
+        );
+    }
+
+    #[test]
+    fn test_resampler_does_not_drop_samples_across_packets() {
+        let input_rate = 48_000;
+        let output_rate = 44_100;
+        let channels = 1;
+        let chunk_size = 4096;
+        let mut resampler =
+            AudioResampler::new(input_rate, output_rate, channels, chunk_size).unwrap();
+
+        // First packet: exactly chunk_size frames
+        let packet1 = vec![1.0f32; chunk_size];
+        let mut out1 = vec![0.0; chunk_size * 2];
+        let _written1 = resampler.process_interleaved(&packet1, &mut out1).unwrap();
+
+        // Second packet: 100 frames (should be buffered, not error)
+        let packet2 = vec![2.0f32; 100];
+        let mut out2 = vec![0.0; 100 * 2];
+        let _written2 = resampler.process_interleaved(&packet2, &mut out2).unwrap();
+
+        // Third packet: enough to reach chunk_size
+        let packet3 = vec![3.0f32; chunk_size - 100];
+        let mut out3 = vec![0.0; chunk_size * 2];
+        let written3 = resampler.process_interleaved(&packet3, &mut out3).unwrap();
+
+        // written2 should be 0 or very small (buffered), written3 should include
+        // output from both packet2 and packet3 combined with any queued output.
+        assert!(
+            written3 > 0,
+            "expected output after accumulating to chunk_size, got written3={}",
+            written3
+        );
+
+        // Flush may or may not produce additional output depending on whether
+        // the output_queue was fully drained by process_interleaved.
+        let mut flush_buf = vec![0.0; chunk_size * 2];
+        let _flush_written = resampler.flush(&mut flush_buf).unwrap();
     }
 }

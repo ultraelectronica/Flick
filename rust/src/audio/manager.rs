@@ -90,6 +90,7 @@ struct EngineManagerState {
     current: Option<AudioEngine>,
     rust_handle: Option<AudioEngineHandle>,
     high_res_mode: bool,
+    dap_bit_perfect_enabled: bool,
     capability_snapshot: AudioCapabilitySnapshot,
 }
 
@@ -99,6 +100,7 @@ impl Default for EngineManagerState {
             current: None,
             rust_handle: None,
             high_res_mode: false,
+            dap_bit_perfect_enabled: true,
             capability_snapshot: AudioCapabilitySnapshot::default(),
         }
     }
@@ -147,6 +149,14 @@ impl EngineManager {
 
     pub fn is_high_res_mode_enabled(&self) -> bool {
         self.state.lock().high_res_mode
+    }
+
+    pub fn set_dap_bit_perfect_enabled(&self, enabled: bool) {
+        self.state.lock().dap_bit_perfect_enabled = enabled;
+    }
+
+    pub fn get_dap_bit_perfect_enabled(&self) -> bool {
+        self.state.lock().dap_bit_perfect_enabled
     }
 
     pub fn capability_route_type(&self) -> String {
@@ -248,6 +258,7 @@ impl EngineManager {
         }
 
         let allow_dap_native = selection.high_res_mode;
+        let dap_bit_perfect_enabled = self.state.lock().dap_bit_perfect_enabled;
         let desired_signature = desired_output_signature(preferred_sample_rate);
         {
             let mut state = self.state.lock();
@@ -262,7 +273,8 @@ impl EngineManager {
                     let strategy = handle.output_runtime().strategy.as_str();
                     return handle.output_signature().starts_with("android-shared:")
                         && handle.sample_rate() == requested_rate
-                        && (allow_dap_native || strategy != "dap_native");
+                        && (allow_dap_native || strategy != "dap_native")
+                        && dap_bit_perfect_enabled == (strategy == "dap_native");
                 }
 
                 #[allow(unreachable_code)]
@@ -291,7 +303,7 @@ impl EngineManager {
         crate::uac2::force_release_usb_session();
 
         let new_handle = tokio::task::spawn_blocking(move || {
-            create_audio_engine(preferred_sample_rate, allow_dap_native)
+            create_audio_engine(preferred_sample_rate, allow_dap_native, dap_bit_perfect_enabled)
         })
         .await
         .map_err(|error| format!("Rust engine initialization task failed: {}", error))??;
