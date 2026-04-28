@@ -308,6 +308,8 @@ class Uac2PlayerStatus extends ConsumerWidget {
         return Colors.orange;
       case Uac2State.connected:
         return Colors.blue;
+      case Uac2State.prewarming:
+        return Colors.amber;
       case Uac2State.streaming:
         return Colors.green;
       case Uac2State.error:
@@ -323,6 +325,8 @@ class Uac2PlayerStatus extends ConsumerWidget {
         return 'Connecting';
       case Uac2State.connected:
         return 'Connected';
+      case Uac2State.prewarming:
+        return 'Prewarming';
       case Uac2State.streaming:
         return 'Streaming';
       case Uac2State.error:

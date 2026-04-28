@@ -89,6 +89,8 @@ class Uac2StatusIndicator extends ConsumerWidget {
         return Colors.orange;
       case Uac2State.connected:
         return Colors.blue;
+      case Uac2State.prewarming:
+        return Colors.amber;
       case Uac2State.streaming:
         return Colors.green;
       case Uac2State.error:

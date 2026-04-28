@@ -30,7 +30,8 @@ class _Uac2StreamConfigState extends ConsumerState<Uac2StreamConfig> {
       uac2DeviceCapabilitiesProvider(widget.device),
     );
     final deviceStatus = ref.watch(uac2DeviceStatusProvider);
-    final isStreaming = deviceStatus?.state == Uac2State.streaming;
+    final isStreaming = deviceStatus?.state == Uac2State.streaming ||
+        deviceStatus?.state == Uac2State.prewarming;
 
     return capabilitiesAsync.when(
       data: (capabilities) {
