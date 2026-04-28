@@ -494,6 +494,13 @@ class PlayerService {
       resolution: song.resolution,
       sampleRate: song.sampleRate,
       bitDepth: song.bitDepth,
+      startOffsetMs: song.startOffsetMs,
+      endOffsetMs: song.endOffsetMs,
+      ripper: song.ripper,
+      readMode: song.readMode,
+      accurateRip: song.accurateRip,
+      testCrc: song.testCrc,
+      copyCrc: song.copyCrc,
       album: song.album,
       albumArtist: song.albumArtist,
       trackNumber: song.trackNumber,
@@ -1670,6 +1677,19 @@ class PlayerService {
     }
 
     final uri = await _resolvePlaybackUri(song);
+
+    if (song.startOffsetMs != null && song.startOffsetMs! > 0) {
+      final start = Duration(milliseconds: song.startOffsetMs!);
+      final end = song.endOffsetMs != null && song.endOffsetMs! > 0
+          ? Duration(milliseconds: song.endOffsetMs!)
+          : null;
+      return just_audio.ClippingAudioSource(
+        child: just_audio.AudioSource.uri(uri),
+        start: start,
+        end: end,
+      );
+    }
+
     return just_audio.AudioSource.uri(uri);
   }
 

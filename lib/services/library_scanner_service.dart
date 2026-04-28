@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flick/services/android_audio_device_service.dart';
 import '../core/utils/audio_metadata_utils.dart';
 import '../data/database.dart';
@@ -9,6 +10,8 @@ import '../data/repositories/folder_repository.dart';
 import '../services/music_folder_service.dart';
 import '../services/library_scan_preferences_service.dart';
 import '../services/playlist_service.dart';
+import '../services/cue_file_service.dart';
+import '../services/rip_log_service.dart';
 import '../src/rust/api/scanner.dart'; // Rust bridge
 
 /// Progress update during library scanning.
@@ -38,6 +41,10 @@ class LibraryScannerService {
 
   bool _isCancelled = false;
   final Set<String> _currentlyScanning = {};
+
+  static const MethodChannel _storageChannel = MethodChannel(
+    'com.ultraelectronica.flick/storage',
+  );
 
   LibraryScannerService({
     SongRepository? songRepository,
@@ -155,6 +162,21 @@ class LibraryScannerService {
     }
     final fastScanMap = {for (var f in fastScanFiles) f.uri: f};
 
+    // 2b. Parse CUE and log files
+    final cueFiles = fastScanFiles.where((f) =>
+        f.extension.toLowerCase() == 'cue').toList();
+    final logFiles = fastScanFiles.where((f) {
+      final ext = f.extension.toLowerCase();
+      return ext == 'log' || ext == 'txt';
+    }).toList();
+
+    final cueMap = cueFiles.isNotEmpty
+        ? await _parseCueFilesAndroid(cueFiles, fastScanMap)
+        : <String, CueSheet>{};
+    final logMap = logFiles.isNotEmpty
+        ? await _parseLogFilesAndroid(logFiles, fastScanMap)
+        : <String, RipLog>{};
+
     // Calculate variations
     final scannedUris = fastScanMap.keys.toSet();
 
@@ -173,6 +195,19 @@ class LibraryScannerService {
       } else {
         await _songRepository.deleteSongsByPath(urisToDelete);
       }
+    }
+
+    // Delete orphaned CUE tracks (audio file in scan but no CUE file)
+    final audioFilesWithCue = cueMap.keys.toSet();
+    final existingCuePaths = existingSongs
+        .where((s) => s.startOffsetMs != null)
+        .map((s) => s.filePath)
+        .toSet();
+    final orphanedCuePaths = existingCuePaths
+        .where((p) => scannedUris.contains(p) && !audioFilesWithCue.contains(p))
+        .toList();
+    if (orphanedCuePaths.isNotEmpty) {
+      await _songRepository.deleteCueTracksByPath(orphanedCuePaths);
     }
 
     // Updates: New files or Modified files
@@ -209,6 +244,13 @@ class LibraryScannerService {
         if (file.lastModified != existingTime || missingMetadata) {
           urisToProcess.add(file.uri);
         }
+      }
+    }
+
+    // Ensure audio files referenced by CUE sheets are processed
+    for (final audioUri in cueMap.keys) {
+      if (!urisToProcess.contains(audioUri)) {
+        urisToProcess.add(audioUri);
       }
     }
 
@@ -262,6 +304,40 @@ class LibraryScannerService {
           continue;
         }
 
+        final cueSheet = cueMap[basic.uri];
+        final ripLog = logMap[basic.uri];
+
+        if (cueSheet != null) {
+          // Delete raw entity for this audio file if present
+          if (existing != null && existing.startOffsetMs == null) {
+            idsToDelete.add(existing.id);
+          }
+
+          final cueEntities = _buildCueTrackEntities(
+            audioUri: basic.uri,
+            cueSheet: cueSheet,
+            meta: meta ?? basic,
+            folderUri: folderUri,
+            existingMap: existingMap,
+            ripLog: ripLog,
+            lastModified: DateTime.fromMillisecondsSinceEpoch(
+              basic.lastModified,
+            ),
+          );
+
+          for (final entity in cueEntities) {
+            if (_shouldIgnoreDiscoveredTrack(
+              fileSizeBytes: entity.fileSize,
+              durationMs: entity.durationMs,
+              scanPreferences: scanPreferences,
+            )) {
+              continue;
+            }
+            batch.add(entity);
+          }
+          continue;
+        }
+
         final artist = (meta?.artist?.trim().isNotEmpty ?? false)
             ? meta!.artist!.trim()
             : 'Unknown Artist';
@@ -296,7 +372,10 @@ class LibraryScannerService {
                 )
               : null
           ..bitDepth = meta?.bitDepth
-          ..sampleRate = meta?.sampleRate;
+          ..sampleRate = meta?.sampleRate
+          ..ripper = ripLog?.ripper
+          ..readMode = ripLog?.readMode
+          ..accurateRip = ripLog?.accurateRipEnabled;
 
         if (existing != null) {
           song.id = existing.id;
@@ -505,6 +584,84 @@ class LibraryScannerService {
           currentFolder: displayName,
           isComplete: false,
         );
+      }
+    }
+
+    // Post-process CUE and log files
+    if (!_isCancelled) {
+      final cueMap = await _parseCueFilesRust(scanRootPath);
+      final logMap = await _parseLogFilesRust(scanRootPath);
+
+      if (cueMap.isNotEmpty || logMap.isNotEmpty) {
+        final existingSongsAfterScan =
+            await _songRepository.getSongEntitiesByFolder(folderUri);
+        final existingMapAfterScan = <String, SongEntity>{
+          for (var s in existingSongsAfterScan) s.filePath: s,
+        };
+
+        // Delete orphaned CUE tracks
+        final existingCuePaths = existingSongsAfterScan
+            .where((s) => s.startOffsetMs != null)
+            .map((s) => s.filePath)
+            .toSet();
+        final orphanedCuePaths = existingCuePaths
+            .where((p) => !cueMap.containsKey(p))
+            .toList();
+        if (orphanedCuePaths.isNotEmpty) {
+          await _songRepository.deleteCueTracksByPath(orphanedCuePaths);
+        }
+
+        // Process CUE files
+        for (final entry in cueMap.entries) {
+          final audioPath = entry.key;
+          final cueSheet = entry.value;
+          final existing = existingMapAfterScan[audioPath];
+
+          // Delete raw entity if present
+          if (existing != null && existing.startOffsetMs == null) {
+            await _songRepository.deleteSongsByIds([existing.id]);
+          }
+
+          // Re-fetch existing CUE tracks for this path to preserve IDs
+          final cueExistingMap = <String, SongEntity>{};
+          final cueTracksInDb = existingSongsAfterScan
+              .where((s) => s.filePath == audioPath && s.startOffsetMs != null);
+          for (final s in cueTracksInDb) {
+            cueExistingMap['${s.filePath}#${s.startOffsetMs}'] = s;
+          }
+
+          final ripLog = logMap[audioPath];
+          final lastModified = existing?.lastModified ??
+              DateTime.fromMillisecondsSinceEpoch(
+                DateTime.now().millisecondsSinceEpoch,
+              );
+
+          final entities = _buildCueTrackEntities(
+            audioUri: audioPath,
+            cueSheet: cueSheet,
+            meta: null,
+            folderUri: folderUri,
+            existingMap: cueExistingMap,
+            ripLog: ripLog,
+            lastModified: lastModified,
+          );
+
+          if (entities.isNotEmpty) {
+            await _songRepository.upsertSongs(entities);
+          }
+        }
+
+        // Apply log metadata to raw audio files without CUE
+        for (final entry in logMap.entries) {
+          final audioPath = entry.key;
+          if (cueMap.containsKey(audioPath)) continue;
+          final existing = existingMapAfterScan[audioPath];
+          if (existing == null) continue;
+          existing.ripper = entry.value.ripper;
+          existing.readMode = entry.value.readMode;
+          existing.accurateRip = entry.value.accurateRipEnabled;
+          await _songRepository.upsertSong(existing);
+        }
       }
     }
 
@@ -761,5 +918,234 @@ class LibraryScannerService {
     );
 
     return files.map((path) => PlaylistSourceFile(sourcePath: path)).toList();
+  }
+
+  // ── CUE / Log helpers ──────────────────────────────────────────────
+
+  Future<String?> _readTextFile(String uri) async {
+    try {
+      return await _storageChannel.invokeMethod<String>(
+        'readTextDocument',
+        {'uri': uri},
+      );
+    } catch (e) {
+      debugPrint('[LibraryScanner] Failed to read text file $uri: $e');
+      return null;
+    }
+  }
+
+  String? _resolveAudioUriFromCue(
+    String cueUri,
+    String audioFileName,
+    Map<String, AudioFileInfo> fastScanMap,
+  ) {
+    final target = audioFileName.toLowerCase();
+    for (final entry in fastScanMap.values) {
+      if (entry.name.toLowerCase() == target) {
+        return entry.uri;
+      }
+    }
+    return null;
+  }
+
+  Future<Map<String, CueSheet>> _parseCueFilesAndroid(
+    List<AudioFileInfo> cueFiles,
+    Map<String, AudioFileInfo> fastScanMap,
+  ) async {
+    final cueService = CueFileService();
+    final result = <String, CueSheet>{};
+    for (final cue in cueFiles) {
+      final content = await _readTextFile(cue.uri);
+      if (content == null || content.isEmpty) continue;
+      final sheet = cueService.parseCueSheet(content, cueFilePath: cue.uri);
+      if (sheet == null) continue;
+      final audioUri = _resolveAudioUriFromCue(
+        cue.uri,
+        sheet.audioFile,
+        fastScanMap,
+      );
+      if (audioUri != null) {
+        result[audioUri] = sheet;
+      }
+    }
+    return result;
+  }
+
+  Future<Map<String, RipLog>> _parseLogFilesAndroid(
+    List<AudioFileInfo> logFiles,
+    Map<String, AudioFileInfo> fastScanMap,
+  ) async {
+    final logService = RipLogService();
+    final result = <String, RipLog>{};
+    for (final log in logFiles) {
+      final content = await _readTextFile(log.uri);
+      if (content == null || content.isEmpty) continue;
+      final ripLog = logService.parseLog(content);
+      if (ripLog == null) continue;
+      final logStem = _fileStem(log.name).toLowerCase();
+      for (final entry in fastScanMap.values) {
+        if (_looksLikeSupportedAudioExtension(entry.extension)) {
+          final audioStem = _fileStem(entry.name).toLowerCase();
+          if (audioStem == logStem) {
+            result[entry.uri] = ripLog;
+            break;
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  Future<Map<String, CueSheet>> _parseCueFilesRust(
+    String scanRootPath,
+  ) async {
+    final cueService = CueFileService();
+    final result = <String, CueSheet>{};
+    try {
+      final dir = Directory(scanRootPath);
+      if (!dir.existsSync()) return result;
+      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        if (_isCancelled) break;
+        if (entity is! File) continue;
+        final path = entity.path;
+        if (!path.toLowerCase().endsWith('.cue')) continue;
+        final content = await entity.readAsString().catchError((_) => '');
+        if (content.isEmpty) continue;
+        final sheet = cueService.parseCueSheet(content, cueFilePath: path);
+        if (sheet == null) continue;
+        final audioPath = cueService.resolveAudioFilePath(path, sheet.audioFile);
+        result[audioPath] = sheet;
+      }
+    } catch (e) {
+      debugPrint('[LibraryScanner] Error scanning for CUE files: $e');
+    }
+    return result;
+  }
+
+  Future<Map<String, RipLog>> _parseLogFilesRust(
+    String scanRootPath,
+  ) async {
+    final logService = RipLogService();
+    final result = <String, RipLog>{};
+    try {
+      final dir = Directory(scanRootPath);
+      if (!dir.existsSync()) return result;
+      final audioPaths = <String, String>{};
+      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        if (entity is File &&
+            _looksLikeSupportedAudioExtension(
+              entity.path.split('.').last.toLowerCase(),
+            )) {
+          final name = entity.path.split('/').last;
+          final stem = _fileStem(name).toLowerCase();
+          audioPaths[stem] = entity.path;
+        }
+      }
+      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        if (_isCancelled) break;
+        if (entity is! File) continue;
+        final path = entity.path;
+        final ext = path.split('.').last.toLowerCase();
+        if (ext != 'log' && ext != 'txt') continue;
+        final content = await entity.readAsString().catchError((_) => '');
+        if (content.isEmpty) continue;
+        final ripLog = logService.parseLog(content);
+        if (ripLog == null) continue;
+        final name = path.split('/').last;
+        final stem = _fileStem(name).toLowerCase();
+        final audioPath = audioPaths[stem];
+        if (audioPath != null) {
+          result[audioPath] = ripLog;
+        }
+      }
+    } catch (e) {
+      debugPrint('[LibraryScanner] Error scanning for log files: $e');
+    }
+    return result;
+  }
+
+  String _fileStem(String fileName) {
+    final lastDot = fileName.lastIndexOf('.');
+    if (lastDot <= 0) return fileName;
+    return fileName.substring(0, lastDot);
+  }
+
+  List<SongEntity> _buildCueTrackEntities({
+    required String audioUri,
+    required CueSheet cueSheet,
+    required AudioFileInfo? meta,
+    required String folderUri,
+    required Map<String, SongEntity> existingMap,
+    required RipLog? ripLog,
+    required DateTime lastModified,
+  }) {
+    final entities = <SongEntity>[];
+    for (final track in cueSheet.tracks) {
+      final artist = track.performer.trim().isNotEmpty
+          ? track.performer.trim()
+          : (cueSheet.performer?.trim().isNotEmpty ?? false)
+              ? cueSheet.performer!.trim()
+              : (meta?.artist?.trim().isNotEmpty ?? false)
+                  ? meta!.artist!.trim()
+                  : 'Unknown Artist';
+      final existing = existingMap['$audioUri#${track.startOffsetMs}'];
+      final trackLog = ripLog?.tracks.firstWhere(
+        (t) => t.trackNumber == track.trackNumber,
+        orElse: () => const RipLogTrack(trackNumber: -1),
+      );
+      final entity = SongEntity()
+        ..filePath = audioUri
+        ..startOffsetMs = track.startOffsetMs
+        ..endOffsetMs = track.endOffsetMs
+        ..title = track.title.trim().isNotEmpty
+            ? track.title.trim()
+            : _extractTitleFromFilename(meta?.name ?? 'Track ${track.trackNumber}')
+        ..artist = artist
+        ..album = cueSheet.title?.trim().isNotEmpty ?? false
+            ? cueSheet.title!.trim()
+            : (meta?.album?.trim().isNotEmpty ?? false)
+                ? meta!.album!.trim()
+                : 'Unknown Album'
+        ..albumArtist = cueSheet.performer?.trim().isNotEmpty ?? false
+            ? cueSheet.performer!.trim()
+            : artist
+        ..trackNumber = track.trackNumber
+        ..discNumber = meta?.discNumber ?? 1
+        ..durationMs = track.endOffsetMs != null
+            ? track.endOffsetMs! - track.startOffsetMs
+            : (meta?.duration ?? 0)
+        ..fileType = meta?.extension.toUpperCase() ?? 'UNKNOWN'
+        ..dateAdded = existing?.dateAdded ?? DateTime.now()
+        ..lastModified = lastModified
+        ..folderUri = folderUri
+        ..fileSize = meta?.size ?? 0
+        ..albumArtPath = existing?.albumArtPath ?? meta?.albumArtPath
+        ..bitrate = meta?.bitrate != null
+            ? AudioMetadataUtils.bitrateFromBitsPerSecond(
+                int.tryParse(meta!.bitrate!),
+              )
+            : null
+        ..bitDepth = meta?.bitDepth
+        ..sampleRate = meta?.sampleRate
+        ..genre = cueSheet.genre
+        ..year = int.tryParse(cueSheet.date ?? '')
+        ..ripper = ripLog?.ripper
+        ..readMode = ripLog?.readMode
+        ..accurateRip = trackLog?.trackNumber == track.trackNumber
+            ? trackLog?.accurate
+            : null
+        ..testCrc = trackLog?.trackNumber == track.trackNumber
+            ? trackLog?.testCrc
+            : null
+        ..copyCrc = trackLog?.trackNumber == track.trackNumber
+            ? trackLog?.copyCrc
+            : null;
+
+      if (existing != null) {
+        entity.id = existing.id;
+      }
+      entities.add(entity);
+    }
+    return entities;
   }
 }

@@ -137,8 +137,10 @@ class LyricsService {
     final candidates = <String>[
       '${parent.path}$sep$stem.lrc',
       '${parent.path}$sep$stem.txt',
+      '${parent.path}$sep$stem.xml',
       '${parent.path}$sep$stem.LRC',
       '${parent.path}$sep$stem.TXT',
+      '${parent.path}$sep$stem.XML',
     ];
 
     for (final candidatePath in candidates) {
@@ -192,6 +194,12 @@ class LyricsService {
   }
 
   LyricsData _parseLyrics(String raw, {String? source}) {
+    final trimmed = raw.trim();
+    if (trimmed.startsWith('<?xml') || trimmed.startsWith('<')) {
+      final xmlData = _parseXmlLyrics(trimmed, source: source);
+      if (xmlData != null) return xmlData;
+    }
+
     final normalized = raw
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n')
@@ -258,6 +266,53 @@ class LyricsService {
       isSynchronized: false,
       source: source,
     );
+  }
+
+  LyricsData? _parseXmlLyrics(String xml, {String? source}) {
+    try {
+      final linePattern = RegExp(
+        r'<line\s+start="(\d+)"\s*>([^<]*)</line>',
+        caseSensitive: false,
+      );
+      final altPattern = RegExp(
+        r'<line\s+start="(\d{1,2}):(\d{2})\.(\d{2})"\s*>([^<]*)</line>',
+        caseSensitive: false,
+      );
+
+      final lines = <LyricsLine>[];
+      var hasTimestamps = false;
+
+      for (final match in linePattern.allMatches(xml)) {
+        hasTimestamps = true;
+        final ms = int.tryParse(match.group(1) ?? '') ?? 0;
+        final text = match.group(2)?.trim() ?? '';
+        if (text.isNotEmpty) {
+          lines.add(LyricsLine(timestamp: Duration(milliseconds: ms), text: text));
+        }
+      }
+
+      if (lines.isEmpty) {
+        for (final match in altPattern.allMatches(xml)) {
+          hasTimestamps = true;
+          final minutes = int.tryParse(match.group(1) ?? '0') ?? 0;
+          final seconds = int.tryParse(match.group(2) ?? '0') ?? 0;
+          final centis = int.tryParse(match.group(3) ?? '0') ?? 0;
+          final ms = (minutes * 60 + seconds) * 1000 + centis * 10;
+          final text = match.group(4)?.trim() ?? '';
+          if (text.isNotEmpty) {
+            lines.add(LyricsLine(timestamp: Duration(milliseconds: ms), text: text));
+          }
+        }
+      }
+
+      if (lines.isNotEmpty) {
+        lines.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+        return LyricsData(lines: lines, isSynchronized: hasTimestamps, source: source);
+      }
+    } catch (_) {
+      // Fall through to plain-text parser
+    }
+    return null;
   }
 
   Duration? _parseTimestamp(String timestamp) {
