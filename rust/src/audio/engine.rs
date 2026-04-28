@@ -130,6 +130,10 @@ impl AudioCallbackData {
 
     #[inline]
     pub fn set_volume(&self, volume: f32) {
+        debug_assert!(
+            (0.0..=1.0).contains(&volume) || volume.is_nan(),
+            "Volume out of range: {volume}"
+        );
         self.volume.store(volume.to_bits(), Ordering::Relaxed);
     }
 
@@ -1429,9 +1433,6 @@ pub(crate) fn audio_callback(
             if read < output.len() {
                 output[read..].fill(0.0);
             }
-            for sample in output.iter_mut() {
-                *sample *= volume;
-            }
             if let Some(mut eq) = data.equalizer.try_lock() {
                 eq.process(output, channels);
             }
@@ -1440,6 +1441,10 @@ pub(crate) fn audio_callback(
             }
             if let Some(mut dynamics) = data.dynamics.try_lock() {
                 dynamics.process(output, channels);
+            }
+            // Volume is always applied last, after all DSP processing.
+            for sample in output.iter_mut() {
+                *sample *= volume;
             }
             return;
         }
@@ -1565,9 +1570,6 @@ pub(crate) fn audio_callback(
         }
     }
 
-    for sample in output.iter_mut() {
-        *sample *= volume;
-    }
     if let Some(mut eq) = data.equalizer.try_lock() {
         eq.process(output, channels);
     }
@@ -1576,6 +1578,11 @@ pub(crate) fn audio_callback(
     }
     if let Some(mut dynamics) = data.dynamics.try_lock() {
         dynamics.process(output, channels);
+    }
+
+    // Volume is always applied last, after all DSP processing.
+    for sample in output.iter_mut() {
+        *sample *= volume;
     }
 }
 
