@@ -103,6 +103,7 @@ class MainActivity: FlutterActivity() {
     private var lastObservedHardwareVolume: Double = Double.NaN
     /** Matches nativeGetRustDirectUsbHardwareMute: -1 unknown, 0/1; Int.MIN_VALUE = unset. */
     private var lastObservedHardwareMute: Int = Int.MIN_VALUE
+    private val priorityAnchorService by lazy { PriorityAnchorService(applicationContext) }
     // private var audioConverter: AudioConverter? = null
     // Coroutine scope for background tasks
     private val mainScope = CoroutineScope(Dispatchers.Main)
@@ -661,6 +662,14 @@ class MainActivity: FlutterActivity() {
                 "markDirectUsbFallback" -> {
                     val reason = call.argument<String>("reason")
                     result.success(nativeMarkRustDirectUsbFallback(reason))
+                }
+                "startPriorityAnchor" -> {
+                    priorityAnchorService.start()
+                    result.success(true)
+                }
+                "stopPriorityAnchor" -> {
+                    priorityAnchorService.stop()
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }
