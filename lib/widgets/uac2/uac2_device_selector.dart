@@ -114,6 +114,10 @@ class Uac2DeviceSelector extends ConsumerWidget {
         color = Colors.blue;
         label = 'Connected';
         break;
+      case Uac2State.prewarming:
+        color = Colors.amber;
+        label = 'Prewarming';
+        break;
       case Uac2State.streaming:
         color = Colors.green;
         label = 'Streaming';
@@ -148,6 +152,7 @@ class Uac2DeviceSelector extends ConsumerWidget {
   ) {
     final deviceStatus = ref.watch(uac2DeviceStatusProvider);
     final isConnected = deviceStatus?.state == Uac2State.connected ||
+        deviceStatus?.state == Uac2State.prewarming ||
         deviceStatus?.state == Uac2State.streaming;
 
     return Row(

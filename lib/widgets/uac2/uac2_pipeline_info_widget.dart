@@ -43,7 +43,9 @@ class _Uac2PipelineInfoWidgetState
   Widget build(BuildContext context) {
     final deviceStatus = ref.watch(uac2DeviceStatusProvider);
 
-    if (deviceStatus == null || deviceStatus.state != Uac2State.streaming) {
+    if (deviceStatus == null ||
+        (deviceStatus.state != Uac2State.streaming &&
+            deviceStatus.state != Uac2State.prewarming)) {
       return const SizedBox.shrink();
     }
 
