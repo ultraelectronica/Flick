@@ -191,6 +191,10 @@ class AudioSessionManager {
     _initialized = true;
   }
 
+  Future<void> syncRouteSelection({required String reason}) async {
+    await _syncRouteSelection(reason: reason);
+  }
+
   Future<void> _syncRouteSelection({required String reason}) async {
     final inFlight = _routeSyncInFlight;
     if (inFlight != null) {
@@ -232,6 +236,7 @@ class AudioSessionManager {
         : _deviceService.deviceInfoNotifier.value;
     final hiFiModeEnabled = await _preferencesService.getHiFiModeEnabled();
     final bitPerfectEnabled = await _preferencesService.getBitPerfectEnabled();
+    final dapBitPerfectEnabled = await _preferencesService.getDapBitPerfectEnabled();
     final audioEnginePreference = await _preferencesService
         .getAudioEnginePreference();
     final capabilityInfo = await _uac2Service.getAndroidAudioCapabilityInfo();
@@ -306,6 +311,15 @@ class AudioSessionManager {
         dapInfo.detected;
     if (audioEnginePreference == AudioEnginePreference.rustOboe) {
       if (hiFiModeEnabled && supportsHiResInternal) {
+        if (!dapBitPerfectEnabled) {
+          _debugLog(
+            '[Session] Selected RUST_OBOE because DAP bit-perfect is '
+            'disabled. DSP chain will run normally. '
+            '(${capabilityInfo.routeType}/${capabilityInfo.routeLabel ?? 'unknown'}; '
+            'detectedDap=${dapInfo.brand ?? 'none'})',
+          );
+          return AudioEngineType.rustOboe;
+        }
         _debugLog(
           '[Session] Selected DAP_INTERNAL_HIGH_RES because Rust via Oboe '
           'is preferred and Android reports a higher-capability internal '
@@ -323,6 +337,15 @@ class AudioSessionManager {
     }
 
     if (hiFiModeEnabled && supportsHiResInternal) {
+      if (!dapBitPerfectEnabled) {
+        _debugLog(
+          '[Session] Selected RUST_OBOE (from default engine preference) '
+          'because DAP bit-perfect is disabled. DSP chain will run normally. '
+          '(${capabilityInfo.routeType}/${capabilityInfo.routeLabel ?? 'unknown'}; '
+          'detectedDap=${dapInfo.brand ?? 'none'})',
+        );
+        return AudioEngineType.rustOboe;
+      }
       _debugLog(
         '[Session] Selected DAP_INTERNAL_HIGH_RES because HiFi Mode is '
         'enabled and Android reports a higher-capability internal route '

@@ -559,7 +559,8 @@ class PlayerService {
       _sessionManager.initializedMode ?? _sessionManager.selectedMode;
   bool get isBitPerfectModeEnabled =>
       _uac2Service.isBitPerfectEnabledSync ||
-      currentEngineType == AudioEngineType.dapInternalHighRes;
+      (currentEngineType == AudioEngineType.dapInternalHighRes &&
+          _uac2Service.isDapBitPerfectEnabledSync);
   bool get isBitPerfectProcessingLocked =>
       isBitPerfectModeEnabled ||
       currentEngineType == AudioEngineType.usbDacExperimental;
@@ -615,7 +616,12 @@ class PlayerService {
   }
 
   Future<void> setDapBitPerfectEnabled(bool enabled) async {
-    await setHiFiModeEnabled(enabled);
+    await _preferencesService.setDapBitPerfectEnabled(enabled);
+    _uac2Service.dapBitPerfectEnabledNotifier.value = enabled;
+    rust_audio.audioSetDapBitPerfectEnabled(enabled: enabled);
+    await _sessionManager.syncRouteSelection(
+      reason: enabled ? 'DAP bit-perfect enabled' : 'DAP bit-perfect disabled',
+    );
   }
 
   Future<bool> isHiFiModeEnabled() async {
@@ -624,7 +630,7 @@ class PlayerService {
   }
 
   Future<bool> isDapBitPerfectEnabled() async {
-    return isHiFiModeEnabled();
+    return _preferencesService.getDapBitPerfectEnabled();
   }
 
   Future<void> _initializeAudio() async {
@@ -636,6 +642,9 @@ class PlayerService {
         _sessionManager.initialize(),
         _uac2Service.isBitPerfectEnabled(),
       ]);
+      final dapBitPerfect = await _preferencesService.getDapBitPerfectEnabled();
+      _uac2Service.dapBitPerfectEnabledNotifier.value = dapBitPerfect;
+      rust_audio.audioSetDapBitPerfectEnabled(enabled: dapBitPerfect);
       _playbackManager.publishIdleState(_sessionManager.selectedMode);
       _audioInitialized = true;
       await _refreshAudioOutputDiagnostics(reason: 'audio initialized');
