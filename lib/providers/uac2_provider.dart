@@ -204,3 +204,8 @@ final uac2DapBitPerfectEnabledProvider = FutureProvider<bool>((ref) async {
 });
 
 final uac2ExclusiveDacModeProvider = uac2BitPerfectEnabledProvider;
+
+final killIsochronousUsbOnQuitProvider = FutureProvider<bool>((ref) async {
+  final service = ref.watch(uac2PreferencesServiceProvider);
+  return service.getKillIsochronousUsbOnQuit();
+});

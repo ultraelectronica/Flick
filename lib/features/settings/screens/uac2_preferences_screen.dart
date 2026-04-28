@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -31,6 +33,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                     final audioEngineAsync = ref.watch(audioEnginePreferenceProvider);
                     final developerModeAsync = ref.watch(developerModeEnabledProvider);
                     final diagnostics = ref.watch(audioOutputDiagnosticsProvider);
+                    final killIsochronousUsbOnQuitAsync = ref.watch(killIsochronousUsbOnQuitProvider);
 
     return DisplayModeWrapper(
       child: Scaffold(
@@ -67,6 +70,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                         developerModeAsync,
                         bitPerfectAsync,
                         dapBitPerfectAsync,
+                        killIsochronousUsbOnQuitAsync,
                         diagnostics,
                       ),
                       const SizedBox(height: AppConstants.navBarHeight + 120),
@@ -238,6 +242,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
     AsyncValue<bool> developerModeAsync,
     AsyncValue<bool> bitPerfectAsync,
     AsyncValue<bool> dapBitPerfectAsync,
+    AsyncValue<bool> killIsochronousUsbOnQuitAsync,
     AudioOutputDiagnostics? diagnostics,
   ) {
     return Container(
@@ -293,7 +298,8 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                     .read(uac2ServiceProvider)
                     .setBitPerfectEnabled(value);
                 ref.invalidate(uac2BitPerfectEnabledProvider);
-                ref.invalidate(uac2ExclusiveDacModeProvider);
+ref.invalidate(uac2ExclusiveDacModeProvider);
+              ref.invalidate(killIsochronousUsbOnQuitProvider);
                 if (!context.mounted) {
                   return;
                 }
@@ -348,6 +354,25 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               error: (_, _) => _buildErrorTile(context),
             ),
           ],
+          _buildDivider(),
+          killIsochronousUsbOnQuitAsync.when(
+            data: (killOnQuit) => _buildSwitchTile(
+              context,
+              icon: LucideIcons.power,
+              title: 'Stop USB on Quit',
+              subtitle: killOnQuit
+                  ? 'The Isochronous USB engine will be stopped when the app quits.'
+                  : 'The Isochronous USB engine will stay alive when the app quits.',
+              value: killOnQuit,
+              onChanged: (value) async {
+                await service.setKillIsochronousUsbOnQuit(value);
+                ref.invalidate(killIsochronousUsbOnQuitProvider);
+                unawaited(Uac2Service.instance.syncKillIsochronousUsbOnQuitToNative());
+              },
+            ),
+            loading: () => _buildLoadingTile(context),
+            error: (_, _) => _buildErrorTile(context),
+          ),
           _buildDivider(),
           _buildNavigationTile(
             context,
