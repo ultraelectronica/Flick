@@ -24,6 +24,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   final PlayerService _playerService = PlayerService();
   List<AlbumGroup> _albums = [];
   bool _isLoading = true;
+  bool _isGlanceMinimized = false;
 
   @override
   void initState() {
@@ -224,37 +225,74 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
             ],
           ),
           const SizedBox(height: AppConstants.spacingLg),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppConstants.spacingLg),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppConstants.radiusXl),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.surfaceLight.withValues(alpha: 0.86),
-                  AppColors.surface.withValues(alpha: 0.96),
-                ],
-              ),
-              border: Border.all(color: AppColors.glassBorder),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 22,
-                  offset: const Offset(0, 10),
-                ),
-              ],
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _isGlanceMinimized = !_isGlanceMinimized;
+              });
+            },
+            child: AnimatedCrossFade(
+              firstChild: _buildGlanceCard(context, expanded: true),
+              secondChild: _buildGlanceCard(context, expanded: false),
+              crossFadeState:
+                  _isGlanceMinimized
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 200),
             ),
-            child: Column(
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGlanceCard(BuildContext context, {required bool expanded}) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(
+        expanded ? AppConstants.spacingLg : AppConstants.spacingMd,
+      ),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppConstants.radiusXl),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.surfaceLight.withValues(alpha: 0.86),
+            AppColors.surface.withValues(alpha: 0.96),
+          ],
+        ),
+        border: Border.all(color: AppColors.glassBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: expanded
+          ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Your collection at a glance',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: context.adaptiveTextPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Your collection at a glance',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleMedium?.copyWith(
+                        color: context.adaptiveTextPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Icon(
+                      LucideIcons.chevronUp,
+                      color: context.adaptiveTextSecondary,
+                      size: 20,
+                    ),
+                  ],
                 ),
                 const SizedBox(height: AppConstants.spacingXs),
                 Text(
@@ -281,10 +319,24 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                   ],
                 ),
               ],
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Your collection at a glance',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: context.adaptiveTextPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Icon(
+                  LucideIcons.chevronDown,
+                  color: context.adaptiveTextSecondary,
+                  size: 20,
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
