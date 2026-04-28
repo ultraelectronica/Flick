@@ -68,13 +68,14 @@ class SongRepository {
     return await _isar.songEntitys.count();
   }
 
-  /// Add or update a song.
+  /// Add or update a song. Matches on composite key (filePath, startOffsetMs).
   Future<void> upsertSong(SongEntity entity) async {
     await _isar.writeTxn(() async {
-      // Check if song with same file path exists
       final existing = await _isar.songEntitys
           .filter()
           .filePathEqualTo(entity.filePath)
+          .and()
+          .startOffsetMsEqualTo(entity.startOffsetMs)
           .findFirst();
 
       if (existing != null) {
@@ -118,6 +119,34 @@ class SongRepository {
     await _isar.writeTxn(() async {
       for (final path in paths) {
         await _isar.songEntitys.filter().filePathEqualTo(path).deleteAll();
+      }
+    });
+  }
+
+  /// Delete raw (non-CUE) songs by file path.
+  Future<void> deleteRawSongsByPath(List<String> paths) async {
+    await _isar.writeTxn(() async {
+      for (final path in paths) {
+        await _isar.songEntitys
+            .filter()
+            .filePathEqualTo(path)
+            .and()
+            .startOffsetMsIsNull()
+            .deleteAll();
+      }
+    });
+  }
+
+  /// Delete CUE track songs by file path.
+  Future<void> deleteCueTracksByPath(List<String> paths) async {
+    await _isar.writeTxn(() async {
+      for (final path in paths) {
+        await _isar.songEntitys
+            .filter()
+            .filePathEqualTo(path)
+            .and()
+            .startOffsetMsIsNotNull()
+            .deleteAll();
       }
     });
   }
@@ -282,6 +311,13 @@ class SongRepository {
       resolution: _buildResolutionString(entity),
       sampleRate: entity.sampleRate,
       bitDepth: entity.bitDepth,
+      startOffsetMs: entity.startOffsetMs,
+      endOffsetMs: entity.endOffsetMs,
+      ripper: entity.ripper,
+      readMode: entity.readMode,
+      accurateRip: entity.accurateRip,
+      testCrc: entity.testCrc,
+      copyCrc: entity.copyCrc,
       album: entity.album,
       albumArtist: entity.albumArtist,
       trackNumber: entity.trackNumber,
