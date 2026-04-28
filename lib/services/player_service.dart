@@ -694,6 +694,7 @@ class PlayerService {
     try {
       await Future.wait<void>([
         _preferencesService.initializeDeveloperModeCache(),
+        _preferencesService.initializeKillIsochronousUsbOnQuitCache(),
         _sessionManager.initialize(),
         _uac2Service.isBitPerfectEnabled(),
       ]);
@@ -3509,7 +3510,9 @@ class PlayerService {
     cancelSleepTimer();
     _notificationService.hideNotification();
     if (_usingRustBackend) {
-      unawaited(_rustAudioService.stop());
+      if (Uac2PreferencesService.isKillIsochronousUsbOnQuitSync) {
+        unawaited(_rustAudioService.stop());
+      }
     }
 
     final player = _justAudioPlayer;

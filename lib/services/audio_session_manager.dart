@@ -181,6 +181,7 @@ class AudioSessionManager {
 
   Future<void> _initializeInternal() async {
     await _preferencesService.initializeDeveloperModeCache();
+    await _preferencesService.initializeKillIsochronousUsbOnQuitCache();
     await _deviceService.initialize();
     selectedModeNotifier.value = await _resolvePreferredMode();
 
