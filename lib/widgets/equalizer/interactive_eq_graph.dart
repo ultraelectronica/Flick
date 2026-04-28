@@ -95,6 +95,7 @@ class _InteractiveEqGraphScreenState
                 _qAdjustHandleIndex != null ||
                 _hoveredHandleIndex != null)
               _buildDetailPanel(),
+            _buildStatusBar(),
           ],
         ),
       ),
@@ -277,6 +278,119 @@ class _InteractiveEqGraphScreenState
     if (freqHz < 2000) return 'Mid';
     if (freqHz < 6000) return 'Presence';
     return 'Air';
+  }
+
+  Widget _buildStatusBar() {
+    final state = ref.watch(equalizerProvider);
+    final presetName = state.activePresetName;
+    final isEnabled = state.enabled;
+
+    String summaryText;
+    if (widget.mode == EqMode.graphic) {
+      final adjustedCount = state.graphicGainsDb.where((g) => g.abs() > 0.05).length;
+      summaryText = adjustedCount == 0 ? 'Flat' : '$adjustedCount/${state.graphicGainsDb.length} bands adjusted';
+    } else {
+      final activeCount = state.parametricBands.where((b) => b.enabled).length;
+      summaryText = '$activeCount/${state.parametricBands.length} bands active';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.spacingMd,
+        vertical: AppConstants.spacingSm,
+      ),
+      margin: const EdgeInsets.only(
+        left: AppConstants.spacingMd,
+        right: AppConstants.spacingMd,
+        bottom: AppConstants.spacingMd,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        border: Border.all(color: AppColors.glassBorderStrong.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          // Mode chip
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.glassBackgroundStrong.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(AppConstants.radiusRound),
+            ),
+            child: Text(
+              widget.mode == EqMode.graphic ? 'Graphic' : 'Parametric',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: context.adaptiveTextPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppConstants.spacingSm),
+          // Preset name or summary
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (presetName != null)
+                  Text(
+                    presetName,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: context.adaptiveTextSecondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                Text(
+                  summaryText,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: context.adaptiveTextTertiary,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Enabled indicator
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: isEnabled ? AppColors.textPrimary : AppColors.inactiveState,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                isEnabled ? 'ON' : 'OFF',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: isEnabled ? context.adaptiveTextPrimary : context.adaptiveTextTertiary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: AppConstants.spacingSm),
+          // Preamp
+          if (state.preampDb.abs() > 0.01)
+            Text(
+              '${state.preampDb >= 0 ? '+' : ''}${state.preampDb.toStringAsFixed(1)} dB',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: context.adaptiveTextSecondary,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   // ==========================================================================
