@@ -325,7 +325,7 @@ impl AudioEngineHandle {
         self.send_command(AudioCommand::SetPlaybackSpeed { speed })
     }
 
-    /// Switch pipeline mode at runtime (used when DAP bit-perfect is toggled).
+    /// Switch pipeline mode at runtime (used when Bit-perfect (DAP Internal) is toggled).
     pub fn set_pipeline_mode_passthrough(&self, passthrough: bool) -> Result<(), String> {
         self.send_command(AudioCommand::SetPipelineMode { passthrough })
     }
@@ -746,11 +746,11 @@ pub fn create_audio_engine(
     let dap_force_dsp = !dap_bit_perfect_enabled
         && device_profile.as_ref().is_some_and(|p| p.is_dap())
         && !will_attempt_usb;
-    let requested_sample_rate = if dap_force_dsp {
-        44_100
-    } else {
-        preferred_sample_rate.unwrap_or(48_000)
-    };
+                let requested_sample_rate = if dap_force_dsp {
+                    48_000
+                } else {
+                    preferred_sample_rate.unwrap_or(48_000)
+                };
 
     #[cfg(feature = "uac2")]
     if will_attempt_usb {
