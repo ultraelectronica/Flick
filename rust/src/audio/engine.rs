@@ -56,6 +56,19 @@ pub struct AudioOutputRuntimeState {
     pub direct_usb_verified: bool,
 }
 
+/// Pipeline mode: set once at engine creation time, never toggled at runtime.
+///
+/// Like USB direct, when the engine runs in Passthrough mode the audio
+/// callback skips ALL DSP (EQ, dynamics, speed, crossfade). The only
+/// processing applied is gain — which is a no-op when DAC hardware
+/// volume is available.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+pub(crate) enum PipelineMode {
+    Passthrough = 0,
+    Dsp = 1,
+}
+
 /// Audio callback data shared between engine and audio thread.
 ///
 /// This struct contains only lock-free or atomic data to ensure
@@ -67,10 +80,9 @@ pub struct AudioCallbackData {
     playback_speed: std::sync::atomic::AtomicU32, // Using AtomicU32 for f32 bit pattern
     /// Pause state
     paused: AtomicBool,
-    /// Bit-perfect bypass: when true, audio_callback skips ALL DSP
-    /// (volume, EQ, dynamics, speed, crossfade). Samples pass through
-    /// from the decoded source to the output buffer unmodified.
-    bit_perfect: AtomicBool,
+    /// Pipeline mode (Passthrough or Dsp) — immutable after creation.
+    /// Stored as AtomicU8 for lock-free reads from the audio callback.
+    pipeline_mode: AtomicU8,
     /// Output channel count
     channels: usize,
     /// Crossfader state
@@ -95,7 +107,12 @@ pub struct AudioCallbackData {
 }
 
 impl AudioCallbackData {
-    pub fn new(sample_rate: u32, channels: usize, finished_tracks: Sender<AudioSource>) -> Self {
+    pub(crate) fn new(
+        sample_rate: u32,
+        channels: usize,
+        finished_tracks: Sender<AudioSource>,
+        pipeline_mode: PipelineMode,
+    ) -> Self {
         // Pre-allocate mix buffers (enough for ~100ms of audio)
         let buffer_size = (sample_rate as usize / 10) * channels;
         // Speed buffer needs to be larger to handle 2x speed (need 2x input for 1x output)
@@ -105,7 +122,7 @@ impl AudioCallbackData {
             volume: std::sync::atomic::AtomicU32::new(1.0f32.to_bits()),
             playback_speed: std::sync::atomic::AtomicU32::new(1.0f32.to_bits()),
             paused: AtomicBool::new(false),
-            bit_perfect: AtomicBool::new(false),
+            pipeline_mode: AtomicU8::new(pipeline_mode as u8),
             channels,
             crossfader: Mutex::new(Crossfader::disabled(sample_rate)),
             sources: Mutex::new(SourceProvider::new(sample_rate, channels)),
@@ -168,13 +185,13 @@ impl AudioCallbackData {
     }
 
     #[inline]
-    pub fn is_bit_perfect(&self) -> bool {
-        self.bit_perfect.load(Ordering::Relaxed)
+    pub fn is_passthrough(&self) -> bool {
+        self.pipeline_mode.load(Ordering::Relaxed) == PipelineMode::Passthrough as u8
     }
 
     #[inline]
-    pub fn set_bit_perfect(&self, enabled: bool) {
-        self.bit_perfect.store(enabled, Ordering::Relaxed);
+    pub(crate) fn set_pipeline_mode(&self, mode: PipelineMode) {
+        self.pipeline_mode.store(mode as u8, Ordering::Relaxed);
     }
 
     pub fn reconfigure_sample_rate(&self, sample_rate: u32) {
@@ -306,6 +323,11 @@ impl AudioEngineHandle {
     /// Set playback speed (0.5 to 2.0).
     pub fn set_playback_speed(&self, speed: f32) -> Result<(), String> {
         self.send_command(AudioCommand::SetPlaybackSpeed { speed })
+    }
+
+    /// Switch pipeline mode at runtime (used when DAP bit-perfect is toggled).
+    pub fn set_pipeline_mode_passthrough(&self, passthrough: bool) -> Result<(), String> {
+        self.send_command(AudioCommand::SetPipelineMode { passthrough })
     }
 
     /// Set graphic EQ: enabled and 10 band gains in dB (order matches EqualizerState.defaultGraphicFrequenciesHz).
@@ -511,6 +533,7 @@ pub fn create_audio_engine(
         target_sample_rate,
         channels,
         finished_tx,
+        PipelineMode::Dsp,
     ));
     let callback_data_clone = Arc::clone(&callback_data);
 
@@ -717,13 +740,13 @@ pub fn create_audio_engine(
     #[cfg(not(feature = "uac2"))]
     let will_attempt_usb = false;
 
-    // When a DAP is detected and DAP bit-perfect is turned off, force the
-    // output to 44.1 kHz so that all DSP runs on a fixed-rate pipeline.
-    // Skip this when a USB DAC is active (will_attempt_usb covers that path).
-    let force_dap_dsp_pipeline = !dap_bit_perfect_enabled
+    // When a DAP device has bit-perfect disabled, force the output to
+    // 44.1 kHz so that all DSP runs at a fixed rate. USB DACs are excluded
+    // because they use their own direct path.
+    let dap_force_dsp = !dap_bit_perfect_enabled
         && device_profile.as_ref().is_some_and(|p| p.is_dap())
         && !will_attempt_usb;
-    let requested_sample_rate = if force_dap_dsp_pipeline {
+    let requested_sample_rate = if dap_force_dsp {
         44_100
     } else {
         preferred_sample_rate.unwrap_or(48_000)
@@ -747,6 +770,7 @@ pub fn create_audio_engine(
                     && android_device_supports_dap_native_strategy(device.device_type)
             })
         });
+
     let desired_strategy = if will_attempt_usb {
         OutputStrategy::UsbDirect
     } else {
@@ -818,10 +842,19 @@ pub fn create_audio_engine(
     // Create shared data before the output path is opened. If the platform
     // changes the actual stream rate, we reconfigure the processing state
     // before any playback commands are accepted.
+    //
+    // Pipeline mode is determined by desired strategy:
+    // - UsbDirect / DapNative → Passthrough (verified below; downgraded on failure)
+    // - All other strategies   → Dsp (full processing chain)
+    let initial_pipeline_mode = match desired_strategy {
+        OutputStrategy::UsbDirect | OutputStrategy::DapNative => PipelineMode::Passthrough,
+        _ => PipelineMode::Dsp,
+    };
     let callback_data = Arc::new(AudioCallbackData::new(
         requested_sample_rate,
         channels,
         finished_tx,
+        initial_pipeline_mode,
     ));
     let callback_data_clone = Arc::clone(&callback_data);
 
@@ -881,10 +914,10 @@ pub fn create_audio_engine(
                     debug_state.clock_verification_passed,
                 );
 
-                if verification.bit_perfect && !force_dap_dsp_pipeline {
+                if verification.bit_perfect {
                     final_sample_rate = actual_sample_rate;
                     callback_data.reconfigure_sample_rate(final_sample_rate);
-                    callback_data.set_bit_perfect(true);
+                    callback_data.set_pipeline_mode(PipelineMode::Passthrough);
                     output_runtime = build_output_runtime_state(
                         OutputStrategy::UsbDirect,
                         verification,
@@ -961,11 +994,14 @@ pub fn create_audio_engine(
         } else {
             desired_strategy
         };
+        let prefer_exclusive = dap_bit_perfect_enabled
+            && device_profile.as_ref().is_some_and(|p| p.is_dap())
+            && !will_attempt_usb;
         let managed = open_android_output_stream(
             Arc::clone(&callback_data_clone),
             event_tx_clone.clone(),
             requested_sample_rate,
-            force_dap_dsp_pipeline,
+            prefer_exclusive,
         )?;
         let verification = OutputVerification::verify(
             requested_sample_rate,
@@ -976,7 +1012,11 @@ pub fn create_audio_engine(
         let resolved_shared_strategy = verification.resolved_strategy(desired_shared_strategy);
         final_sample_rate = managed.actual_sample_rate;
         callback_data.reconfigure_sample_rate(final_sample_rate);
-        callback_data.set_bit_perfect(verification.bit_perfect && !force_dap_dsp_pipeline);
+        if verification.bit_perfect && !dap_force_dsp {
+            callback_data.set_pipeline_mode(PipelineMode::Passthrough);
+        } else {
+            callback_data.set_pipeline_mode(PipelineMode::Dsp);
+        }
         output_runtime =
             build_output_runtime_state(desired_shared_strategy, verification, false, false);
         output_signature =
@@ -1401,11 +1441,10 @@ pub(crate) fn audio_callback(
         return;
     }
 
-    // Bit-perfect path: raw samples from decoder straight to output.
-    // No EQ, no dynamics, no speed, no crossfade.
-    // Volume IS applied: when DAC has hardware volume control it stays at 1.0
-    // (no-op), when the DAC lacks it this provides the fallback volume control.
-    if data.is_bit_perfect() {
+    // Passthrough path: raw samples from decoder straight to output.
+    // No EQ, no dynamics, no speed, no crossfade. Gain is applied for
+    // volume control (a no-op when DAC hardware volume is available).
+    if data.is_passthrough() {
         let gain = data.get_gain();
         let mut sources = match data.sources.try_lock() {
             Some(s) => s,
@@ -1428,7 +1467,7 @@ pub(crate) fn audio_callback(
         return;
     }
 
-    // --- Normal (non-bit-perfect) path with full DSP chain ---
+    // --- DSP path: full processing chain ---
 
     let volume = data.get_gain();
     let speed = data.get_playback_speed();
@@ -1747,6 +1786,13 @@ fn command_processing_loop(
                             release_ms,
                         );
                     }
+                    AudioCommand::SetPipelineMode { passthrough } => {
+                        callback_data.set_pipeline_mode(if passthrough {
+                            PipelineMode::Passthrough
+                        } else {
+                            PipelineMode::Dsp
+                        });
+                    }
                     AudioCommand::SetFx {
                         enabled,
                         balance,
@@ -2044,7 +2090,12 @@ mod tests {
 
     fn build_callback_data(sample_rate: u32, channels: usize) -> AudioCallbackData {
         let (finished_tx, _finished_rx) = bounded::<AudioSource>(8);
-        AudioCallbackData::new(sample_rate, channels, finished_tx)
+        AudioCallbackData::new(sample_rate, channels, finished_tx, PipelineMode::Dsp)
+    }
+
+    fn build_passthrough_callback_data(sample_rate: u32, channels: usize) -> AudioCallbackData {
+        let (finished_tx, _finished_rx) = bounded::<AudioSource>(8);
+        AudioCallbackData::new(sample_rate, channels, finished_tx, PipelineMode::Passthrough)
     }
 
     fn run_callback(data: &AudioCallbackData, output_len: usize) -> Vec<f32> {
@@ -2055,28 +2106,27 @@ mod tests {
     }
 
     #[test]
-    fn callback_bit_perfect_applies_volume() {
-        let data = build_callback_data(48_000, 2);
+    fn callback_passthrough_applies_volume() {
+        let data = build_passthrough_callback_data(48_000, 2);
         let input = vec![0.0, 0.25, -0.5, 0.5, -0.25, 0.0, 1.0, -1.0];
 
         data.set_volume(0.25);
-        data.set_bit_perfect(true);
         data.sources
             .lock()
             .set_current(build_source(&input, 48_000, 2));
 
         let output = run_callback(&data, input.len());
 
-        let expected: Vec<f32> = input.iter().map(|s| s * 0.25).collect();
+        let gain = volume_to_gain(0.25);
+        let expected: Vec<f32> = input.iter().map(|s| s * gain).collect();
         assert_eq!(output, expected);
     }
 
     #[test]
-    fn callback_bit_perfect_zero_fills_tail_on_underrun() {
-        let data = build_callback_data(48_000, 2);
+    fn callback_passthrough_zero_fills_tail_on_underrun() {
+        let data = build_passthrough_callback_data(48_000, 2);
         let input = vec![0.5, -0.5, 0.25, -0.25];
 
-        data.set_bit_perfect(true);
         data.sources
             .lock()
             .set_current(build_source(&input, 48_000, 2));
@@ -2089,7 +2139,6 @@ mod tests {
     #[test]
     fn callback_zero_fills_when_no_source_available() {
         let data = build_callback_data(48_000, 2);
-        data.set_bit_perfect(false);
 
         let output = run_callback(&data, 8);
 
@@ -2097,12 +2146,11 @@ mod tests {
     }
 
     #[test]
-    fn callback_bit_perfect_passthrough_at_volume_1() {
-        let data = build_callback_data(48_000, 2);
+    fn callback_passthrough_passthrough_at_volume_1() {
+        let data = build_passthrough_callback_data(48_000, 2);
         let input = vec![0.0, 0.25, -0.5, 0.5, -0.25, 0.0, 1.0, -1.0];
 
         data.set_volume(1.0);
-        data.set_bit_perfect(true);
         data.sources
             .lock()
             .set_current(build_source(&input, 48_000, 2));
@@ -2113,18 +2161,19 @@ mod tests {
     }
 
     #[test]
-    fn callback_applies_volume_when_not_bit_perfect() {
+    fn callback_applies_gain_when_dsp() {
         let data = build_callback_data(48_000, 2);
         let input = vec![0.5, -0.5, 0.25, -0.25];
 
         data.set_volume(0.5);
-        data.set_bit_perfect(false);
         data.sources
             .lock()
             .set_current(build_source(&input, 48_000, 2));
 
         let output = run_callback(&data, input.len());
 
-        assert_eq!(output, vec![0.25, -0.25, 0.125, -0.125]);
+        let gain = volume_to_gain(0.5);
+        let expected: Vec<f32> = input.iter().map(|s| s * gain).collect();
+        assert_eq!(output, expected);
     }
 }
