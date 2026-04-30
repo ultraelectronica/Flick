@@ -27,7 +27,7 @@ bool audioIsInitialized() =>
 void audioSetHighResMode({required bool enabled}) =>
     RustLib.instance.api.crateApiAudioApiAudioSetHighResMode(enabled: enabled);
 
-/// Sync the DAP bit-perfect preference from Dart so the Rust engine manager
+/// Sync the Bit-perfect (DAP Internal) preference from Dart so the Rust engine manager
 /// can factor it into engine selection and reuse decisions.
 void audioSetDapBitPerfectEnabled({required bool enabled}) => RustLib
     .instance

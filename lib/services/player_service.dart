@@ -262,9 +262,13 @@ class PlayerService {
   final ValueNotifier<bool> usingRustBackendNotifier = ValueNotifier(false);
   final ValueNotifier<AudioOutputDiagnostics?> audioOutputDiagnosticsNotifier =
       ValueNotifier(null);
+  final ValueNotifier<bool> bitPerfectProcessingLockedNotifier = ValueNotifier(
+    false,
+  );
   bool get _usingRustBackend => usingRustBackendNotifier.value;
   set _usingRustBackend(bool value) => usingRustBackendNotifier.value = value;
   bool _rustBackendAvailable = false;
+  VoidCallback? _bitPerfectLockedListener;
   bool _rustListenersAttached = false;
   bool _audioSessionConfigured = false;
   VoidCallback? _rustStateListener;
@@ -382,6 +386,18 @@ class PlayerService {
     _uac2Service.bitPerfectEnabledNotifier.addListener(() {
       unawaited(_handleBitPerfectPreferenceChanged());
     });
+    _uac2Service.dapBitPerfectEnabledNotifier.addListener(() {
+      unawaited(_handleBitPerfectPreferenceChanged());
+    });
+    selectedPlaybackModeNotifier.addListener(_updateBitPerfectProcessingLocked);
+    initializedPlaybackModeNotifier.addListener(_updateBitPerfectProcessingLocked);
+    _uac2Service.bitPerfectEnabledNotifier.addListener(_updateBitPerfectProcessingLocked);
+    _uac2Service.dapBitPerfectEnabledNotifier.addListener(_updateBitPerfectProcessingLocked);
+    _bitPerfectLockedListener = () {
+      unawaited(reapplyEqualizer());
+    };
+    bitPerfectProcessingLockedNotifier.addListener(_bitPerfectLockedListener!);
+    _updateBitPerfectProcessingLocked();
     _uac2Service.addStatusListener(_mirrorUsbVolumeFromUac2Status);
     _notifyQueueChanged();
   }
@@ -617,8 +633,19 @@ class PlayerService {
       (currentEngineType == AudioEngineType.dapInternalHighRes &&
           _uac2Service.isDapBitPerfectEnabledSync);
   bool get isBitPerfectProcessingLocked =>
-      isBitPerfectModeEnabled ||
-      currentEngineType == AudioEngineType.usbDacExperimental;
+      bitPerfectProcessingLockedNotifier.value;
+
+  void _updateBitPerfectProcessingLocked() {
+    final locked = switch (currentEngineType) {
+      AudioEngineType.usbDacExperimental => true,
+      AudioEngineType.dapInternalHighRes =>
+        _uac2Service.isDapBitPerfectEnabledSync,
+      _ => false,
+    };
+    if (bitPerfectProcessingLockedNotifier.value != locked) {
+      bitPerfectProcessingLockedNotifier.value = locked;
+    }
+  }
 
   void _debugLog(String message) {
     if (Uac2PreferencesService.isDeveloperModeEnabledSync) {
@@ -675,7 +702,7 @@ class PlayerService {
     _uac2Service.dapBitPerfectEnabledNotifier.value = enabled;
     rust_audio.audioSetDapBitPerfectEnabled(enabled: enabled);
     await _sessionManager.syncRouteSelection(
-      reason: enabled ? 'DAP bit-perfect enabled' : 'DAP bit-perfect disabled',
+      reason: enabled ? 'Bit-perfect (DAP Internal) enabled' : 'Bit-perfect (DAP Internal) disabled',
     );
   }
 
@@ -973,7 +1000,17 @@ class PlayerService {
     unawaited(_reconcileVolumeForTier(_determineCurrentTier()));
   }
 
+  bool get _isDapOnSharedPath =>
+      Platform.isAndroid &&
+      audioOutputDiagnosticsNotifier.value?.detectedDap == true &&
+      !isBitPerfectModeEnabled &&
+      !_isDirectUsbPath &&
+      _usingRustBackend;
+
   VolumeTier _determineCurrentTier() {
+    if (_isDapOnSharedPath) {
+      return VolumeTier.system;
+    }
     if (!isBitPerfectModeEnabled || !_isDirectUsbPath) {
       return _usingRustBackend ? VolumeTier.software : VolumeTier.system;
     }
@@ -2147,7 +2184,7 @@ class PlayerService {
 
     debugPrint(
       '[Engine] DAP managed playback pinned to $preferredSampleRate Hz '
-      '(${formatPreference.name}) while DAP bit-perfect is disabled',
+      '(${formatPreference.name}) while Bit-perfect (DAP Internal) is disabled',
     );
     return preferredSampleRate;
   }
@@ -2280,7 +2317,7 @@ class PlayerService {
     }
     if (await _uac2Service.isBitPerfectEnabled()) {
       debugPrint(
-        '[Engine] Bit-perfect USB requires an exact verified DAC rate; '
+        '[Engine] Bit-perfect (USB DAC) requires an exact verified DAC rate; '
         'skipping fallback-rate direct retry from '
         '${currentFormat.sampleRate} Hz',
       );
@@ -3251,8 +3288,6 @@ class PlayerService {
         final player = _justAudioPlayer;
         if (player != null) {
           await player.setVolume(clampedVolume);
-        } else if (_usingRustBackend) {
-          await _rustAudioService.setVolume(clampedVolume);
         }
         break;
     }
@@ -3358,7 +3393,7 @@ class PlayerService {
     final clampedSpeed = speed.clamp(0.5, 2.0).toDouble();
     if (isBitPerfectProcessingLocked) {
       debugPrint(
-        '[Playback] Ignoring playback-speed change while Bit-perfect USB is enabled',
+        '[Playback] Ignoring playback-speed change while Bit-perfect (USB DAC) is enabled',
       );
       if (_usingRustBackend) {
         await _rustAudioService.setPlaybackSpeed(1.0);
@@ -3522,8 +3557,16 @@ class PlayerService {
     }
     _playbackStateSubscription?.cancel();
     unawaited(_playbackManager.dispose());
+    selectedPlaybackModeNotifier.removeListener(_updateBitPerfectProcessingLocked);
+    initializedPlaybackModeNotifier.removeListener(_updateBitPerfectProcessingLocked);
+    _uac2Service.bitPerfectEnabledNotifier.removeListener(_updateBitPerfectProcessingLocked);
+    _uac2Service.dapBitPerfectEnabledNotifier.removeListener(_updateBitPerfectProcessingLocked);
+    if (_bitPerfectLockedListener != null) {
+      bitPerfectProcessingLockedNotifier.removeListener(_bitPerfectLockedListener!);
+    }
     _sessionManager.dispose();
     audioOutputDiagnosticsNotifier.dispose();
+    bitPerfectProcessingLockedNotifier.dispose();
 
     currentSongNotifier.dispose();
     isPlayingNotifier.dispose();

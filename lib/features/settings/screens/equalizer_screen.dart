@@ -64,6 +64,8 @@ class EqualizerScreen extends ConsumerWidget {
                           children: [
                             _TopControlsRow(enabled: enabled),
                             _Divider(),
+                            _PreampRow(enabled: enabled),
+                            _Divider(),
                             _ModeAndActionsRow(mode: mode),
                           ],
                         ),
@@ -981,6 +983,347 @@ class _TopControlsRow extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _PreampRow extends ConsumerWidget {
+  final bool enabled;
+  const _PreampRow({required this.enabled});
+
+  Color _interpolateTextColor(double preampDb, BuildContext context) {
+    const blue = Color(0xFF7AB6D9);
+    const neutral = Color(0xFFB0B0B0);
+    const gold = Color(0xFFE0B66B);
+    final normalized = preampDb / EqualizerNotifier.preampMaxDb;
+
+    if (normalized.abs() < 0.01) {
+      return Theme.of(context).textTheme.bodySmall?.color ?? neutral;
+    } else if (normalized < 0) {
+      return Color.lerp(blue, neutral, (normalized + 1.0))!;
+    } else {
+      return Color.lerp(neutral, gold, normalized)!;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final preampDb = ref.watch(eqPreampDbProvider);
+    final isNonZero = preampDb.abs() > 0.01;
+    final textColor = _interpolateTextColor(preampDb, context);
+
+    return RepaintBoundary(
+      child: Padding(
+        padding: const EdgeInsets.all(AppConstants.spacingMd),
+        child: Row(
+          children: [
+            _IconTile(
+              icon: LucideIcons.gauge,
+              enabled: enabled && isNonZero,
+            ),
+            const SizedBox(width: AppConstants.spacingMd),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Preamp',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: context.adaptiveTextPrimary,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${preampDb >= 0 ? '+' : ''}${preampDb.toStringAsFixed(1)} dB',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: textColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (isNonZero) ...[
+                        const SizedBox(width: 8),
+                        _ResetButton(
+                          onTap: () => ref
+                              .read(equalizerProvider.notifier)
+                              .setPreamp(0.0),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Opacity(
+                    opacity: enabled ? 1.0 : 0.5,
+                    child: _PreampSlider(
+                      preampDb: preampDb,
+                      enabled: enabled,
+                      onChanged: enabled
+                          ? (v) => ref
+                              .read(equalizerProvider.notifier)
+                              .setPreamp(v)
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _PreampScaleLabels(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ResetButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ResetButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppConstants.radiusRound),
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: AppColors.glassBackgroundStrong,
+            borderRadius: BorderRadius.circular(AppConstants.radiusRound),
+            border: Border.all(color: AppColors.glassBorder),
+          ),
+          child: Icon(
+            LucideIcons.rotateCcw,
+            size: 14,
+            color: context.adaptiveTextSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreampSlider extends StatelessWidget {
+  final double preampDb;
+  final bool enabled;
+  final ValueChanged<double>? onChanged;
+
+  const _PreampSlider({
+    required this.preampDb,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  Color _interpolateColor() {
+    const blue = Color(0xFF7AB6D9);
+    const neutral = Color(0xFFB0B0B0);
+    const gold = Color(0xFFE0B66B);
+    final normalized = preampDb / EqualizerNotifier.preampMaxDb;
+
+    if (normalized < 0) {
+      return Color.lerp(blue, neutral, (normalized + 1.0))!;
+    } else {
+      return Color.lerp(neutral, gold, normalized)!;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final toneColor = _interpolateColor();
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          height: 24,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: enabled && preampDb.abs() > 0.01
+                ? [
+                    BoxShadow(
+                      color: toneColor.withValues(alpha: 0.15),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    ),
+                  ]
+                : null,
+          ),
+        ),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 6,
+            activeTrackColor: toneColor,
+            inactiveTrackColor: AppColors.glassBorderStrong,
+            thumbColor: Colors.white,
+            overlayColor: toneColor.withValues(alpha: 0.2),
+            thumbShape: const _PreampThumbShape(),
+            trackShape: const _PreampTrackShape(),
+          ),
+          child: Slider(
+            value: preampDb,
+            min: EqualizerNotifier.preampMinDb,
+            max: EqualizerNotifier.preampMaxDb,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PreampTrackShape extends SliderTrackShape {
+  const _PreampTrackShape();
+
+  @override
+  Rect getPreferredRect({
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    Offset? offset,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+  }) {
+    final trackHeight = 6.0;
+    final left = offset?.dx ?? 0.0;
+    final right = left + parentBox.size.width;
+    return Rect.fromLTRB(
+      left,
+      (parentBox.size.height - trackHeight) / 2,
+      right,
+      (parentBox.size.height + trackHeight) / 2,
+    );
+  }
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Offset thumbCenter,
+    required TextDirection textDirection,
+    required Animation<double> enableAnimation,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+    Offset? secondaryOffset,
+  }) {
+    final trackRect = getPreferredRect(
+      parentBox: parentBox,
+      sliderTheme: sliderTheme,
+      offset: offset,
+    );
+
+    final paint = Paint()
+      ..color = sliderTheme.inactiveTrackColor ?? Colors.grey
+      ..style = PaintingStyle.fill;
+
+    context.canvas.drawRRect(
+      RRect.fromRectAndRadius(trackRect, const Radius.circular(3)),
+      paint,
+    );
+
+    final activeRect = Rect.fromLTRB(
+      trackRect.left,
+      trackRect.top,
+      thumbCenter.dx,
+      trackRect.bottom,
+    );
+
+    final gradientPaint = Paint()
+      ..shader = LinearGradient(
+        colors: [
+          const Color(0xFF7AB6D9).withValues(alpha: 0.6),
+          sliderTheme.activeTrackColor ?? Colors.white,
+        ],
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+      ).createShader(activeRect)
+      ..style = PaintingStyle.fill;
+
+    context.canvas.drawRRect(
+      RRect.fromRectAndRadius(activeRect, const Radius.circular(3)),
+      gradientPaint,
+    );
+  }
+}
+
+class _PreampThumbShape extends SliderComponentShape {
+  const _PreampThumbShape();
+
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) {
+    return const Size(20, 20);
+  }
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final radius = 8.0;
+    final paint = Paint()
+      ..color = sliderTheme.thumbColor ?? Colors.white
+      ..style = PaintingStyle.fill;
+
+    context.canvas.drawCircle(center, radius, paint);
+
+    final borderPaint = Paint()
+      ..color = (sliderTheme.activeTrackColor ?? Colors.white)
+          .withValues(alpha: 0.3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    context.canvas.drawCircle(center, radius + 1, borderPaint);
+  }
+}
+
+class _PreampScaleLabels extends StatelessWidget {
+  const _PreampScaleLabels();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _ScaleLabel(value: '-24'),
+        _ScaleLabel(value: '-12'),
+        _ScaleLabel(value: '0', isCenter: true),
+        _ScaleLabel(value: '+12'),
+        _ScaleLabel(value: '+24'),
+      ],
+    );
+  }
+}
+
+class _ScaleLabel extends StatelessWidget {
+  final String value;
+  final bool isCenter;
+
+  const _ScaleLabel({required this.value, this.isCenter = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      '$value dB',
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: isCenter
+            ? context.adaptiveTextSecondary
+            : context.adaptiveTextTertiary,
+        fontWeight: isCenter ? FontWeight.w600 : FontWeight.normal,
+        fontSize: 10,
       ),
     );
   }

@@ -68,6 +68,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   bool _scanSettingsExpanded = false;
   late final AnimationController _scanSettingsController;
   late final Animation<double> _scanSettingsRotation;
+  late final AnimationController _donationPulseController;
+  late final Animation<double> _donationPulseAnimation;
 
   // ValueNotifier for bottom sheet progress updates
   final ValueNotifier<ScanProgress?> _scanProgressNotifier = ValueNotifier(
@@ -87,6 +89,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         curve: Curves.easeInOut,
       ),
     );
+    _donationPulseController = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
+    );
+    _donationPulseAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _donationPulseController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    _donationPulseController.repeat(reverse: true);
     _loadLibraryData();
     _syncFoldersToDatabase();
     _loadAndroidDeviceNotices();
@@ -98,6 +111,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     WidgetsBinding.instance.removeObserver(this);
     _scanProgressNotifier.dispose();
     _scanSettingsController.dispose();
+    _donationPulseController.dispose();
     super.dispose();
   }
 
@@ -842,8 +856,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   Future<void> _launchUrl(String url) async {
     final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      bool launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        launched = await launchUrl(
+          uri,
+          mode: LaunchMode.platformDefault,
+        );
+      }
+      if (!launched && mounted) {
+        _showToast('Could not open the link');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showToast('Could not open the link: $e');
+      }
     }
   }
 
@@ -1153,6 +1183,36 @@ SOFTWARE.
                             onTap: _showLicensesBottomSheet,
                           ),
                         ],
+                      ),
+
+                      const SizedBox(height: AppConstants.spacingLg),
+
+                      // Support section
+                      _buildSectionHeader(context, 'Support'),
+                      AnimatedBuilder(
+                        animation: _donationPulseAnimation,
+                        builder: (context, child) {
+                          return _buildSettingsCard(
+                            context,
+                            border: Border.all(
+                              color: AppColors.textPrimary.withValues(
+                                alpha: 0.25 + _donationPulseAnimation.value * 0.55,
+                              ),
+                              width: 1.0 + _donationPulseAnimation.value * 1.2,
+                            ),
+                            children: [
+                              _buildNavigationSetting(
+                                context,
+                                icon: LucideIcons.heart,
+                                title: 'Buy me a coffee',
+                                subtitle: 'Support development on Ko-fi',
+                                onTap: () => _launchUrl(
+                                  'https://ko-fi.com/ultraelectronica',
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
 
                       // Spacing for nav bar with mini player
@@ -1733,13 +1793,14 @@ SOFTWARE.
   Widget _buildSettingsCard(
     BuildContext context, {
     required List<Widget> children,
+    BoxBorder? border,
   }) {
     return Container(
       clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-        border: Border.all(color: AppColors.glassBorder, width: 1),
+        border: border ?? Border.all(color: AppColors.glassBorder, width: 1),
       ),
       child: Column(children: children),
     );

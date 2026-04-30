@@ -642,6 +642,14 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     _syncToAudio();
   }
 
+  void setPreamp(double value) {
+    final clamped = value.clamp(preampMinDb, preampMaxDb).toDouble();
+    if (state.preampDb == clamped) return;
+    state = state.copyWith(preampDb: clamped, clearActivePresetName: true);
+    ref.read(eqGraphRepaintControllerProvider).bump();
+    _syncToAudio();
+  }
+
   void resetGraphic() {
     state = state.copyWith(
       preampDb: 0.0,
@@ -994,6 +1002,10 @@ final eqModeProvider = Provider<EqMode>((ref) {
 
 final eqActivePresetNameProvider = Provider<String?>((ref) {
   return ref.watch(equalizerProvider.select((s) => s.activePresetName));
+});
+
+final eqPreampDbProvider = Provider<double>((ref) {
+  return ref.watch(equalizerProvider.select((s) => s.preampDb));
 });
 
 final eqGraphicGainDbProvider = Provider.family<double, int>((ref, index) {

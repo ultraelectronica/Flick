@@ -141,7 +141,7 @@ class Uac2PreferencesService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_keyDapBitPerfectEnabled, enabled);
     } catch (e) {
-      debugPrint('Failed to save DAP bit-perfect setting: $e');
+      debugPrint('Failed to save Bit-perfect (DAP Internal) setting: $e');
     }
   }
 
@@ -150,7 +150,7 @@ class Uac2PreferencesService {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getBool(_keyDapBitPerfectEnabled) ?? true;
     } catch (e) {
-      debugPrint('Failed to load DAP bit-perfect setting: $e');
+      debugPrint('Failed to load Bit-perfect (DAP Internal) setting: $e');
       return true;
     }
   }

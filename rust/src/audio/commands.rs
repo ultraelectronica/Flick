@@ -67,6 +67,8 @@ pub enum AudioCommand {
         feedback: f32,
         width: f32,
     },
+    /// Switch pipeline mode at runtime (e.g. when Bit-perfect (DAP Internal) is toggled).
+    SetPipelineMode { passthrough: bool },
     /// Trigger crossfade to next track immediately
     CrossfadeToNext,
     /// Skip to the next track (with crossfade if enabled)

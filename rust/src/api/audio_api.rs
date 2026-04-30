@@ -255,11 +255,27 @@ pub fn audio_set_high_res_mode(enabled: bool) {
     crate::uac2::set_android_direct_usb_enabled(!enabled);
 }
 
-/// Sync the DAP bit-perfect preference from Dart so the Rust engine manager
+/// Sync the Bit-perfect (DAP Internal) preference from Dart so the Rust engine manager
 /// can factor it into engine selection and reuse decisions.
+/// When toggled at runtime, the running engine's pipeline mode is switched
+/// between Passthrough (bit-perfect) and Dsp (full processing) on DAP devices.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_set_dap_bit_perfect_enabled(enabled: bool) {
     ENGINE_MANAGER.set_dap_bit_perfect_enabled(enabled);
+
+    #[cfg(target_os = "android")]
+    {
+        let is_dap = current_device_profile()
+            .as_ref()
+            .is_some_and(|p| p.is_dap());
+        if is_dap {
+            let _ = with_audio_engine(|handle| {
+                handle.set_pipeline_mode_passthrough(enabled)
+            });
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = enabled;
 }
 
 /// Update the current platform capability snapshot used for engine selection.

@@ -173,7 +173,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               icon: LucideIcons.slidersHorizontal,
               title: 'Format Strategy',
               subtitle: formatBlocked
-                  ? 'Disabled in bit-perfect mode (exact rate required)'
+                  ? 'Disabled in Bit-perfect (USB DAC) mode (exact rate required)'
                   : !isAudioFormatEnabled
                   ? 'Audio Format is disabled'
                   : _getFormatPreferenceLabel(formatPref),
@@ -182,7 +182,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                       ? _showBitPerfectBlockedDialog(
                           context,
                           'Format Strategy',
-                          'Format strategy is disabled in bit-perfect mode because exact sample rate matching is required. Disable bit-perfect mode to change format preferences.',
+                          'Format strategy is disabled in Bit-perfect (USB DAC) mode because exact sample rate matching is required. Disable Bit-perfect (USB DAC) to change format preferences.',
                         )
                       : _showBitPerfectBlockedDialog(
                           context,
@@ -207,7 +207,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
               title: 'Custom Format',
               subtitle: formatBlocked
                   ? isBitPerfectEnabled
-                      ? 'Disabled in bit-perfect mode (exact rate required)'
+                      ? 'Disabled in Bit-perfect (USB DAC) mode (exact rate required)'
                       : 'Audio Format is disabled'
                   : format != null
                   ? '${format.sampleRate ~/ 1000}kHz / ${format.bitDepth}bit / ${format.channels}ch'
@@ -217,7 +217,7 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                       ? _showBitPerfectBlockedDialog(
                           context,
                           'Custom Format',
-                          'Custom format is disabled in bit-perfect mode because exact sample rate matching is required. Disable bit-perfect mode to set custom formats.',
+                          'Custom format is disabled in Bit-perfect (USB DAC) mode because exact sample rate matching is required. Disable Bit-perfect (USB DAC) to set custom formats.',
                         )
                       : _showBitPerfectBlockedDialog(
                           context,
@@ -288,9 +288,9 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
             data: (enabled) => _buildSwitchTile(
               context,
               icon: LucideIcons.lock,
-              title: 'Bit-perfect USB',
+              title: 'Bit-perfect (USB DAC)',
               subtitle:
-                  'Use the verified direct USB path and disable software DSP controls that would break bit-perfect playback.',
+                  'Use the verified direct USB path and disable software DSP controls that would break bit-perfect playback on an external USB DAC.',
               value: enabled,
               onChanged: (value) async {
                 final changed = value != enabled;
@@ -307,7 +307,7 @@ ref.invalidate(uac2ExclusiveDacModeProvider);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text(
-                        'Bit-perfect USB could not be enabled. Check the USB diagnostics for the failure reason.',
+                        'Bit-perfect (USB DAC) could not be enabled. Check the USB diagnostics for the failure reason.',
                       ),
                     ),
                   );
@@ -327,9 +327,9 @@ ref.invalidate(uac2ExclusiveDacModeProvider);
               data: (enabled) => _buildSwitchTile(
                 context,
                 icon: LucideIcons.headphones,
-                title: 'DAP Bit-perfect',
+                title: 'Bit-perfect (DAP Internal)',
                 subtitle:
-                    'Bypass all DSP (EQ, dynamics, crossfade, speed) on the native DAP high-res path. Disable to use software effects.',
+                    'Bypass all DSP (EQ, dynamics, crossfade, speed) on the native DAP internal high-res path. Disable to use software effects.',
                 value: enabled,
                 onChanged: (value) async {
                   await PlayerService().setDapBitPerfectEnabled(value);
@@ -341,8 +341,8 @@ ref.invalidate(uac2ExclusiveDacModeProvider);
                     SnackBar(
                       content: Text(
                         value
-                            ? 'DAP bit-perfect enabled — all DSP bypassed.'
-                            : 'DAP bit-perfect disabled — software effects active.',
+                            ? 'Bit-perfect (DAP Internal) enabled — all DSP bypassed.'
+                            : 'Bit-perfect (DAP Internal) disabled — software effects active.',
                       ),
                       behavior: SnackBarBehavior.floating,
                     ),
@@ -514,7 +514,7 @@ ref.invalidate(uac2ExclusiveDacModeProvider);
                 dialogContext,
                 title: 'Isochronous USB',
                 subtitle:
-                    'Direct libusb isochronous USB engine. Best paired with Bit-perfect USB for verified external DAC playback.',
+                    'Direct libusb isochronous USB engine. Best paired with Bit-perfect (USB DAC) for verified external DAC playback.',
                 selected: current == AudioEnginePreference.isochronousUsb,
                 onTap: () async {
                   final changed =

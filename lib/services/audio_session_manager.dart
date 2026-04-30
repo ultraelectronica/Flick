@@ -280,7 +280,7 @@ class AudioSessionManager {
 
       if (!bitPerfectEnabled) {
         _debugLog(
-          '[Session] Keeping NORMAL_ANDROID because Bit-perfect USB is '
+          '[Session] Keeping NORMAL_ANDROID because Bit-perfect (USB DAC) is '
           'disabled for this session '
           '(${info.routeLabel ?? info.routeType ?? 'unknown'})',
         );
@@ -314,7 +314,7 @@ class AudioSessionManager {
       if (hiFiModeEnabled && supportsHiResInternal) {
         if (!dapBitPerfectEnabled) {
           _debugLog(
-            '[Session] Selected RUST_OBOE because DAP bit-perfect is '
+            '[Session] Selected RUST_OBOE because Bit-perfect (DAP Internal) is '
             'disabled. DSP chain will run normally. '
             '(${capabilityInfo.routeType}/${capabilityInfo.routeLabel ?? 'unknown'}; '
             'detectedDap=${dapInfo.brand ?? 'none'})',
@@ -341,7 +341,7 @@ class AudioSessionManager {
       if (!dapBitPerfectEnabled) {
         _debugLog(
           '[Session] Selected RUST_OBOE (from default engine preference) '
-          'because DAP bit-perfect is disabled. DSP chain will run normally. '
+           'because Bit-perfect (DAP Internal) is disabled. DSP chain will run normally. '
           '(${capabilityInfo.routeType}/${capabilityInfo.routeLabel ?? 'unknown'}; '
           'detectedDap=${dapInfo.brand ?? 'none'})',
         );
