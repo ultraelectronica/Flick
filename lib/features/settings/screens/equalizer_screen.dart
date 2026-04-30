@@ -64,6 +64,8 @@ class EqualizerScreen extends ConsumerWidget {
                           children: [
                             _TopControlsRow(enabled: enabled),
                             _Divider(),
+                            _PreampRow(enabled: enabled),
+                            _Divider(),
                             _ModeAndActionsRow(mode: mode),
                           ],
                         ),
@@ -978,6 +980,96 @@ class _TopControlsRow extends ConsumerWidget {
               value: enabled,
               onChanged: (v) =>
                   ref.read(equalizerProvider.notifier).setEnabled(v),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PreampRow extends ConsumerWidget {
+  final bool enabled;
+  const _PreampRow({required this.enabled});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final preampDb = ref.watch(eqPreampDbProvider);
+
+    return RepaintBoundary(
+      child: Padding(
+        padding: const EdgeInsets.all(AppConstants.spacingMd),
+        child: Row(
+          children: [
+            _IconTile(
+              icon: LucideIcons.gauge,
+              enabled: enabled && preampDb != 0.0,
+            ),
+            const SizedBox(width: AppConstants.spacingMd),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Preamp',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: context.adaptiveTextPrimary,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${preampDb >= 0 ? '+' : ''}${preampDb.toStringAsFixed(1)} dB',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: preampDb > 0
+                              ? const Color(0xFFE0B66B)
+                              : (preampDb < 0
+                                  ? const Color(0xFF7AB6D9)
+                                  : context.adaptiveTextSecondary),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Opacity(
+                    opacity: enabled ? 1.0 : 0.5,
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 4,
+                        activeTrackColor: preampDb > 0
+                            ? const Color(0xFFE0B66B)
+                            : (preampDb < 0
+                                ? const Color(0xFF7AB6D9)
+                                : AppColors.textPrimary),
+                        inactiveTrackColor: AppColors.glassBorderStrong,
+                        thumbColor: preampDb > 0
+                            ? const Color(0xFFE0B66B)
+                            : (preampDb < 0
+                                ? const Color(0xFF7AB6D9)
+                                : AppColors.textPrimary),
+                        overlayColor: (preampDb > 0
+                                ? const Color(0xFFE0B66B)
+                                : (preampDb < 0
+                                    ? const Color(0xFF7AB6D9)
+                                    : AppColors.textPrimary))
+                            .withValues(alpha: 0.12),
+                      ),
+                      child: Slider(
+                        value: preampDb,
+                        min: EqualizerNotifier.preampMinDb,
+                        max: EqualizerNotifier.preampMaxDb,
+                        onChanged: enabled
+                            ? (v) => ref
+                                .read(equalizerProvider.notifier)
+                                .setPreamp(v)
+                            : null,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
