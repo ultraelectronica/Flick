@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flick/providers/equalizer_provider.dart';
 import 'package:flick/services/android_audio_processing_service.dart';
 import 'package:flick/services/player_service.dart';
-import 'package:flick/services/uac2_service.dart';
 import 'package:flick/src/rust/api/audio_api.dart' as rust_audio;
 
 EqualizerState _lastRequestedState = EqualizerState.initial();
@@ -28,9 +27,7 @@ Future<void> applyEqualizer(EqualizerState state) async {
       playerService.isUsingRustBackend &&
       rust_audio.audioIsNativeAvailable() &&
       rust_audio.audioIsInitialized();
-  final bypassForBitPerfect =
-      playerService.isBitPerfectProcessingLocked ||
-      Uac2Service.instance.isBitPerfectEnabledSync;
+  final bypassForBitPerfect = playerService.isBitPerfectProcessingLocked;
 
   // Android + just_audio: use native AudioEffect counterparts with session ID.
   if (Platform.isAndroid && !useRustBackend) {
