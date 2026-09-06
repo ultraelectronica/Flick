@@ -210,6 +210,18 @@ pub struct AudioCallbackData {
     /// the stream so playback resumes at the interrupted position instead of
     /// jumping to another time.
     stream_needs_restart: AtomicBool,
+    /// Native-DSD transport active: silence fills emit the SACD silence byte
+    /// 0x69 (a 0.0 f32 packs to wire 0x00 = DC = pops).
+    dsd_wire_silence: AtomicBool,
+    /// DoP transport active: silence fills carry 0x05/0xFA marker framing
+    /// (zero words desync the DAC's marker detector and click).
+    dop_wire_silence: AtomicBool,
+    /// Phase for the alternating 0x05/0xFA DoP silence marker.
+    dop_marker_phase: AtomicBool,
+    /// Telemetry: DSD silence samples injected due to short ring reads.
+    dsd_starved_samples: AtomicU64,
+    /// Telemetry: callbacks silenced by `sources` lock contention.
+    dsd_lock_misses: AtomicU64,
 }
 
 impl AudioCallbackData {
@@ -263,7 +275,70 @@ impl AudioCallbackData {
             crossfade_forces_dsp: AtomicBool::new(false),
             crossfade_active: AtomicBool::new(false),
             stream_needs_restart: AtomicBool::new(false),
+            dsd_wire_silence: AtomicBool::new(false),
+            dop_wire_silence: AtomicBool::new(false),
+            dop_marker_phase: AtomicBool::new(false),
+            dsd_starved_samples: AtomicU64::new(0),
+            dsd_lock_misses: AtomicU64::new(0),
         }
+    }
+
+    /// Managed by the DSD native backend around its render thread (see
+    /// [Self::fill_silence]).
+    #[inline]
+    pub(crate) fn set_dsd_wire_silence(&self, enabled: bool) {
+        self.dsd_wire_silence.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Managed around DoP render loops (see [Self::fill_silence]).
+    #[inline]
+    pub(crate) fn set_dop_wire_silence(&self, enabled: bool) {
+        self.dop_wire_silence.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Transport-appropriate silence: DSD wire gets byte 0x69 (0.0 packs to
+    /// DC and pops), DoP wire gets marker-framed words, PCM gets 0.0.
+    #[inline]
+    pub(crate) fn fill_silence(&self, output: &mut [f32]) {
+        if self.dsd_wire_silence.load(Ordering::Relaxed) {
+            output.fill(f32::from_bits(0x69));
+        } else if self.dop_wire_silence.load(Ordering::Relaxed) {
+            let mut marker_is_fa = self.dop_marker_phase.load(Ordering::Relaxed);
+            for sample in output.iter_mut() {
+                let marker = if marker_is_fa { 0xFA } else { 0x05 };
+                *sample = f32::from_bits((marker as u32) << 24 | 0x69 << 16 | 0x96 << 8);
+                marker_is_fa = !marker_is_fa;
+            }
+            self.dop_marker_phase.store(marker_is_fa, Ordering::Relaxed);
+        } else {
+            output.fill(0.0);
+        }
+    }
+
+    /// try_lock for `sources` that yield-retries briefly — a plain miss in
+    /// the RT callback would silence a whole DSD chunk = audible pop.
+    pub(crate) fn lock_sources_rt(
+        &self,
+    ) -> Option<parking_lot::MutexGuard<'_, SourceProvider>> {
+        for attempt in 0..64 {
+            if let Some(guard) = self.sources.try_lock() {
+                return Some(guard);
+            }
+            if attempt < 63 {
+                std::thread::yield_now();
+            }
+        }
+        None
+    }
+
+    /// (starved samples, lock misses) telemetry snapshot for the DSD render
+    /// loop's warn-on-change logging.
+    #[allow(dead_code)] // consumed by the Android-only SAS render loop
+    pub(crate) fn dsd_starve_stats(&self) -> (u64, u64) {
+        (
+            self.dsd_starved_samples.load(Ordering::Relaxed),
+            self.dsd_lock_misses.load(Ordering::Relaxed),
+        )
     }
 
     #[inline]
@@ -1101,7 +1176,9 @@ fn build_output_runtime_state(
     let (dsd_wire_rate, dsd_transport) = if dsd_source_rate.is_some() {
         let wire_rate = verification.actual_rate;
         let transport = match strategy {
-            OutputStrategy::DsdNative => "dap-native-alsa".to_string(),
+            OutputStrategy::DsdNative => {
+                crate::audio::dsd_sas_shim::native_transport_name().to_string()
+            }
             OutputStrategy::UsbDsdNative => {
                 #[cfg(feature = "uac2")]
                 {
@@ -1804,8 +1881,9 @@ pub fn create_audio_engine(
                 log::info!(
                     "[ENGINE] DSD Native backend created at {} Hz (via {})",
                     requested_sample_rate,
-                    if backend.is_alsa() { "ALSA direct" } else { "ENCODING_DSD" }
+                    backend.transport_name()
                 );
+                crate::api::audio_api::clear_dsd_native_failure();
                 final_sample_rate = requested_sample_rate;
                 callback_data.reconfigure_sample_rate(final_sample_rate);
                 callback_data.set_pipeline_mode(PipelineMode::Dop);
@@ -2027,10 +2105,13 @@ pub fn create_audio_engine(
             && effective_dsd_mode == crate::audio::dsd_engine::dsd::DsdOutputMode::Dop
             && dsd_native_backend.is_none()
         {
-            output_runtime.verification_reason = Some(
-                "DoP active (bit-perfect DSD). Native DSD unavailable on this device."
-                    .to_string(),
-            );
+            let native_failure_note = crate::api::audio_api::last_dsd_native_failure()
+                .map(|reason| format!(" Native attempt failed: {}.", reason))
+                .unwrap_or_default();
+            output_runtime.verification_reason = Some(format!(
+                "DoP active (bit-perfect DSD). Native DSD unavailable on this device.{}",
+                native_failure_note
+            ));
         }
         // Verified-exclusive DapNative rides the HAL direct_pcm profile
         // (mixer bypass); give it its own signature so reuse + diagnostics
@@ -3131,16 +3212,17 @@ pub(crate) fn audio_callback(
     _event_tx: &Sender<AudioEvent>,
 ) {
     if data.is_paused() {
-        output.fill(0.0);
+        data.fill_silence(output);
         return;
     }
 
     // Passthrough path: raw samples from decoder straight to output.
     if data.pipeline_mode.load(Ordering::Relaxed) == PipelineMode::Dop as u8 {
-        let mut sources = match data.sources.try_lock() {
+        let mut sources = match data.lock_sources_rt() {
             Some(s) => s,
             None => {
-                output.fill(0.0);
+                data.dsd_lock_misses.fetch_add(1, Ordering::Relaxed);
+                data.fill_silence(output);
                 return;
             }
         };
@@ -3149,7 +3231,9 @@ pub(crate) fn audio_callback(
             let _ = data.finished_tracks.try_send(source);
         }
         if read < output.len() {
-            output[read..].fill(0.0);
+            data.dsd_starved_samples
+                .fetch_add((output.len() - read) as u64, Ordering::Relaxed);
+            data.fill_silence(&mut output[read..]);
         }
         return;
     }
@@ -3159,10 +3243,11 @@ pub(crate) fn audio_callback(
     // hardware volume) is the only volume authority. Software gain would
     // corrupt the stream.
     if data.is_passthrough() {
-        let mut sources = match data.sources.try_lock() {
+        let mut sources = match data.lock_sources_rt() {
             Some(s) => s,
             None => {
-                output.fill(0.0);
+                data.dsd_lock_misses.fetch_add(1, Ordering::Relaxed);
+                data.fill_silence(output);
                 return;
             }
         };
@@ -3172,7 +3257,9 @@ pub(crate) fn audio_callback(
             let _ = data.finished_tracks.try_send(source);
         }
         if read < output.len() {
-            output[read..].fill(0.0);
+            data.dsd_starved_samples
+                .fetch_add((output.len() - read) as u64, Ordering::Relaxed);
+            data.fill_silence(&mut output[read..]);
         }
         return;
     }
@@ -3508,7 +3595,7 @@ fn command_processing_loop(
                         callback_data.pitch_shifter.lock().reset();
                     }
                     AudioCommand::SetVolume { volume } => {
-                        callback_data.set_volume(volume.clamp(0.0, 1.0));
+                        callback_data.set_volume(volume.clamp(0.0, MAX_VOLUME));
                     }
                     AudioCommand::SetReplayGain { gain_db } => {
                         // Store the default for spawns (next track, seek
@@ -3648,9 +3735,11 @@ fn command_processing_loop(
                             callback_data
                                 .pipeline_mode
                                 .store(PipelineMode::Dop as u8, Ordering::Relaxed);
+                            callback_data.set_dop_wire_silence(true);
                         } else {
                             let base = callback_data.base_pipeline_mode.load(Ordering::Relaxed);
                             callback_data.pipeline_mode.store(base, Ordering::Relaxed);
+                            callback_data.set_dop_wire_silence(false);
                         }
                     }
                     AudioCommand::SetFx {
@@ -4161,6 +4250,21 @@ mod tests {
         let mut output = vec![123.0; output_len];
         audio_callback(&mut output, data, &event_tx);
         output
+    }
+
+    #[test]
+    fn dsd_wire_silence_fills_with_silence_byte() {
+        let data = build_passthrough_callback_data(705_600, 2);
+
+        // DSD wire must get 0x69, not 0.0 (packs to DC = pop).
+        data.set_dsd_wire_silence(true);
+        let output = run_callback(&data, 16);
+        assert!(output.iter().all(|s| (s.to_bits() & 0xFF) == 0x69));
+
+        // PCM outputs keep true zero silence.
+        data.set_dsd_wire_silence(false);
+        let output = run_callback(&data, 16);
+        assert!(output.iter().all(|s| s.to_bits() == 0));
     }
 
     #[test]

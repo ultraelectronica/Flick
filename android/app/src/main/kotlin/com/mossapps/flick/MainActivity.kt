@@ -57,6 +57,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Log
 import android.os.PowerManager
@@ -2455,7 +2456,7 @@ class MainActivity: FlutterActivity() {
         maxSizeBytes: Long? = null,
     ): String? {
         val uri = Uri.parse(uriString)
-        val normalizedExt = normalizeAudioExtension(extensionHint)
+        val normalizedExt = resolveStagedExtension(uri, extensionHint)
         val stagingDir = java.io.File(cacheDir, "playback_staging").apply { mkdirs() }
         val fileHash = md5(uriString)
         val stagedFile = java.io.File(stagingDir, "$fileHash.$normalizedExt")
@@ -3281,6 +3282,35 @@ class MainActivity: FlutterActivity() {
             "aif", "aiff" -> "aiff"
             "m4a", "alac" -> "m4a"
             else -> ext
+        }
+    }
+
+    // The provider's display name carries the real container extension (e.g.
+    // .dsf/.dff for DSD), which generic mime-derived hints (e.g. "dsd") lose.
+    private fun resolveStagedExtension(uri: Uri, extensionHint: String?): String {
+        val providerExt = try {
+            contentResolver
+                .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0 && cursor.moveToFirst()) {
+                        cursor.getString(nameIndex)
+                            ?.substringAfterLast('.', "")
+                            ?.lowercase()
+                            ?.ifEmpty { null }
+                    } else {
+                        null
+                    }
+                }
+        } catch (_: Exception) {
+            null
+        }
+
+        // Only trust the provider name when it is a plausible audio extension.
+        return if (providerExt != null && providerExt.length in 2..5 && providerExt.all { it.isLetterOrDigit() }) {
+            providerExt
+        } else {
+            normalizeAudioExtension(extensionHint)
         }
     }
 

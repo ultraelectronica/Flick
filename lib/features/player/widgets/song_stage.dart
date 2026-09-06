@@ -23,6 +23,9 @@ import 'package:flick/widgets/common/flick_artwork_placeholder.dart';
 /// The sliding portion of the player: album art + title/artist/album +
 /// file-info row + waveform. Background, top chrome and [PlayerControls]
 /// stay pinned — only this stage translates during a swipe.
+///
+/// The file-info row keeps its layout slot even when hidden; the row is
+/// then drawn pinned by the parent screen ([fileInfoRowVisible]).
 class SongStage extends StatelessWidget {
   static const double _shortHeightThreshold = 620.0;
 
@@ -41,6 +44,9 @@ class SongStage extends StatelessWidget {
   final void Function(Song song) onNavigateToAlbumDetail;
   final Widget Function(Song song, bool lyricsMode, PlayerScreenMode mode)
   buildFileInfoRow;
+
+  /// Hides the row but keeps its slot (pinned row renders on top of it).
+  final bool fileInfoRowVisible;
   final String visualizerAnimationStyle;
   final String visualizerFrequencyMode;
   final String visualizerMovementMode;
@@ -80,6 +86,7 @@ class SongStage extends StatelessWidget {
     required this.onNavigateToArtistDetail,
     required this.onNavigateToAlbumDetail,
     required this.buildFileInfoRow,
+    this.fileInfoRowVisible = true,
     this.visualizerAnimationStyle = 'bars',
     this.visualizerFrequencyMode = 'full',
     this.visualizerMovementMode = 'bouncy',
@@ -127,19 +134,14 @@ class SongStage extends StatelessWidget {
         );
       },
       transitionBuilder: (Widget child, Animation<double> animation) {
-        final isFullView =
-            child.key == const ValueKey('immersive-full-view');
+        final isFullView = child.key == const ValueKey('immersive-full-view');
         final slideOffset = isFullView
             ? const Offset(0, 0.12)
             : const Offset(0, 0.03);
         return SlideTransition(
-          position: Tween<Offset>(begin: slideOffset, end: Offset.zero)
-              .animate(
-                CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeOutCubic,
-                ),
-              ),
+          position: Tween<Offset>(begin: slideOffset, end: Offset.zero).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+          ),
           child: FadeTransition(opacity: animation, child: child),
         );
       },
@@ -284,18 +286,24 @@ class SongStage extends StatelessWidget {
                                 SizedBox(
                                   height: context.responsive(10.0, 12.0, 14.0),
                                 ),
-                                Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: context.responsive(
-                                      12.0,
-                                      16.0,
-                                      20.0,
+                                Visibility(
+                                  visible: fileInfoRowVisible,
+                                  maintainSize: true,
+                                  maintainAnimation: true,
+                                  maintainState: true,
+                                  child: Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: context.responsive(
+                                        12.0,
+                                        16.0,
+                                        20.0,
+                                      ),
                                     ),
-                                  ),
-                                  child: buildFileInfoRow(
-                                    song,
-                                    lyricsMode,
-                                    playerScreenMode,
+                                    child: buildFileInfoRow(
+                                      song,
+                                      lyricsMode,
+                                      playerScreenMode,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -333,9 +341,7 @@ class SongStage extends StatelessWidget {
         final isLyricsChild =
             child.key == const ValueKey('immersive-lyrics-layout');
         final offsetAnimation = Tween<Offset>(
-          begin: isLyricsChild
-              ? const Offset(0, -0.04)
-              : const Offset(0, 0.05),
+          begin: isLyricsChild ? const Offset(0, -0.04) : const Offset(0, 0.05),
           end: Offset.zero,
         ).animate(animation);
         return FadeTransition(
@@ -371,7 +377,9 @@ class SongStage extends StatelessWidget {
           child: Row(
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(18 * immersiveFullViewScale),
+                borderRadius: BorderRadius.circular(
+                  18 * immersiveFullViewScale,
+                ),
                 child: SizedBox(
                   width: artworkSize,
                   height: artworkSize,
@@ -573,17 +581,18 @@ class SongStage extends StatelessWidget {
                   transitionBuilder: (child, animation) {
                     final isLyrics =
                         child.key == const ValueKey('artwork-lyrics');
-                    final slide = Tween<Offset>(
-                      begin: isLyrics
-                          ? const Offset(0, -0.06)
-                          : const Offset(0, 0.06),
-                      end: Offset.zero,
-                    ).animate(
-                      CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                      ),
-                    );
+                    final slide =
+                        Tween<Offset>(
+                          begin: isLyrics
+                              ? const Offset(0, -0.06)
+                              : const Offset(0, 0.06),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        );
                     return FadeTransition(
                       opacity: CurvedAnimation(
                         parent: animation,
@@ -678,7 +687,13 @@ class SongStage extends StatelessWidget {
                 ),
               ),
               if (artworkCardShowFileInfo)
-                buildFileInfoRow(song, lyricsMode, playerScreenMode),
+                Visibility(
+                  visible: fileInfoRowVisible,
+                  maintainSize: true,
+                  maintainAnimation: true,
+                  maintainState: true,
+                  child: buildFileInfoRow(song, lyricsMode, playerScreenMode),
+                ),
               if (showWaveform) ...[
                 if (artworkCardShowFileInfo) SizedBox(height: playbackSpacing),
                 _buildWaveformOnly(context),
@@ -704,11 +719,11 @@ class SongStage extends StatelessWidget {
         artworkCardTextScale;
     final artistSize =
         (veryCompact
-                ? context.responsive(13.0, 14.0, 15.0)
-                : compact
-                ? context.responsive(14.0, 15.0, 16.0)
-                : context.responsive(15.0, 16.0, 17.0)) *
-            artworkCardTextScale;
+            ? context.responsive(13.0, 14.0, 15.0)
+            : compact
+            ? context.responsive(14.0, 15.0, 16.0)
+            : context.responsive(15.0, 16.0, 17.0)) *
+        artworkCardTextScale;
     final titleToArtistSpacing = veryCompact
         ? 6.0
         : context.responsive(8.0, 10.0, 12.0);
@@ -725,9 +740,9 @@ class SongStage extends StatelessWidget {
         : context.responsive(6.0, 7.0, 8.0);
     final albumFontSize =
         (veryCompact
-                ? context.responsive(10.0, 11.0, 12.0)
-                : context.responsive(11.0, 12.0, 13.0)) *
-            artworkCardTextScale;
+            ? context.responsive(10.0, 11.0, 12.0)
+            : context.responsive(11.0, 12.0, 13.0)) *
+        artworkCardTextScale;
 
     final diagnostics = ProviderScope.containerOf(
       context,
@@ -873,7 +888,8 @@ class SongStage extends StatelessWidget {
   // ---------------------------------------------------------------------------
 
   Widget _buildWaveformOnly(BuildContext context) {
-    final immersivePlaybackPadding = playerScreenMode == PlayerScreenMode.immersive
+    final immersivePlaybackPadding =
+        playerScreenMode == PlayerScreenMode.immersive
         ? context.responsive(18.0, 24.0, 30.0)
         : 0.0;
 

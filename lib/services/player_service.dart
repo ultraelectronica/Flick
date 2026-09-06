@@ -1379,7 +1379,8 @@ class PlayerService {
   AudioEngineType get currentEngineType =>
       _sessionManager.initializedMode ?? _sessionManager.selectedMode;
   bool get isBitPerfectModeEnabled =>
-      _uac2Service.isBitPerfectEnabledSync ||
+      (currentEngineType == AudioEngineType.usbDacExperimental &&
+          _uac2Service.isBitPerfectEnabledSync) ||
       (currentEngineType == AudioEngineType.dapInternalHighRes &&
           _uac2Service.isDapBitPerfectEnabledSync);
   bool get isBitPerfectProcessingLocked =>

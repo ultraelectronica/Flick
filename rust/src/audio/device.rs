@@ -228,12 +228,31 @@ pub fn classify_device(signals: DeviceSignals) -> DeviceProfile {
             }
             probe
         };
+    // Vendor offload shim: libsmartaudioservice.so (public on DAP firmware)
+    // creates framework DSD_NATIVE AudioTracks — the stock player's path and
+    // the only native route on SELinux-locked DAPs. Cheap dlopen check.
+    let native_dsd_from_sas =
+        is_dap && !native_dsd_from_caps && !native_dsd_from_runtime && {
+            let available = crate::audio::dsd_sas_shim::probe_available();
+            if available {
+                log::info!(
+                    "[DSD-NATIVE] SAS offload shim available for {:?} (libsmartaudioservice.so)",
+                    kind
+                );
+            } else if let Some(reason) = crate::audio::dsd_sas_shim::probe_unavailable_reason() {
+                log::info!("[DSD-NATIVE] SAS offload shim unavailable: {}", reason);
+            }
+            available
+        };
     DeviceProfile {
         confirmed_bit_perfect: is_dap,
         kind,
         max_sample_rate: signals.audio_caps.max_sample_rate,
         has_balanced_output: signals.audio_caps.has_balanced_output,
-        supports_native_dsd: native_dsd_from_caps || native_dsd_from_runtime || native_dsd_from_alsa,
+        supports_native_dsd: native_dsd_from_caps
+            || native_dsd_from_runtime
+            || native_dsd_from_alsa
+            || native_dsd_from_sas,
     }
 }
 

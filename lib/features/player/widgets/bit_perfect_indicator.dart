@@ -576,13 +576,30 @@ class _AudioInfoBottomSheetState extends ConsumerState<_AudioInfoBottomSheet> {
         d?.requestedOutputSampleRate ??
         widget.deviceStatus?.currentFormat?.sampleRate;
     if (outRate != null) {
-      final sourceRate = widget.song.sampleRate;
-      final matches = sourceRate != null && sourceRate == outRate;
+      // DSD transports report a divided rate (native ÷8, DoP ÷16, wire ÷32).
+      // Show the DSD bit rate like the DAP does; any valid domain matches.
+      int displayRate = outRate;
+      var matches = false;
+      final dsdBitRate = widget.song.isDsd ? widget.song.sampleRate : null;
+      if (dsdBitRate != null) {
+        if (outRate == dsdBitRate) {
+          displayRate = dsdBitRate;
+          matches = true;
+        } else if (outRate * 8 == dsdBitRate ||
+            outRate * 16 == dsdBitRate ||
+            outRate * 32 == dsdBitRate) {
+          displayRate = dsdBitRate;
+          matches = true;
+        }
+      } else {
+        final sourceRate = widget.song.sampleRate;
+        matches = sourceRate != null && sourceRate == outRate;
+      }
       rows.add(
         _buildRow(
           context,
           label: 'Output rate',
-          value: _formatHz(outRate),
+          value: _formatHz(displayRate),
           trailing: matches
               ? Icon(Icons.check_circle_rounded, size: 14, color: Colors.green.shade400)
               : Icon(Icons.warning_amber_rounded, size: 14, color: Colors.amber.shade400),

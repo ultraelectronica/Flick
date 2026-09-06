@@ -97,7 +97,11 @@ impl DsdOutputRouter {
         };
 
         let dop_packer = match mode {
-            DsdOutputMode::Dop => Some(DopPacker::new(dsd_rate, channels)),
+            DsdOutputMode::Dop => Some(DopPacker::with_bit_reverse(
+                dsd_rate,
+                channels,
+                dop_needs_bit_reverse(source_bit_order),
+            )),
             DsdOutputMode::PcmDecimation | DsdOutputMode::Native | DsdOutputMode::Auto => None,
         };
 
@@ -179,6 +183,15 @@ fn normalize_dsd_byte(byte: u8, source_order: DsdBitOrder) -> u8 {
         reverse_bits(byte)
     } else {
         byte
+    }
+}
+
+fn dop_needs_bit_reverse(source_order: DsdBitOrder) -> bool {
+    let source_lsb = matches!(source_order, DsdBitOrder::LsbFirst);
+    if DSD_BIT_REVERSE_OVERRIDE.load(Ordering::Relaxed) {
+        !source_lsb
+    } else {
+        source_lsb
     }
 }
 

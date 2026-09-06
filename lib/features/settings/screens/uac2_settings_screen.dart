@@ -638,15 +638,15 @@ class _Uac2SettingsScreenState extends ConsumerState<Uac2SettingsScreen> {
             _buildDivider(),
             _buildInfoRow(
               context,
-              'Track Sample Rate',
-              '${status.currentFormat!.sampleRate ~/ 1000}kHz',
+              status.currentFormat!.isDsdStream ? 'Track DSD Rate' : 'Track Sample Rate',
+              status.currentFormat!.displayRateLabel,
               Icons.graphic_eq,
             ),
             _buildDivider(),
             _buildInfoRow(
               context,
               'Track Bit Depth',
-              '${status.currentFormat!.bitDepth}bit',
+              status.currentFormat!.bitDepthLabel,
               LucideIcons.layers,
             ),
             _buildDivider(),

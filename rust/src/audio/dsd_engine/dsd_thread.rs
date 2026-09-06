@@ -53,7 +53,8 @@ impl DsdDecoderThread {
         };
 
         log::info!(
-            "[DSD-DECODER] spawn: file_rate={} Hz, dsd_rate={:?}, output_mode={:?}, target_rate={} Hz, output_rate={} Hz",
+            "[DSD-DECODER] spawn: path={}, file_rate={} Hz, dsd_rate={:?}, output_mode={:?}, target_rate={} Hz, output_rate={} Hz",
+            path.display(),
             decoder.sample_rate(),
             dsd_rate,
             output_mode,
@@ -193,6 +194,30 @@ fn dsd_decode_thread(
     let mut dsd_buf = vec![0u8; read_size];
     let mut output_buf: Vec<f32> = Vec::with_capacity(DSD_READ_CHUNK_SIZE);
 
+    // Offline wire-vs-reference diffing. Only the first decoder thread to
+    // claim the flag dumps, so a gapless preload decoder can't interleave.
+    static DUMP_CLAIMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let dump_enabled = !DUMP_CLAIMED.swap(true, Ordering::AcqRel);
+    let mut dump_raw: Option<std::fs::File> = None;
+    let mut dump_prod: Option<std::fs::File> = None;
+    let mut dump_raw_n: usize = 0;
+    let mut dump_prod_n: usize = 0;
+    if dump_enabled {
+        use std::fs::OpenOptions;
+        let dir = std::path::Path::new("/storage/6438-6261/flick_dsd_dump");
+        let _ = std::fs::create_dir_all(dir);
+        dump_raw = OpenOptions::new()
+            .create(true).write(true).truncate(true)
+            .open(dir.join("dsd_raw_full.bin")).ok();
+        dump_prod = OpenOptions::new()
+            .create(true).write(true).truncate(true)
+            .open(dir.join("dsd_prod_full.bin")).ok();
+        log::info!(
+            "[DSD-DECODER] dump capture claimed (raw+prod), read_size={}",
+            read_size
+        );
+    }
+
     log::info!(
         "[DSD-DECODER] Starting: dsd_rate={} channels={} layout={:?} bit_order={:?}",
         decoder.sample_rate(),
@@ -209,6 +234,15 @@ fn dsd_decode_thread(
         let bytes_read = decoder.read_dsd_bytes(&mut dsd_buf)?;
         if bytes_read == 0 {
             break;
+        }
+
+        if let Some(f) = dump_raw.as_mut() {
+            if dump_raw_n < (5 << 20) {
+                use std::io::Write;
+                let cap = ((5 << 20) - dump_raw_n).min(bytes_read);
+                let _ = f.write_all(&dsd_buf[..cap]);
+                dump_raw_n += cap;
+            }
         }
 
         let (data, offsets) = match &channel_layout {
@@ -234,6 +268,19 @@ fn dsd_decode_thread(
         {
             log::error!("[DSD-DECODER] Processing error: {}", e);
             break;
+        }
+
+        if let Some(f) = dump_prod.as_mut() {
+            if dump_prod_n < (5 << 20) {
+                use std::io::Write;
+                let mut tmp: Vec<u8> = Vec::with_capacity(output_buf.len());
+                for s in &output_buf {
+                    tmp.push(s.to_bits() as u8);
+                }
+                let cap = ((5 << 20) - dump_prod_n).min(tmp.len());
+                let _ = f.write_all(&tmp[..cap]);
+                dump_prod_n += cap;
+            }
         }
 
         write_to_ring_buffer(&output_buf, &mut producer, &stop_signal);

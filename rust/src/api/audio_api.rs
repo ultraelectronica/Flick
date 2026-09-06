@@ -27,7 +27,9 @@ use std::sync::Mutex;
 
 static ENGINE_MANAGER: Lazy<EngineManager> = Lazy::new(EngineManager::new);
 
-static DSD_OUTPUT_MODE: AtomicU8 = AtomicU8::new(0);
+// Default Auto, not PcmDecimation: FRB runs calls on a worker pool, so the
+// Dart-side sync can race the first audio_play. Never decimate DSD to PCM.
+static DSD_OUTPUT_MODE: AtomicU8 = AtomicU8::new(3);
 static CURRENT_DSD_TRACK_RATE: AtomicU32 = AtomicU32::new(0);
 static PENDING_VOLUME: AtomicU32 = AtomicU32::new(0);
 
@@ -198,6 +200,34 @@ pub fn effective_dsd_output_mode_for_rate(
 
 pub fn set_dsd_track_rate(rate: u32) {
     CURRENT_DSD_TRACK_RATE.store(rate, Ordering::Relaxed);
+}
+
+// Why the last native-DSD attempt fell back (SAS offload / ALSA reasons), so
+// diagnostics can say more than "native unavailable".
+static LAST_DSD_NATIVE_FAILURE: Lazy<Mutex<Option<String>>> =
+    Lazy::new(|| Mutex::new(None));
+
+pub fn last_dsd_native_failure() -> Option<String> {
+    LAST_DSD_NATIVE_FAILURE
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+}
+
+pub fn clear_dsd_native_failure() {
+    if let Ok(mut guard) = LAST_DSD_NATIVE_FAILURE.lock() {
+        *guard = None;
+    }
+}
+
+fn record_dsd_native_failure(error: &str) {
+    let reason = error
+        .strip_prefix("DSD_NATIVE_FALLBACK:")
+        .unwrap_or(error)
+        .to_string();
+    if let Ok(mut guard) = LAST_DSD_NATIVE_FAILURE.lock() {
+        *guard = Some(reason);
+    }
 }
 
 pub fn clear_dsd_track_rate() {
@@ -712,6 +742,7 @@ pub fn audio_is_native_available() -> bool {
 /// Initialize the audio engine.
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_init() -> Result<(), String> {
+    crate::assert_android_debug_logging();
     ENGINE_MANAGER.init();
     Ok(())
 }
@@ -806,6 +837,20 @@ pub fn audio_set_dsd_output_mode(mode: u8) {
 #[flutter_rust_bridge::frb(sync)]
 pub fn audio_set_dsd_bit_reverse_override(enabled: bool) {
     crate::audio::dsd_engine::output::set_dsd_bit_reverse_override(enabled);
+}
+
+/// Wire-packing variant for the DAP-internal native-DSD shim transport:
+/// 0 = Auto/BE-MSB, 1 = LE-MSB, 2 = BE-LSB, 3 = LE-LSB. Wrong = hiss.
+#[flutter_rust_bridge::frb(sync)]
+pub fn audio_set_sas_wire_variant(variant: u8) {
+    crate::audio::dsd_sas_shim::set_wire_variant(variant.min(3));
+}
+
+/// Wire byte grouping (subslot width) for the DAP-internal native-DSD shim:
+/// 0 = U32 (legacy), 1 = U16, 2 = U8 (byte-interleaved). Wrong = hiss.
+#[flutter_rust_bridge::frb(sync)]
+pub fn audio_set_sas_wire_grouping(grouping: u8) {
+    crate::audio::dsd_sas_shim::set_wire_grouping(grouping);
 }
 
 /// Force the native-DSD wire byte order on the USB direct transport (DSD_U32
@@ -972,6 +1017,7 @@ pub fn audio_probe_format(path: String) -> Result<AudioProbeFormat, String> {
 
 /// Play an audio file.
 pub fn audio_play(path: String) -> Result<(), String> {
+    crate::assert_android_debug_logging();
     let path = PathBuf::from(&path);
     match detect_file_type(&path) {
         crate::audio::decoder_handle::FileType::Dsd => {
@@ -983,8 +1029,15 @@ pub fn audio_play(path: String) -> Result<(), String> {
             };
             let dsd_rate_enum = DsdRate::from_sample_rate(dsd_sample_rate);
             set_dsd_track_rate(dsd_sample_rate);
+            clear_dsd_native_failure();
             let mut effective_mode =
                 effective_dsd_output_mode_for_rate(requested_mode, dsd_rate_enum);
+            log_info!(
+                "[AUDIO] DSD play: requested={:?} dsd_rate={} effective={:?}",
+                requested_mode,
+                dsd_sample_rate,
+                effective_mode
+            );
             if matches!(effective_mode, DsdOutputMode::Native | DsdOutputMode::Auto) {
                 crate::audio::dsd_native_jni::dsd_track_preload_class();
             }
@@ -992,6 +1045,7 @@ pub fn audio_play(path: String) -> Result<(), String> {
                 ensure_audio_engine(resolve_dsd_engine_sample_rate(&path, effective_mode)?)
             {
                 if e.starts_with("DSD_NATIVE_FALLBACK:") {
+                    record_dsd_native_failure(&e);
                     log::info!(
                         "[AUDIO] DSD Native unavailable ({}), falling back to DoP",
                         e
@@ -1090,6 +1144,7 @@ pub fn audio_play(path: String) -> Result<(), String> {
 
 /// Queue the next track for gapless playback.
 pub fn audio_queue_next(path: String) -> Result<(), String> {
+    crate::assert_android_debug_logging();
     let path = PathBuf::from(path);
     if !audio_is_initialized() {
         match detect_file_type(&path) {
@@ -1102,8 +1157,15 @@ pub fn audio_queue_next(path: String) -> Result<(), String> {
                 };
                 let dsd_rate_enum = DsdRate::from_sample_rate(dsd_sample_rate);
                 set_dsd_track_rate(dsd_sample_rate);
+                clear_dsd_native_failure();
                 let mut effective_mode =
                     effective_dsd_output_mode_for_rate(requested_mode, dsd_rate_enum);
+                log_info!(
+                    "[AUDIO] DSD queue_next: requested={:?} dsd_rate={} effective={:?}",
+                    requested_mode,
+                    dsd_sample_rate,
+                    effective_mode
+                );
                 if matches!(effective_mode, DsdOutputMode::Native | DsdOutputMode::Auto) {
                     crate::audio::dsd_native_jni::dsd_track_preload_class();
                 }
@@ -1111,6 +1173,7 @@ pub fn audio_queue_next(path: String) -> Result<(), String> {
                     ensure_audio_engine(resolve_dsd_engine_sample_rate(&path, effective_mode)?)
                 {
                     if e.starts_with("DSD_NATIVE_FALLBACK:") {
+                        record_dsd_native_failure(&e);
                         log::info!(
                             "[AUDIO] DSD Native unavailable ({}), falling back to DoP",
                             e

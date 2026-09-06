@@ -80,8 +80,8 @@ const FORMAT_TAG_DSD: u16 = 0x0008;
 const UAC2_REQUEST_GET_MIN: u8 = 0x82;
 const UAC2_REQUEST_GET_MAX: u8 = 0x83;
 const UAC2_REQUEST_GET_RES: u8 = 0x84;
-const UAC2_FEATURE_UNIT_MUTE_CONTROL: u16 = 0x0101;
-const UAC2_FEATURE_UNIT_VOLUME_CONTROL: u16 = 0x0100;
+const UAC2_FEATURE_UNIT_MUTE_CONTROL: u16 = 0x0100;
+const UAC2_FEATURE_UNIT_VOLUME_CONTROL: u16 = 0x0200;
 const FEATURE_MUTE: u32 = 0x0001;
 const FEATURE_VOLUME: u32 = 0x0002;
 const ISO_TRANSFER_TIMEOUT_MS: u32 = 1000;
@@ -971,7 +971,12 @@ impl AndroidDirectUsbPcmRingBuffer {
         writable
     }
 
-    fn pop_into_or_pad(&mut self, output: &mut [i32], _channels: usize) -> bool {
+    fn pop_into_or_pad(
+        &mut self,
+        output: &mut [i32],
+        _channels: usize,
+        dsd_transport: DsdTransportMode,
+    ) -> bool {
         if output.is_empty() {
             return false;
         }
@@ -985,8 +990,25 @@ impl AndroidDirectUsbPcmRingBuffer {
 
         let underrun = readable < output.len();
         if underrun {
-            for sample in output[readable..].iter_mut() {
-                *sample = 0;
+            // Zero is full-scale DC for native DSD and breaks DoP marker sync;
+            // pad with a silent but valid bitstream instead.
+            for (offset, sample) in output[readable..].iter_mut().enumerate() {
+                let index = readable + offset;
+                *sample = match dsd_transport {
+                    DsdTransportMode::Native => {
+                        if index % 2 == 0 { 0x55 } else { 0xAA }
+                    }
+                    DsdTransportMode::DoP => {
+                        let marker = if index % 2 == 0 { 0x05 } else { 0xFA };
+                        let (b0, b1) = if index % 2 == 0 {
+                            (0x55, 0xAA)
+                        } else {
+                            (0xAA, 0x55)
+                        };
+                        ((marker as i32) << 24) | ((b0 as i32) << 16) | ((b1 as i32) << 8)
+                    }
+                    DsdTransportMode::None => 0,
+                };
             }
         }
 
@@ -1787,6 +1809,18 @@ pub fn negotiate_android_direct_output_sample_rate(
         };
         if let Some(rate) = preferred_sample_rate {
             requested_format.sample_rate = rate.max(8_000);
+            // A caller-supplied rate is a PCM request: don't inherit DSD
+            // transport flags or the engine keeps claiming the DSD alt
+            // setting. DSD modes re-stamp these at engine create.
+            if requested_format.is_dop || requested_format.dsd_transport != DsdTransportMode::None
+            {
+                requested_format.is_dop = false;
+                requested_format.dsd_transport = DsdTransportMode::None;
+                requested_format.dsd_bit_rate = 0;
+                if requested_format.bit_depth == 1 {
+                    requested_format.bit_depth = 24;
+                }
+            }
         }
 
         if state.stream_active || USB_SESSION_ACTIVE.load(Ordering::SeqCst) {
@@ -4594,6 +4628,14 @@ fn run_usb_render_loop(
     let mut logged_render_preview = false;
     let chunk_deadline = Duration::from_millis(ANDROID_USB_RENDER_CHUNK_MS as u64);
 
+    // Starvation fills must match the wire format: 0x00 bytes are DC on a
+    // native DSD wire and zero words break DoP marker sync.
+    if playback_format.is_dop {
+        callback_data.set_dop_wire_silence(true);
+    } else if playback_format.dsd_transport == DsdTransportMode::Native {
+        callback_data.set_dsd_wire_silence(true);
+    }
+
     while !usb_stop_requested(&stop) {
         let cycle_start = Instant::now();
         let buffered_samples = {
@@ -4787,6 +4829,9 @@ fn run_usb_render_loop(
             thread::sleep(Duration::from_millis(ANDROID_USB_RENDER_POLL_MS));
         }
     }
+
+    callback_data.set_dop_wire_silence(false);
+    callback_data.set_dsd_wire_silence(false);
 }
 
 fn prepare_iso_transfer_payload(
@@ -4835,7 +4880,7 @@ fn prepare_iso_transfer_payload(
     let mut packet_samples = vec![0i32; total_samples];
     let underrun = {
         let mut guard = pcm_buffer.lock();
-        let underrun = guard.pop_into_or_pad(&mut packet_samples, channels);
+        let underrun = guard.pop_into_or_pad(&mut packet_samples, channels, dsd_transport);
         runtime_stats
             .buffered_samples
             .store(guard.len_samples(), Ordering::Relaxed);

@@ -72,7 +72,9 @@ class Uac2PlayerStatus extends ConsumerWidget {
           if (status.currentFormat != null && showFormat) ...[
             const SizedBox(width: 4),
             Text(
-              '${_effectiveSampleRate(status, diagnostics) ~/ 1000}kHz/${status.currentFormat!.bitDepth}bit',
+              status.currentFormat!.isDsdStream
+                  ? status.currentFormat!.compactRateLabel
+                  : '${_effectiveSampleRate(status, diagnostics) ~/ 1000}kHz/${status.currentFormat!.bitDepth}bit',
               style: TextStyle(
                 fontSize: 10,
                 color: _getStatusColor(status.state),
@@ -179,12 +181,14 @@ class Uac2PlayerStatus extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildFormatBadge(
-                  '${_effectiveSampleRate(status, diagnostics) ~/ 1000}kHz',
+                  status.currentFormat!.isDsdStream
+                      ? status.currentFormat!.compactRateLabel
+                      : '${_effectiveSampleRate(status, diagnostics) ~/ 1000}kHz',
                   context,
                 ),
                 const SizedBox(width: 4),
                 _buildFormatBadge(
-                  '${status.currentFormat!.bitDepth}bit',
+                  status.currentFormat!.bitDepthLabel,
                   context,
                 ),
                 const SizedBox(width: 4),

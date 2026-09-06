@@ -369,8 +369,13 @@ class PlayerNotifier extends Notifier<PlayerState> {
   }
 
   /// Skip to previous song.
-  Future<void> previous() async {
-    await _service.previous();
+  /// [allowRestart] true = button behavior (restart if >3s), false = swipe/slide (always previous track)
+  Future<void> previous({bool allowRestart = true}) async {
+    await _service.previous(allowRestart: allowRestart);
+  }
+
+  Future<void> previousBySwipe() async {
+    await _service.previousBySwipe();
   }
 
   /// Toggle shuffle mode.

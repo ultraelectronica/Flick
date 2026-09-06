@@ -24,6 +24,7 @@ pub mod decoder_handle;
 pub mod device;
 pub mod dsd_alsa_direct;
 pub mod dsd_engine;
+pub mod dsd_sas_shim;
 pub mod dsd_native_backend;
 pub mod dsd_native_jni;
 pub mod dynamics;

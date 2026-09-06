@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flick/providers/equalizer_provider.dart';
 
@@ -40,6 +41,10 @@ class AndroidJustAudioProcessingService {
     );
 
     if (request.requiresAudioSession && audioSessionId == null) {
+      debugPrint(
+        '[AndroidAudioProcessing] skipping apply: audio effects requested but '
+        'audio session id is not available yet',
+      );
       return;
     }
 

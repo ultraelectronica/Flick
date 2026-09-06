@@ -85,7 +85,17 @@ impl DsdFormatDecoder for DffDecoder {
             return Ok(0);
         }
 
-        let bytes_read = self.file.read(buf)?;
+        // FUSE-backed storage routinely returns short reads; fill the buffer
+        // fully so interleaved channel pairs are never split.
+        let mut bytes_read = 0usize;
+        while bytes_read < buf.len() {
+            match self.file.read(&mut buf[bytes_read..]) {
+                Ok(0) => break,
+                Ok(n) => bytes_read += n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
         if bytes_read == 0 {
             self.finished = true;
         }

@@ -14,12 +14,22 @@ enum DsdOutputMode { auto, forcePcm, forceDop, native }
 /// Per-device field-tuning override for native-DSD wire byte order (DSD_U32 packing).
 enum DsdByteOrderOverride { auto, littleEndian, bigEndian }
 
+/// Wire-packing variant for the DAP-internal native-DSD shim transport
+/// (bit order + subslot endianness inside each subslot).
+enum DsdWireVariant { auto, beMsb, leMsb, beLsb, leLsb }
+
+/// Wire byte grouping (subslot width) for the DAP-internal native-DSD shim
+/// transport: how many consecutive DSD bytes per channel form one subslot.
+enum DsdWireGrouping { auto, u32, u16, u8 }
+
 class Uac2PreferencesService {
   static final ValueNotifier<bool> developerModeNotifier = ValueNotifier(false);
   static final ValueNotifier<bool> killIsochronousUsbOnQuitNotifier = ValueNotifier(true);
   static final ValueNotifier<DsdOutputMode> dsdOutputModeNotifier = ValueNotifier(DsdOutputMode.auto);
   static final ValueNotifier<DsdByteOrderOverride> dsdByteOrderOverrideNotifier = ValueNotifier(DsdByteOrderOverride.auto);
   static final ValueNotifier<int?> dsdSubslotOverrideNotifier = ValueNotifier(null);
+  static final ValueNotifier<DsdWireVariant> dsdWireVariantNotifier = ValueNotifier(DsdWireVariant.auto);
+  static final ValueNotifier<DsdWireGrouping> dsdWireGroupingNotifier = ValueNotifier(DsdWireGrouping.auto);
   static const _keySelectedDevice = 'uac2_selected_device';
   static const _keyPreferredFormat = 'uac2_preferred_format';
   static const _keyFormatPreference = 'uac2_format_preference';
@@ -40,12 +50,16 @@ class Uac2PreferencesService {
   static const _keyAutoSwitchDsdForVolume = 'auto_switch_dsd_for_volume';
   static const _keyDsdByteOrderOverride = 'dsd_byte_order_override';
   static const _keyDsdSubslotOverride = 'dsd_subslot_override';
+  static const _keyDsdWireVariant = 'dsd_wire_variant';
+  static const _keyDsdWireGrouping = 'dsd_wire_grouping';
 
   static bool get isDeveloperModeEnabledSync => developerModeNotifier.value;
   static bool get isKillIsochronousUsbOnQuitSync => killIsochronousUsbOnQuitNotifier.value;
   static DsdOutputMode get dsdOutputModeSync => dsdOutputModeNotifier.value;
   static DsdByteOrderOverride get dsdByteOrderOverrideSync => dsdByteOrderOverrideNotifier.value;
   static int? get dsdSubslotOverrideSync => dsdSubslotOverrideNotifier.value;
+  static DsdWireVariant get dsdWireVariantSync => dsdWireVariantNotifier.value;
+  static DsdWireGrouping get dsdWireGroupingSync => dsdWireGroupingNotifier.value;
   static final ValueNotifier<bool> autoSwitchDsdForVolumeNotifier = ValueNotifier(false);
   static bool get autoSwitchDsdForVolumeSync => autoSwitchDsdForVolumeNotifier.value;
   static final ValueNotifier<bool> tuning432HzNotifier = ValueNotifier(false);
@@ -563,6 +577,66 @@ class Uac2PreferencesService {
     }
   }
 
+  /// Set the DAP native-DSD wire-packing variant (bit order + subslot
+  /// endianness). Wrong variant = hiss/static on DAPs; calibrate per device.
+  Future<void> setDsdWireVariant(DsdWireVariant value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyDsdWireVariant, value.name);
+      dsdWireVariantNotifier.value = value;
+    } catch (e) {
+      devLog('Failed to save DSD wire variant: $e');
+    }
+  }
+
+  Future<DsdWireVariant> getDsdWireVariant() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_keyDsdWireVariant);
+      final variant = value == null
+          ? DsdWireVariant.auto
+          : DsdWireVariant.values.firstWhere(
+              (e) => e.name == value,
+              orElse: () => DsdWireVariant.auto,
+            );
+      dsdWireVariantNotifier.value = variant;
+      return variant;
+    } catch (e) {
+      devLog('Failed to load DSD wire variant: $e');
+      return DsdWireVariant.auto;
+    }
+  }
+
+  /// Set the DAP native-DSD wire grouping (subslot width). Wrong grouping =
+  /// hiss regardless of bit order; calibrate per device.
+  Future<void> setDsdWireGrouping(DsdWireGrouping value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyDsdWireGrouping, value.name);
+      dsdWireGroupingNotifier.value = value;
+    } catch (e) {
+      devLog('Failed to save DSD wire grouping: $e');
+    }
+  }
+
+  Future<DsdWireGrouping> getDsdWireGrouping() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_keyDsdWireGrouping);
+      final grouping = value == null
+          ? DsdWireGrouping.auto
+          : DsdWireGrouping.values.firstWhere(
+              (e) => e.name == value,
+              orElse: () => DsdWireGrouping.auto,
+            );
+      dsdWireGroupingNotifier.value = grouping;
+      return grouping;
+    } catch (e) {
+      devLog('Failed to load DSD wire grouping: $e');
+      return DsdWireGrouping.auto;
+    }
+  }
+
   /// Force a native-DSD subslot size (1=U8, 2=U16, 4=U32). Pass null for auto.
   Future<void> setDsdSubslotOverride(int? value) async {
     try {
@@ -634,9 +708,13 @@ await prefs.remove(_keyAudioEnginePreference);
     await prefs.remove(_keyBtHiResDirect);
     await prefs.remove(_keyDsdByteOrderOverride);
     await prefs.remove(_keyDsdSubslotOverride);
+    await prefs.remove(_keyDsdWireVariant);
+    await prefs.remove(_keyDsdWireGrouping);
       dsdOutputModeNotifier.value = DsdOutputMode.auto;
       dsdByteOrderOverrideNotifier.value = DsdByteOrderOverride.auto;
       dsdSubslotOverrideNotifier.value = null;
+      dsdWireVariantNotifier.value = DsdWireVariant.auto;
+      dsdWireGroupingNotifier.value = DsdWireGrouping.auto;
       developerModeNotifier.value = false;
       killIsochronousUsbOnQuitNotifier.value = true;
       tuning432HzNotifier.value = false;

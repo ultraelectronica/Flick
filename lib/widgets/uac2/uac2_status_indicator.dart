@@ -46,7 +46,9 @@ class Uac2StatusIndicator extends ConsumerWidget {
           if (deviceStatus.currentFormat != null) ...[
             const SizedBox(width: 4),
             Text(
-              '${_effectiveSampleRate(deviceStatus, diagnostics) ~/ 1000}kHz/${deviceStatus.currentFormat!.bitDepth}bit',
+              deviceStatus.currentFormat!.isDsdStream
+                  ? deviceStatus.currentFormat!.compactRateLabel
+                  : '${_effectiveSampleRate(deviceStatus, diagnostics) ~/ 1000}kHz/${deviceStatus.currentFormat!.bitDepth}bit',
               style: TextStyle(
                 fontSize: 10,
                 color: _getStatusColor(
