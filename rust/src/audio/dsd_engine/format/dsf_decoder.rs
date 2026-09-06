@@ -105,7 +105,18 @@ impl DsdFormatDecoder for DsfDecoder {
             return Ok(0);
         }
 
-        let bytes_read = self.file.read(buf)?;
+        // FUSE-backed storage routinely returns short reads; keep reading so
+        // the consumer always gets whole macro blocks (a truncated tail would
+        // silently desync the per-channel blocks and tick audibly).
+        let mut bytes_read = 0usize;
+        while bytes_read < buf.len() {
+            match self.file.read(&mut buf[bytes_read..]) {
+                Ok(0) => break,
+                Ok(n) => bytes_read += n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
         if bytes_read == 0 {
             self.finished = true;
         }
