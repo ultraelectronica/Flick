@@ -322,6 +322,19 @@ class Uac2Service {
     await selectDevice(savedDevice);
   }
 
+  /// Boot-time probe: publish route status without activating devices or
+  /// starting the engine, so a DAC attached at launch surfaces (and can be
+  /// offered the bit-perfect prompt) before first play. Safe to call any time.
+  Future<void> initializeAndroidRouteMonitoring() async {
+    if (!Platform.isAndroid) return;
+    _configureAndroidChannel();
+    // Hydrate before publishing status or the prompt gate misfires for
+    // users who already have bit-perfect on.
+    bitPerfectEnabledNotifier.value =
+        await _preferencesService.getBitPerfectEnabled();
+    _scheduleAndroidRouteRefresh();
+  }
+
   void _configureAndroidChannel() {
     if (_androidChannelConfigured) return;
     _androidChannelConfigured = true;
