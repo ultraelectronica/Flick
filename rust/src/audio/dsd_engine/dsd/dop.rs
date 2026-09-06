@@ -5,16 +5,28 @@ pub struct DopPacker {
     channels: usize,
     marker_state: u8,
     dsd_bytes_per_ch: usize,
+    needs_bit_reverse: bool,
 }
 
 impl DopPacker {
     pub fn new(dsd_rate: DsdRate, channels: usize) -> Self {
+        Self::with_bit_reverse(dsd_rate, channels, false)
+    }
+
+    /// `needs_bit_reverse` covers sources stored LSB-first (DSF): the DoP
+    /// wire is MSB-first, so bytes must be reversed before packing.
+    pub fn with_bit_reverse(
+        dsd_rate: DsdRate,
+        channels: usize,
+        needs_bit_reverse: bool,
+    ) -> Self {
         let dsd_bytes_per_ch = dsd_rate.dsd_bytes_per_channel_per_dop_frame();
         Self {
             dsd_rate,
             channels,
             marker_state: 0x05,
             dsd_bytes_per_ch,
+            needs_bit_reverse,
         }
     }
 
@@ -96,7 +108,13 @@ impl DopPacker {
             let read_pos = frame_byte_offset + byte_idx;
             if read_pos < dsd_bytes.len() {
                 let shift = dsd_data_bits - 8 * (byte_idx + 1);
-                sample |= (dsd_bytes[read_pos] as u32) << shift;
+                let byte = dsd_bytes[read_pos];
+                let byte = if self.needs_bit_reverse {
+                    byte.reverse_bits()
+                } else {
+                    byte
+                };
+                sample |= (byte as u32) << shift;
             }
         }
 
