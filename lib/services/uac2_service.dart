@@ -52,6 +52,51 @@ class Uac2AudioFormat {
       isNativeDsd: (json['isNativeDsd'] as bool?) ?? false,
     );
   }
+
+  /// True when this format represents a DSD stream in a byte/carrier-rate
+  /// domain (native: sampleRate is the byte rate; DoP: the PCM carrier).
+  bool get isDsdStream => isNativeDsd || isDop;
+
+  /// The 1-bit DSD bit rate in Hz. Native DSD stores the byte rate
+  /// (bit rate / 8); DoP stores the PCM carrier rate (bit rate / 16).
+  int get dsdBitRateHz => isNativeDsd
+      ? sampleRate * 8
+      : isDop
+      ? sampleRate * 16
+      : sampleRate;
+
+  /// SACD-style rate label (mirrors Song.dsdRateLabel thresholds).
+  String get dsdRateLabel {
+    final bitRate = dsdBitRateHz;
+    if (bitRate >= 22579200) return 'DSD512';
+    if (bitRate >= 11289600) return 'DSD256';
+    if (bitRate >= 5644800) return 'DSD128';
+    if (bitRate >= 2822400) return 'DSD64';
+    return 'DSD';
+  }
+
+  /// Human label for the format's rate: DSD streams show the 1-bit domain
+  /// (e.g. '5.6 MHz · DSD128'); PCM falls back to kHz.
+  String get displayRateLabel {
+    if (isDsdStream) {
+      return '${_dsdMHzLabel()} · $dsdRateLabel';
+    }
+    return '${sampleRate ~/ 1000}kHz';
+  }
+
+  /// Compact chip label: 'DSD128 5.6MHz' for DSD, '705kHz' for PCM.
+  String get compactRateLabel =>
+      isDsdStream ? '$dsdRateLabel $_dsdMHzLabel()' : '${sampleRate ~/ 1000}kHz';
+
+  String _dsdMHzLabel() {
+    final mhz = dsdBitRateHz / 1000000.0;
+    if (mhz >= 1.0) return '${mhz.toStringAsFixed(1)}MHz';
+    return '${(dsdBitRateHz / 1000.0).toStringAsFixed(0)}kHz';
+  }
+
+  /// Human label for the depth: DSD is 1-bit; PCM shows its depth.
+  String get bitDepthLabel =>
+      isDsdStream ? '1-bit (DSD)' : '${bitDepth}bit';
 }
 
 class Uac2DeviceCapabilities {
