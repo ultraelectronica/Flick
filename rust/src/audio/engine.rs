@@ -3595,7 +3595,7 @@ fn command_processing_loop(
                         callback_data.pitch_shifter.lock().reset();
                     }
                     AudioCommand::SetVolume { volume } => {
-                        callback_data.set_volume(volume.clamp(0.0, 1.0));
+                        callback_data.set_volume(volume.clamp(0.0, MAX_VOLUME));
                     }
                     AudioCommand::SetReplayGain { gain_db } => {
                         // Store the default for spawns (next track, seek
