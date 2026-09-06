@@ -81,11 +81,30 @@ fn initialize_android_app_context<'local>(
 pub extern "system" fn JNI_OnLoad(_vm: JavaVM, _reserved: *mut c_void) -> jni::sys::jint {
     android_logger::init_once(
         android_logger::Config::default()
-            .with_max_level(log::LevelFilter::Off)
+            // Debug builds log Debug+; release keeps Info so DSD transport
+            // telemetry (starvation warns, SAS probe) reaches logcat.
+            .with_max_level(if cfg!(debug_assertions) {
+                log::LevelFilter::Debug
+            } else {
+                log::LevelFilter::Info
+            })
             .with_tag("RustUSB"),
     );
     jni::JNIVersion::V6.into()
 }
+
+/// FRB installs its own `android_logger` during `RustLib.init` and clobbers
+/// the max level, silencing our logs after boot. Call at audio API entry
+/// points to keep debug builds logging for the whole session.
+#[cfg(target_os = "android")]
+pub fn assert_android_debug_logging() {
+    if cfg!(debug_assertions) {
+        log::set_max_level(log::LevelFilter::Debug);
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn assert_android_debug_logging() {}
 
 #[cfg(target_os = "android")]
 #[no_mangle]
@@ -555,10 +574,12 @@ pub extern "system" fn Java_com_mossapps_flick_MainActivity_nativeSetRustDevelop
     enabled: jboolean,
 ) {
     DEVELOPER_MODE.store(enabled != 0, Ordering::Relaxed);
+    // Developer mode off still keeps Info: DSD starvation/SAS diagnostics
+    // must survive in release builds.
     let level = if enabled != 0 {
         log::LevelFilter::Debug
     } else {
-        log::LevelFilter::Off
+        log::LevelFilter::Info
     };
     log::set_max_level(level);
 }
