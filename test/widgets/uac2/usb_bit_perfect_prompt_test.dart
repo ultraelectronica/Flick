@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flick/services/uac2_preferences_service.dart';
 import 'package:flick/services/uac2_service.dart';
 import 'package:flick/widgets/uac2/usb_bit_perfect_prompt.dart';
 
@@ -108,5 +110,22 @@ void main() {
     expect(a, b);
     expect(<String>{}..add(a)..add(b), {a});
     expect(noSerial, '1:2:/dev/bus/usb/001/002');
+  });
+
+  test('prompted devices persist across sessions', () async {
+    SharedPreferences.setMockInitialValues({});
+    final service = Uac2PreferencesService();
+
+    expect(await service.getPromptedUsbDevices(), isEmpty);
+
+    await service.addPromptedUsbDevice('1:2:S1');
+    await service.addPromptedUsbDevice('1:2:S1');
+    await service.addPromptedUsbDevice('3:4:S2');
+
+    final persisted = await service.getPromptedUsbDevices();
+    expect(persisted, {'1:2:S1', '3:4:S2'});
+
+    await service.clearAllPreferences();
+    expect(await service.getPromptedUsbDevices(), isEmpty);
   });
 }
