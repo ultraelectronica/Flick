@@ -1015,7 +1015,7 @@ class _EmbeddedMiniPlayerState extends ConsumerState<_EmbeddedMiniPlayer> {
         ref.read(playerProvider.notifier).next();
       } else {
         _songChangeDirection = 1;
-        ref.read(playerProvider.notifier).previous();
+        ref.read(playerProvider.notifier).previous(allowRestart: false);
       }
     } else {
       setState(() {

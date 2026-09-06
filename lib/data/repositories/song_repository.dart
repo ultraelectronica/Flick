@@ -48,7 +48,7 @@ class SongRepository {
         .findAll();
   }
 
-  /// Search songs by title, artist, or album.
+  /// Search songs by title, artist, album, albumArtist or genre.
   Future<List<Song>> searchSongs(String query) async {
     final lowerQuery = query.toLowerCase();
     final entities = await _isar.songEntitys
@@ -58,9 +58,29 @@ class SongRepository {
         .artistContains(lowerQuery, caseSensitive: false)
         .or()
         .albumContains(lowerQuery, caseSensitive: false)
+        .or()
+        .albumArtistContains(lowerQuery, caseSensitive: false)
+        .or()
+        .genreContains(lowerQuery, caseSensitive: false)
         .sortByTitle()
         .findAll();
-    return entities.map(_entityToSong).toList();
+    var results = entities.map(_entityToSong).toList();
+    // Year is numeric – include songs where the year string contains the query.
+    if (lowerQuery.isNotEmpty && RegExp(r'\d').hasMatch(lowerQuery)) {
+      final all = await getAllSongs();
+      final yearMatches = all.where((s) {
+        final y = s.year;
+        if (y == null) return false;
+        return y.toString().contains(lowerQuery);
+      }).toList();
+      final seen = results.map((s) => s.id).toSet();
+      for (final s in yearMatches) {
+        if (!seen.contains(s.id)) results.add(s);
+      }
+      results.sort((a, b) => a.title.compareTo(b.title));
+    }
+    // Folder name matches are handled via GlobalSearchResults; kept minimal here.
+    return results;
   }
 
   /// Get song count.
