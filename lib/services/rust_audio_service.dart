@@ -89,6 +89,23 @@ class RustAudioService {
       } catch (e) {
         devLog('Failed to restore Android audio API preference: $e');
       }
+      // Restore DSD output mode + transport overrides before the first play;
+      // this also loads the pref notifiers (else a user-set mode is ignored).
+      try {
+        await Uac2PreferencesService().getDsdOutputMode();
+        await Uac2PreferencesService().getDsdByteOrderOverride();
+        await Uac2PreferencesService().getDsdSubslotOverride();
+        await Uac2PreferencesService().getDsdWireVariant();
+        await Uac2PreferencesService().getDsdWireGrouping();
+        _syncDsdOutputMode();
+        _syncDsdTransportOverrides();
+        devLog(
+          'Restored DSD output mode: '
+          '${Uac2PreferencesService.dsdOutputModeSync.name}',
+        );
+      } catch (e) {
+        devLog('Failed to restore DSD output mode: $e');
+      }
       _initialized = true;
       devLog('Rust audio engine manager initialized');
 
@@ -320,12 +337,13 @@ class RustAudioService {
       DsdOutputMode.forceDop => 1,
       DsdOutputMode.native => 2,
     };
+    // frb(sync): executes synchronously, so the store is done before the
+    // audioPlay call issued right after this.
     rust_audio.audioSetDsdOutputMode(mode: rustMode);
   }
 
-  /// Push native-DSD transport field-tuning overrides (byte order, subslot)
-  /// to the engine. These only affect the USB direct native DSD path and
-  /// default to auto (defer to device quirk).
+  /// Push native-DSD tuning overrides to the engine. Byte order + subslot
+  /// affect the USB direct path; wire variant + grouping the DAP shim path.
   void _syncDsdTransportOverrides() {
     final byteOrder = Uac2PreferencesService.dsdByteOrderOverrideSync;
     rust_audio.audioSetDsdBigEndianOverride(
@@ -337,6 +355,24 @@ class RustAudioService {
     );
     rust_audio.audioSetDsdSubslotOverride(
       value: Uac2PreferencesService.dsdSubslotOverrideSync,
+    );
+    rust_audio.audioSetSasWireVariant(
+      variant: switch (Uac2PreferencesService.dsdWireVariantSync) {
+        DsdWireVariant.auto => 0,
+        DsdWireVariant.beMsb => 0,
+        DsdWireVariant.leMsb => 1,
+        DsdWireVariant.beLsb => 2,
+        DsdWireVariant.leLsb => 3,
+      },
+    );
+    // Auto = U8: on-device calibration picked plain byte interleaving (LRLR).
+    rust_audio.audioSetSasWireGrouping(
+      grouping: switch (Uac2PreferencesService.dsdWireGroupingSync) {
+        DsdWireGrouping.auto => 2,
+        DsdWireGrouping.u32 => 0,
+        DsdWireGrouping.u16 => 1,
+        DsdWireGrouping.u8 => 2,
+      },
     );
   }
 
