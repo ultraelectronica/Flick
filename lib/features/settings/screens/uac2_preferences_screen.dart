@@ -264,7 +264,9 @@ class _Uac2PreferencesScreenState extends ConsumerState<Uac2PreferencesScreen> {
                       ? 'Disabled in Bit-perfect (USB DAC) mode (exact rate required)'
                       : 'Audio Format is disabled'
                   : format != null
-                  ? '${format.sampleRate ~/ 1000}kHz / ${format.bitDepth}bit / ${format.channels}ch'
+                  ? format.isDsdStream
+                        ? '${format.displayRateLabel} / ${format.channels}ch'
+                        : '${format.sampleRate ~/ 1000}kHz / ${format.bitDepth}bit / ${format.channels}ch'
                   : 'Not set',
               onTap: formatBlocked
                   ? () => isBitPerfectEnabled
@@ -1439,6 +1441,28 @@ ref.invalidate(uac2ExclusiveDacModeProvider);
             loading: () => _buildLoadingTile(context),
             error: (_, _) => _buildErrorTile(context),
           ),
+          _buildDivider(),
+          ValueListenableBuilder<DsdWireVariant>(
+            valueListenable: Uac2PreferencesService.dsdWireVariantNotifier,
+            builder: (context, variant, _) => _buildNavigationTile(
+              context,
+              icon: LucideIcons.binary,
+              title: 'DAP Native Bit Order',
+              subtitle: _dsdWireVariantSubtitle(variant),
+              onTap: () => _showDsdWireVariantDialog(context, service, variant),
+            ),
+          ),
+          _buildDivider(),
+          ValueListenableBuilder<DsdWireGrouping>(
+            valueListenable: Uac2PreferencesService.dsdWireGroupingNotifier,
+            builder: (context, grouping, _) => _buildNavigationTile(
+              context,
+              icon: LucideIcons.columns2,
+              title: 'DAP Native Byte Grouping',
+              subtitle: _dsdWireGroupingSubtitle(grouping),
+              onTap: () => _showDsdWireGroupingDialog(context, service, grouping),
+            ),
+          ),
         ],
       ),
     );
@@ -1603,6 +1627,178 @@ ref.invalidate(uac2ExclusiveDacModeProvider);
                 if (dialogContext.mounted) Navigator.of(dialogContext).pop();
               },
             ),
+          ],
+        ),
+        actions: [
+          FlickDialogButton(
+            label: 'Cancel',
+            onPressed: () => Navigator.of(dialogContext).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _dsdWireVariantSubtitle(DsdWireVariant variant) {
+    switch (variant) {
+      case DsdWireVariant.auto:
+        return 'Auto — BE-MSB default; only change if native DSD hisses';
+      case DsdWireVariant.beMsb:
+        return 'BE-MSB — big-endian subslot, MSB first (default)';
+      case DsdWireVariant.leMsb:
+        return 'LE-MSB — little-endian subslot, MSB first';
+      case DsdWireVariant.beLsb:
+        return 'BE-LSB — big-endian subslot, LSB first';
+      case DsdWireVariant.leLsb:
+        return 'LE-LSB — little-endian subslot, LSB first';
+    }
+  }
+
+  String _dsdWireGroupingSubtitle(DsdWireGrouping grouping) {
+    switch (grouping) {
+      case DsdWireGrouping.auto:
+        return 'Auto — U8 byte-interleaved (recommended)';
+      case DsdWireGrouping.u32:
+        return 'U32 — 4-byte subslots, LLLL|RRRR (legacy)';
+      case DsdWireGrouping.u16:
+        return 'U16 — 2-byte subslots, LL|RR';
+      case DsdWireGrouping.u8:
+        return 'U8 — byte-interleaved LRLR';
+    }
+  }
+
+  void _showDsdWireGroupingDialog(
+    BuildContext context,
+    Uac2PreferencesService service,
+    DsdWireGrouping current,
+  ) {
+    showFlickDialog<void>(
+      context: context,
+      barrierLabel: 'DAP Native Byte Grouping',
+      builder: (dialogContext) => FlickDialog(
+        title: 'DAP Native Byte Grouping',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (grouping, title, subtitle) in [
+              (
+                DsdWireGrouping.auto,
+                'Auto',
+                'U8 — byte-interleaved, recommended default'
+              ),
+              (
+                DsdWireGrouping.u32,
+                'U32',
+                '32-bit subslots: LLLL|RRRR per frame (legacy)'
+              ),
+              (
+                DsdWireGrouping.u16,
+                'U16',
+                '16-bit subslots: LL|RR per frame'
+              ),
+              (
+                DsdWireGrouping.u8,
+                'U8',
+                'Byte-interleaved: LRLR stream'
+              ),
+            ]) ...[
+              _buildDsdOptionTile(
+                dialogContext,
+                title: title,
+                subtitle: subtitle,
+                selected: current == grouping,
+                onTap: () async {
+                  await service.setDsdWireGrouping(grouping);
+                  // Applies to the very next wire write — live A/B while a
+                  // DAP native-DSD track is playing.
+                  rust_audio.audioSetSasWireGrouping(
+                    grouping: switch (grouping) {
+                      DsdWireGrouping.auto => 2,
+                      DsdWireGrouping.u32 => 0,
+                      DsdWireGrouping.u16 => 1,
+                      DsdWireGrouping.u8 => 2,
+                    },
+                  );
+                  if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                },
+              ),
+              const SizedBox(height: AppConstants.spacingSm),
+            ],
+          ],
+        ),
+        actions: [
+          FlickDialogButton(
+            label: 'Cancel',
+            onPressed: () => Navigator.of(dialogContext).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDsdWireVariantDialog(
+    BuildContext context,
+    Uac2PreferencesService service,
+    DsdWireVariant current,
+  ) {
+    showFlickDialog<void>(
+      context: context,
+      barrierLabel: 'DAP Native Bit Order',
+      builder: (dialogContext) => FlickDialog(
+        title: 'DAP Native Bit Order',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (variant, title, subtitle) in [
+              (
+                DsdWireVariant.auto,
+                'Auto',
+                'BE-MSB packing — the default wire convention'
+              ),
+              (
+                DsdWireVariant.beMsb,
+                'BE-MSB',
+                'Big-endian 32-bit subslot, MSB-first bits'
+              ),
+              (
+                DsdWireVariant.leMsb,
+                'LE-MSB',
+                'Little-endian subslot, MSB-first bits'
+              ),
+              (
+                DsdWireVariant.beLsb,
+                'BE-LSB',
+                'Big-endian subslot, LSB-first (bit-reversed) bits'
+              ),
+              (
+                DsdWireVariant.leLsb,
+                'LE-LSB',
+                'Little-endian subslot, LSB-first bits'
+              ),
+            ]) ...[
+              _buildDsdOptionTile(
+                dialogContext,
+                title: title,
+                subtitle: subtitle,
+                selected: current == variant,
+                onTap: () async {
+                  await service.setDsdWireVariant(variant);
+                  // Applies to the very next wire write — live A/B while a
+                  // DAP native-DSD track is playing.
+                  rust_audio.audioSetSasWireVariant(
+                    variant: switch (variant) {
+                      DsdWireVariant.auto => 0,
+                      DsdWireVariant.beMsb => 0,
+                      DsdWireVariant.leMsb => 1,
+                      DsdWireVariant.beLsb => 2,
+                      DsdWireVariant.leLsb => 3,
+                    },
+                  );
+                  if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                },
+              ),
+              const SizedBox(height: AppConstants.spacingSm),
+            ],
           ],
         ),
         actions: [
