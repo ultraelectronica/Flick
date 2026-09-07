@@ -21,6 +21,7 @@ class RotaryKnob extends StatefulWidget {
   final double max;
   final double size;
   final ValueChanged<double>? onChanged;
+  final VoidCallback? onDoubleTap;
   final String label;
   final Color? accentColor;
   final bool showLabel;
@@ -32,6 +33,7 @@ class RotaryKnob extends StatefulWidget {
     required this.max,
     this.size = 110,
     required this.onChanged,
+    this.onDoubleTap,
     required this.label,
     this.accentColor,
     this.showLabel = false,
@@ -47,6 +49,8 @@ class _RotaryKnobState extends State<RotaryKnob>
   double _lastHapticValue = 0.0;
   double _targetValue = 0.0;
   bool _isDragging = false;
+  bool _dragMovedValue = false;
+  DateTime? _lastTapTime;
   late AnimationController _animController;
 
   // Pixels of arc travel for a full min->max sweep.
@@ -121,6 +125,7 @@ class _RotaryKnobState extends State<RotaryKnob>
     if (widget.onChanged == null) return;
     _animController.stop();
     _isDragging = true;
+    _dragMovedValue = false;
     _lastLocal = _localOf(globalPosition);
     _lastHapticValue = _currentValue;
   }
@@ -149,13 +154,19 @@ class _RotaryKnobState extends State<RotaryKnob>
 
     final newValue = (_currentValue + travel * range / _fullSweepPixels)
         .clamp(widget.min, widget.max);
-    final snapped = (newValue * 10).round() / 10.0;
+    // Snap relative to the knob's range (0.33% steps) so short-range knobs
+    // (0..1 mix/size, 0.5..2 tempo) stay smooth instead of jumping 10%.
+    final snapStep = range / 300;
+    final snapped =
+        ((newValue - widget.min) / snapStep).round() * snapStep + widget.min;
 
     final diff = (snapped - _lastHapticValue).abs();
-    if (diff >= 0.5) {
+    if (diff >= range * 0.02) {
       AppHaptics.selection();
       _lastHapticValue = snapped;
     }
+
+    if (snapped != _currentValue) _dragMovedValue = true;
 
     setState(() => _currentValue = snapped);
     widget.onChanged!(_currentValue);
@@ -163,6 +174,17 @@ class _RotaryKnobState extends State<RotaryKnob>
 
   void _handleDragEnd() {
     _isDragging = false;
+    if (_dragMovedValue) return;
+    // The eager-accepting drag recognizer wins the arena before any outer
+    // GestureDetector, so double-tap is detected here from bare taps.
+    final now = DateTime.now();
+    final previous = _lastTapTime;
+    _lastTapTime = now;
+    if (previous != null &&
+        now.difference(previous) <= const Duration(milliseconds: 300)) {
+      _lastTapTime = null;
+      widget.onDoubleTap?.call();
+    }
   }
 
   @override
@@ -178,6 +200,7 @@ class _RotaryKnobState extends State<RotaryKnob>
             GestureRecognizerFactoryWithHandlers<_KnobDragGestureRecognizer>(
           () => _KnobDragGestureRecognizer(),
           (instance) {
+            instance.enabled = widget.onChanged != null;
             instance.onDragStart = _handleDragStart;
             instance.onDragUpdate = _handleDragUpdate;
             instance.onDragEnd = _handleDragEnd;
@@ -305,6 +328,10 @@ class KnobArcPainter extends CustomPainter {
 class _KnobDragGestureRecognizer extends OneSequenceGestureRecognizer {
   _KnobDragGestureRecognizer();
 
+  // When false (knob disabled), the pointer is not claimed so parent
+  // scrollables (PageView, ListView) handle the drag normally.
+  bool enabled = true;
+
   void Function(Offset globalPosition)? onDragStart;
   void Function(Offset globalPosition)? onDragUpdate;
   void Function()? onDragEnd;
@@ -312,6 +339,7 @@ class _KnobDragGestureRecognizer extends OneSequenceGestureRecognizer {
   @override
   void addAllowedPointer(PointerDownEvent event) {
     startTrackingPointer(event.pointer);
+    if (!enabled) return;
     // Eagerly accept — this wins the gesture arena over parent
     // scrollables (e.g. PageView, ListView) immediately.
     resolve(GestureDisposition.accepted);

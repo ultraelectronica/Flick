@@ -32,6 +32,7 @@ String usbDevicePromptKey(Uac2DeviceInfo device) =>
 
 /// Auto-detects a connected USB DAC and offers a one-tap switch to
 /// Bit-perfect (USB DAC) mode. Renders nothing; mount once in the shell.
+/// Asks once per device, ever — declines are persisted.
 class UsbBitPerfectPrompt extends ConsumerStatefulWidget {
   const UsbBitPerfectPrompt({super.key});
 
@@ -41,8 +42,8 @@ class UsbBitPerfectPrompt extends ConsumerStatefulWidget {
 }
 
 class _UsbBitPerfectPromptState extends ConsumerState<UsbBitPerfectPrompt> {
-  // ponytail: session-only decline memory; persistent "don't ask again" pref
-  // if nagging complaints arrive
+  // Race guard for bursty status events only; the persisted list in
+  // Uac2PreferencesService is the real once-per-device memory.
   final Set<String> _promptedDevices = {};
 
   @override
@@ -66,13 +67,22 @@ class _UsbBitPerfectPromptState extends ConsumerState<UsbBitPerfectPrompt> {
       return;
     }
 
-    if (!_promptedDevices.add(usbDevicePromptKey(status.device))) return;
+    final promptKey = usbDevicePromptKey(status.device);
+    if (!_promptedDevices.add(promptKey)) return;
+
+    final preferences = ref.read(uac2PreferencesServiceProvider);
+    try {
+      if ((await preferences.getPromptedUsbDevices()).contains(promptKey)) {
+        return;
+      }
+      await preferences.addPromptedUsbDevice(promptKey);
+    } catch (_) {
+      return;
+    }
 
     final AudioEnginePreference engine;
     try {
-      engine = await ref
-          .read(uac2PreferencesServiceProvider)
-          .getAudioEnginePreference();
+      engine = await preferences.getAudioEnginePreference();
     } catch (_) {
       return;
     }

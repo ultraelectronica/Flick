@@ -52,6 +52,7 @@ class Uac2PreferencesService {
   static const _keyDsdSubslotOverride = 'dsd_subslot_override';
   static const _keyDsdWireVariant = 'dsd_wire_variant';
   static const _keyDsdWireGrouping = 'dsd_wire_grouping';
+  static const _keyPromptedUsbDevices = 'uac2_prompted_usb_devices';
 
   static bool get isDeveloperModeEnabledSync => developerModeNotifier.value;
   static bool get isKillIsochronousUsbOnQuitSync => killIsochronousUsbOnQuitNotifier.value;
@@ -683,6 +684,28 @@ class Uac2PreferencesService {
     }
   }
 
+  /// devices already showed the bit-perfect prompt for. One ask, ever.
+  Future<Set<String>> getPromptedUsbDevices() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getStringList(_keyPromptedUsbDevices)?.toSet() ?? <String>{};
+    } catch (e) {
+      devLog('Failed to load prompted USB devices: $e');
+      return <String>{};
+    }
+  }
+
+  Future<void> addPromptedUsbDevice(String promptKey) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getStringList(_keyPromptedUsbDevices) ?? <String>[];
+      if (keys.contains(promptKey)) return;
+      await prefs.setStringList(_keyPromptedUsbDevices, [...keys, promptKey]);
+    } catch (e) {
+      devLog('Failed to save prompted USB device: $e');
+    }
+  }
+
   Future<void> clearAllPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -710,6 +733,7 @@ await prefs.remove(_keyAudioEnginePreference);
     await prefs.remove(_keyDsdSubslotOverride);
     await prefs.remove(_keyDsdWireVariant);
     await prefs.remove(_keyDsdWireGrouping);
+    await prefs.remove(_keyPromptedUsbDevices);
       dsdOutputModeNotifier.value = DsdOutputMode.auto;
       dsdByteOrderOverrideNotifier.value = DsdByteOrderOverride.auto;
       dsdSubslotOverrideNotifier.value = null;
