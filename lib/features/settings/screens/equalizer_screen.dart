@@ -309,6 +309,7 @@ class _LabeledKnob extends StatelessWidget {
   final double min;
   final double max;
   final ValueChanged<double>? onChanged;
+  final VoidCallback? onReset;
 
   const _LabeledKnob({
     required this.icon,
@@ -318,6 +319,7 @@ class _LabeledKnob extends StatelessWidget {
     this.min = 0.0,
     this.max = 1.0,
     required this.onChanged,
+    this.onReset,
   });
 
   static const double _knobSize = 80;
@@ -352,15 +354,22 @@ class _LabeledKnob extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppConstants.spacingSm),
-          RotaryKnob(
-            value: value,
-            min: min,
-            max: max,
-            size: _knobSize,
-            onChanged: onChanged,
-            label: label,
-            accentColor:
-                enabled ? context.adaptiveTextPrimary : context.adaptiveTextTertiary,
+          Tooltip(
+            message: enabled
+                ? 'Double-tap to reset'
+                : 'Enable EQ to edit',
+            child: RotaryKnob(
+              value: value,
+              min: min,
+              max: max,
+              size: _knobSize,
+              onChanged: onChanged,
+              onDoubleTap: onReset,
+              label: label,
+              accentColor: enabled
+                  ? context.adaptiveTextPrimary
+                  : context.adaptiveTextTertiary,
+            ),
           ),
           const SizedBox(height: AppConstants.spacingXs),
           _ValueBadge(value: valueLabel),
@@ -1598,6 +1607,8 @@ class _BmtKnobsRow extends ConsumerWidget {
                       ? (v) =>
                           ref.read(equalizerProvider.notifier).setBassDb(v)
                       : null,
+                  onReset: () =>
+                      ref.read(equalizerProvider.notifier).setBassDb(0.0),
                 ),
                 _LabeledKnob(
                   icon: LucideIcons.minus,
@@ -1611,6 +1622,8 @@ class _BmtKnobsRow extends ConsumerWidget {
                       ? (v) =>
                           ref.read(equalizerProvider.notifier).setMidDb(v)
                       : null,
+                  onReset: () =>
+                      ref.read(equalizerProvider.notifier).setMidDb(0.0),
                 ),
                 _LabeledKnob(
                   icon: LucideIcons.arrowUp,
@@ -1624,6 +1637,8 @@ class _BmtKnobsRow extends ConsumerWidget {
                       ? (v) =>
                           ref.read(equalizerProvider.notifier).setTrebleDb(v)
                       : null,
+                  onReset: () =>
+                      ref.read(equalizerProvider.notifier).setTrebleDb(0.0),
                 ),
               ],
             ),
