@@ -35,6 +35,7 @@ import 'package:flick/features/onboarding/tutorial_targets.dart';
 import 'package:flick/features/onboarding/widgets/tutorial_overlay.dart';
 import 'package:flick/widgets/common/cached_image_widget.dart';
 import 'package:flick/widgets/common/flick_artwork_placeholder.dart';
+import 'package:flick/widgets/common/floating_mini_player.dart';
 import 'package:flick/widgets/common/floating_scan_progress.dart';
 import 'package:flick/widgets/uac2/usb_bit_perfect_prompt.dart';
 import 'package:flick/models/song.dart';
@@ -863,6 +864,9 @@ class _MainShellState extends ConsumerState<MainShell>
                     ),
                   ),
                 ),
+
+                // Floating island mini-player (draggable pill)
+                const FloatingMiniPlayer(),
 
                 // Floating scan/preload progress pill (overlay minimized)
                 const Positioned(

@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flick/widgets/common/flick_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flick/widgets/common/floating_mini_player.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'dart:math' as math;
 import 'package:path_provider/path_provider.dart';
@@ -139,7 +138,6 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
             ),
           ),
         ),
-        const FloatingMiniPlayer(),
       ],
     );
   }
