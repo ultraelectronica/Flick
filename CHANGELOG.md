@@ -26,6 +26,8 @@ Changes landing on top of the current pre-release are tracked here and folded in
 - Hierarchy (tree) view now available inside folders via the grid/list toggle — matches the root Folders screen; view mode persists across screens.
 
 ### Lyrics
+- **Word Sync (karaoke) editing** in the Lyrics Sync Studio: play the song and tap along to stamp each word; fully stamped lines export as enhanced LRC (`<mm:ss.xx>` word tags) that drives the karaoke sweep. Word chips support per-word nudge/re-time/clear, a live karaoke preview shows the real sweep while editing, and existing word timings now survive editing — re-stamping a line shifts its words by the same delta instead of discarding them.
+- **Video-style word timeline** in Advanced mode: each word renders as a clip whose length you control — drag a boundary to stretch or shrink the adjacent words (all edits snap to the 10ms LRC grid), drag the line-end boundary (or use Length ± buttons) to retime the next line, set exact start times numerically, and Auto-fill seeds evenly spaced words as a drag starting point. Words can also be split into separately timed syllables (tap-a-letter splitter) for slow-then-fast pacing inside a single word — saved as adjacent enhanced-LRC word tags.
 - Embedded lyrics now read from MP4/M4A `©lyr` atoms (UTF-8 and UTF-16) and OGG/Opus Vorbis comments, joining existing ID3 (USLT/SYLT) and FLAC support.
 
 ## 0.21.0-beta.1 (2026-07-10)
