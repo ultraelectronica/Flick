@@ -1,4 +1,3 @@
-import 'package:flick/features/player/widgets/karaoke_lyric_line.dart';
 import 'package:flick/services/lyrics_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -10,7 +9,7 @@ void main() {
         end: Duration(seconds: 14),
         text: 'Hello wide world',
       );
-      final segments = splitKaraokeWord(word);
+      final segments = LyricsService.splitKaraokeWord(word);
 
       expect(segments, hasLength(3));
       expect(segments.first.text, 'Hello ');
@@ -29,7 +28,7 @@ void main() {
         end: Duration(seconds: 2),
         text: '  alpha beta',
       );
-      final segments = splitKaraokeWord(word);
+      final segments = LyricsService.splitKaraokeWord(word);
 
       expect(segments, hasLength(2));
       expect(segments.first.text, '  alpha ');
@@ -42,7 +41,7 @@ void main() {
         text: 'hello ',
       );
 
-      expect(splitKaraokeWord(word), const [word]);
+      expect(LyricsService.splitKaraokeWord(word), const [word]);
     });
 
     test('zero-width window shares parent timing across segments', () {
@@ -51,7 +50,7 @@ void main() {
         end: Duration(seconds: 5),
         text: 'a b c',
       );
-      final segments = splitKaraokeWord(word);
+      final segments = LyricsService.splitKaraokeWord(word);
 
       expect(segments, hasLength(3));
       for (final segment in segments) {
@@ -66,7 +65,7 @@ void main() {
         end: Duration(seconds: 2),
         text: ' ',
       );
-      final segments = splitKaraokeWord(word);
+      final segments = LyricsService.splitKaraokeWord(word);
 
       expect(segments, hasLength(1));
       expect(segments.single.text, ' ');
