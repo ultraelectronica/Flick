@@ -1965,6 +1965,7 @@ class _LyricsSyncScreenState extends State<LyricsSyncScreen> {
 
   Widget _buildShiftTools(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(AppConstants.spacingSm),
       decoration: BoxDecoration(
         color: AppColors.surfaceLight,
