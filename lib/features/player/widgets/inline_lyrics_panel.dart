@@ -10,7 +10,7 @@ import 'package:flick/models/song.dart';
 import 'package:flick/core/theme/app_colors.dart';
 import 'package:flick/core/constants/app_constants.dart';
 import 'package:flick/features/player/widgets/lyrics_alignment.dart';
-import 'package:flick/features/player/widgets/lyrics_editor_bottom_sheet.dart';
+import 'package:flick/features/player/screens/lyrics_sync_screen.dart';
 import 'package:flick/features/player/widgets/online_lyrics_search_sheet.dart';
 import 'package:flick/features/player/widgets/synced_lyrics_view.dart';
 import 'package:flick/providers/app_preferences_provider.dart';
@@ -98,7 +98,7 @@ class _InlineLyricsPanelState extends ConsumerState<InlineLyricsPanel> {
   }
 
   Future<void> _openLyricsEditor() async {
-    final result = await LyricsEditorBottomSheet.show(
+    final result = await LyricsSyncScreen.open(
       context: context,
       song: widget.song,
       playerService: widget.playerService,
