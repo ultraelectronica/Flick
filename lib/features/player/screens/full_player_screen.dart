@@ -16,7 +16,6 @@ import 'package:flick/features/player/widgets/player_navigation.dart';
 import 'package:flick/features/player/widgets/song_actions_sheet.dart';
 import 'package:flick/features/player/widgets/song_stage.dart';
 import 'package:flick/features/player/widgets/song_stage_carousel.dart';
-import 'package:flick/features/player/widgets/waveform_layer.dart';
 import 'package:flick/features/player/widgets/lyrics_mode_waveform_strip.dart';
 import 'package:flick/features/player/widgets/album_color_helpers.dart';
 import 'package:flick/models/album_color_mode.dart';
@@ -800,36 +799,29 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
 
   /// Pinned waveform — stays fixed while carousel slides art+identity.
   /// Lazy-loads for current song only; peek stages no longer build waveforms.
+  /// Always builds LyricsModeWaveformStrip so the WaveformLayer inside keeps
+  /// its state (no re-appear animation / peaks reload) when lyrics toggle.
   Widget _buildPinnedWaveform(
     BuildContext context,
     Song song,
     PlayerScreenMode mode,
   ) {
+    final isImmersive = mode == PlayerScreenMode.immersive;
     // Lyrics uses the strip for immersive (waveform + dismiss arrow) but the
     // time labels are now unified as a single pinned default for BOTH
     // immersive and artworkCard when lyrics are on. Hide strip's internal
     // labels and PlayerControls's labels; keep one under waveform.
-    if (_isLyricsMode && mode == PlayerScreenMode.immersive) {
-      return LyricsModeWaveformStrip(
-        playerService: _playerService,
-        positionNotifier: _throttledPositionNotifier,
-        currentSong: song,
-        formatDuration: formatDuration,
-        horizontalPadding: context.responsive(18.0, 24.0, 30.0),
-        onSwipeUp: () => _setLyricsMode(false),
-        showTimeLabels: false,
-      );
-    }
-    final horizontalPadding = mode == PlayerScreenMode.immersive
-        ? context.responsive(18.0, 24.0, 30.0)
-        : context.responsive(16.0, 20.0, 24.0);
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-      child: WaveformLayer(
-        playerService: _playerService,
-        positionNotifier: _throttledPositionNotifier,
-        currentSong: song,
-      ),
+    return LyricsModeWaveformStrip(
+      playerService: _playerService,
+      positionNotifier: _throttledPositionNotifier,
+      currentSong: song,
+      formatDuration: formatDuration,
+      horizontalPadding: isImmersive
+          ? context.responsive(18.0, 24.0, 30.0)
+          : context.responsive(16.0, 20.0, 24.0),
+      onSwipeUp: () => _setLyricsMode(false),
+      showTimeLabels: false,
+      showArrow: _isLyricsMode && isImmersive,
     );
   }
 
@@ -1265,41 +1257,64 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SizedBox(height: topGap),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 400),
+                        curve: Curves.easeInOut,
+                        height: topGap,
+                      ),
                       _buildPinnedWaveform(context, song, _playerScreenMode),
                       // Unified default: when lyrics are on, keep single time
                       // labels under waveform for BOTH immersive and artworkCard.
                       // This replaces the duplicated labels previously inside
                       // PlayerControls and (for immersive) inside the strip.
-                      if (_isLyricsMode) ...[
-                        SizedBox(height: context.responsive(8.0, 10.0, 12.0)),
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: timeLabelsPadding,
-                          ),
-                          child: ValueListenableBuilder<Duration>(
-                            valueListenable: _playerService.positionNotifier,
-                            builder: (context, position, _) {
-                              return ValueListenableBuilder<Duration>(
-                                valueListenable:
-                                    _playerService.durationNotifier,
-                                builder: (context, engineDuration, _) {
-                                  final duration =
-                                      engineDuration.inMilliseconds > 0
-                                      ? engineDuration
-                                      : (song.duration);
-                                  return PlaybackTimeLabels(
-                                    position: position,
-                                    duration: duration,
-                                    formatDuration: formatDuration,
-                                    horizontalPadding: timeLabelsPadding,
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                      ],
+                      // AnimatedSize so the waveform lowers/raises smoothly.
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 400),
+                        curve: Curves.easeInOut,
+                        alignment: Alignment.topCenter,
+                        child: _isLyricsMode
+                            ? Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    height: context.responsive(
+                                      8.0,
+                                      10.0,
+                                      12.0,
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: timeLabelsPadding,
+                                    ),
+                                    child: ValueListenableBuilder<Duration>(
+                                      valueListenable:
+                                          _playerService.positionNotifier,
+                                      builder: (context, position, _) {
+                                        return ValueListenableBuilder<Duration>(
+                                          valueListenable:
+                                              _playerService.durationNotifier,
+                                          builder: (context, engineDuration, _) {
+                                            final duration =
+                                                engineDuration.inMilliseconds > 0
+                                                ? engineDuration
+                                                : (song.duration);
+                                            return PlaybackTimeLabels(
+                                              position: position,
+                                              duration: duration,
+                                              formatDuration: formatDuration,
+                                              horizontalPadding:
+                                                  timeLabelsPadding,
+                                            );
+                                          },
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : const SizedBox.shrink(),
+                      ),
                     ],
                   );
                 },
@@ -1307,7 +1322,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               // Gap between pinned waveform/time-labels and controls.
               // When lyrics are open we keep only the one under the waveform,
               // so tighten the gap and hide the duplicate inside PlayerControls.
-              SizedBox(
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeInOut,
                 height: _isLyricsMode
                     ? context.responsive(10.0, 12.0, 14.0)
                     : context.responsive(14.0, 16.0, 18.0),
