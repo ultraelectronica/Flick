@@ -11,48 +11,6 @@ import 'package:flick/services/player_service.dart';
 /// The widget subscribes to [PlayerService.positionNotifier] and
 /// extrapolates between engine ticks with a frame ticker, so the sweep stays
 /// smooth even when position updates arrive infrequently.
-
-/// Splits a [LyricsWord] whose text spans multiple tokens into one segment
-/// per token, distributing the word's window proportionally to token
-/// length. Each segment renders with its own gradient, so a line that wraps
-/// across rows sweeps in reading order instead of highlighting the same
-/// horizontal band on every row.
-List<LyricsWord> splitKaraokeWord(LyricsWord word) {
-  final matches = RegExp(r'\S+\s*').allMatches(word.text).toList();
-  if (matches.length <= 1) return [word];
-
-  final leading = word.text.substring(0, matches.first.start);
-  final windowMs = word.end.inMilliseconds - word.start.inMilliseconds;
-
-  final weights = [
-    for (final match in matches)
-      (match.group(0) ?? '').trim().length.clamp(1, 64),
-  ];
-  final weightSum = weights.fold<int>(0, (a, b) => a + b);
-
-  final segments = <LyricsWord>[];
-  var consumed = 0;
-  for (var i = 0; i < matches.length; i++) {
-    final text = (i == 0 ? leading : '') + (matches[i].group(0) ?? '');
-    if (windowMs <= 0 || weightSum <= 0) {
-      segments.add(LyricsWord(start: word.start, end: word.end, text: text));
-      continue;
-    }
-    final startRatio = consumed / weightSum;
-    consumed += weights[i];
-    final endRatio = consumed / weightSum;
-    segments.add(
-      LyricsWord(
-        start: word.start +
-            Duration(milliseconds: (startRatio * windowMs).round()),
-        end: word.start +
-            Duration(milliseconds: (endRatio * windowMs).round()),
-        text: text,
-      ),
-    );
-  }
-  return segments;
-}
 class KaraokeLyricLine extends StatefulWidget {
   final PlayerService playerService;
   final LyricsService lyricsService;
@@ -120,7 +78,7 @@ class _KaraokeLyricLineState extends State<KaraokeLyricLine>
     _segments = [
       for (final word
           in widget.lyricsService.resolveWords(widget.lyrics, widget.lineIndex))
-        ...splitKaraokeWord(word),
+        ...LyricsService.splitKaraokeWord(word),
     ];
     _builtForLineIndex = widget.lineIndex;
     _builtForLyrics = widget.lyrics;

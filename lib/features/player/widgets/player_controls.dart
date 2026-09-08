@@ -61,15 +61,31 @@ class PlayerControls extends StatelessWidget {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (showTimeLabels) ...[
-                    PlaybackTimeLabels(
-                      position: position,
-                      duration: duration,
-                      formatDuration: formatDuration,
-                      horizontalPadding: timelineHorizontalPadding,
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 400),
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.bottomCenter,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      opacity: showTimeLabels ? 1.0 : 0.0,
+                      child: showTimeLabels
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                PlaybackTimeLabels(
+                                  position: position,
+                                  duration: duration,
+                                  formatDuration: formatDuration,
+                                  horizontalPadding:
+                                      timelineHorizontalPadding,
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                            )
+                          : const SizedBox.shrink(),
                     ),
-                    const SizedBox(height: 12),
-                  ],
+                  ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [

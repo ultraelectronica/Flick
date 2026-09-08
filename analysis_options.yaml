@@ -15,6 +15,8 @@ analyzer:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
     - "lib/src/**"
+    - build/**
+    - android/**
   errors:
     unnecessary_underscores: ignore
     use_build_context_synchronously: ignore
