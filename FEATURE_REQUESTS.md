@@ -64,6 +64,7 @@ name, track count, artist, and (newly added) **Year**.
 - [X] **Apple Music Animated Album Art** — animated album art on player screen
 - [X] **Immersive Animated Album Player Art** — full-bleed animated player background
 - [ ] **Library screen grid 3×X** — configurable grid column count
+- [ ] **Landscape mode** — proper landscape layouts for library and player screens (e.g. side-by-side player with artwork/queue, wider list/grid columns)
 
 ---
 
@@ -76,7 +77,7 @@ name, track count, artist, and (newly added) **Year**.
 - ~~**MQA (Master Quality Authenticated)**~~ — too far. Licensed, instant bankrupt for me.
 - [X] **Pitch shifter** — adjust audio pitch independently of tempo
 - [ ] **Replay Gain (track & album)** — apply per-track or per-album loudness gain on playback; album mode keeps relative levels, track mode normalizes every track. Clipping prevention (peak limiting when gain pushes past 0 dBFS) included.
-- [ ] **Replay Gain scanner** — batch-scan library (or per-track) using ReplayGain 2.0-style loudness analysis (EBU R128/LUFS), store values as tags or in a local DB.
+- [X] **Replay Gain scanner** — batch-scan library (or per-track) using ReplayGain 2.0-style loudness analysis (EBU R128/LUFS), store values as tags or in a local DB.
 - [X] **Crossfeed (BS2B)** — 3-stage Bauer stereophonic-to-binaural crossfeed DSP to reduce ear fatigue on headphones; selectable crossfeed level (Off/Default/Crossfeed/Crossfeed easy) built into the Rust DSP pipeline. Shipped as `_CrossfeedSection` in Audio settings; bypassed in bit-perfect passthrough and under 432 Hz tuning.
 
 ---
