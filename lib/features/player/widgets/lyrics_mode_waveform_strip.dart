@@ -52,6 +52,7 @@ class LyricsModeWaveformStrip extends StatefulWidget {
   final double horizontalPadding;
   final VoidCallback onSwipeUp;
   final bool showTimeLabels;
+  final bool showArrow;
 
   const LyricsModeWaveformStrip({super.key,
     required this.playerService,
@@ -61,6 +62,7 @@ class LyricsModeWaveformStrip extends StatefulWidget {
     required this.horizontalPadding,
     required this.onSwipeUp,
     this.showTimeLabels = true,
+    this.showArrow = true,
   });
 
   @override
@@ -70,6 +72,9 @@ class LyricsModeWaveformStrip extends StatefulWidget {
 
 class _LyricsModeWaveformStripState extends State<LyricsModeWaveformStrip>
     with SingleTickerProviderStateMixin {
+  static const Duration _toggleDuration = Duration(milliseconds: 400);
+  static const Curve _toggleCurve = Curves.easeInOut;
+
   Offset? _pointerDownPosition;
   bool _didTriggerSwipe = false;
 
@@ -99,7 +104,7 @@ class _LyricsModeWaveformStripState extends State<LyricsModeWaveformStrip>
     final isSwipeUp = delta.dy <= -28;
     final isPrimarilyVertical = delta.dy.abs() > (delta.dx.abs() * 1.2);
 
-    if (isSwipeUp && isPrimarilyVertical) {
+    if (widget.showArrow && isSwipeUp && isPrimarilyVertical) {
       _didTriggerSwipe = true;
       widget.onSwipeUp();
     }
@@ -119,24 +124,45 @@ class _LyricsModeWaveformStripState extends State<LyricsModeWaveformStrip>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AnimatedBuilder(
-            animation: _arrowAnimController,
-            builder: (context, child) {
-              final t = _arrowAnimController.value;
-              final bounce = -4.0 * math.sin(t * math.pi);
-              final opacity = 0.72 + 0.28 * math.sin(t * math.pi);
-              return Transform.translate(
-                offset: Offset(0, bounce),
-                child: Opacity(opacity: opacity, child: child!),
-              );
-            },
-            child: Icon(
-              Icons.keyboard_double_arrow_up_rounded,
-              color: Colors.white,
-              size: context.responsive(18.0, 20.0, 22.0),
+          // Animated arrow slot — collapses smoothly so the WaveformLayer
+          // below never changes tree position (its state survives toggles).
+          AnimatedSize(
+            duration: _toggleDuration,
+            curve: _toggleCurve,
+            alignment: Alignment.bottomCenter,
+            child: AnimatedOpacity(
+              duration: _toggleDuration,
+              curve: _toggleCurve,
+              opacity: widget.showArrow ? 1.0 : 0.0,
+              child: widget.showArrow
+                  ? AnimatedBuilder(
+                      animation: _arrowAnimController,
+                      builder: (context, child) {
+                        final t = _arrowAnimController.value;
+                        final bounce = -4.0 * math.sin(t * math.pi);
+                        final opacity =
+                            0.72 + 0.28 * math.sin(t * math.pi);
+                        return Transform.translate(
+                          offset: Offset(0, bounce),
+                          child: Opacity(opacity: opacity, child: child!),
+                        );
+                      },
+                      child: Icon(
+                        Icons.keyboard_double_arrow_up_rounded,
+                        color: Colors.white,
+                        size: context.responsive(18.0, 20.0, 22.0),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
           ),
-          SizedBox(height: context.responsive(2.0, 4.0, 6.0)),
+          AnimatedSize(
+            duration: _toggleDuration,
+            curve: _toggleCurve,
+            child: widget.showArrow
+                ? SizedBox(height: context.responsive(2.0, 4.0, 6.0))
+                : const SizedBox.shrink(),
+          ),
           Padding(
             padding: EdgeInsets.symmetric(horizontal: widget.horizontalPadding),
             child: WaveformLayer(
@@ -154,7 +180,13 @@ class _LyricsModeWaveformStripState extends State<LyricsModeWaveformStrip>
               horizontalPadding: widget.horizontalPadding,
             ),
           ],
-          SizedBox(height: context.responsive(14.0, 18.0, 22.0)),
+          AnimatedSize(
+            duration: _toggleDuration,
+            curve: _toggleCurve,
+            child: widget.showArrow
+                ? SizedBox(height: context.responsive(14.0, 18.0, 22.0))
+                : const SizedBox.shrink(),
+          ),
         ],
       ),
     );
